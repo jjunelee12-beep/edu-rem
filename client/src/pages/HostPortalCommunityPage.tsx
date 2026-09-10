@@ -34,11 +34,13 @@ type HostTextBlock = {
   id: string;
   type: "text";
   text: string;
+  html: string;
   align: "left" | "center" | "right";
   bold: boolean;
   underline: boolean;
   color: string;
   fontSize: number;
+  fontFamily: string;
 };
 
 type HostImageBlock = {
@@ -80,12 +82,306 @@ const newHostTextBlock =
     id: hostUid("text"),
     type: "text",
     text: "",
+    html: "",
     align: "left",
     bold: false,
-underline: false,
-color: "#0f172a",
-fontSize: 17,
+    underline: false,
+    color: "#0f172a",
+    fontSize: 17,
+    fontFamily: "inherit",
   });
+
+const HOST_FONT_OPTIONS = [
+  {
+    label: "기본",
+    value: "inherit",
+  },
+  {
+    label: "맑은 고딕",
+    value: '"Malgun Gothic", sans-serif',
+  },
+  {
+    label: "돋움",
+    value: "Dotum, sans-serif",
+  },
+  {
+    label: "굴림",
+    value: "Gulim, sans-serif",
+  },
+  {
+    label: "바탕",
+    value: "Batang, serif",
+  },
+  {
+    label: "명조",
+    value: "serif",
+  },
+];
+
+function escapeHostRichText(
+  value: string
+) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;")
+    .replace(/\n/g, "<br>");
+}
+
+function buildHostLegacyHtml(
+  block: any
+) {
+  const text =
+    String(
+      block?.text || ""
+    );
+
+  if (!text) {
+    return "";
+  }
+
+  const fontSize =
+    Math.min(
+      100,
+      Math.max(
+        1,
+        Number(
+          block?.fontSize ||
+          17
+        ) || 17
+      )
+    );
+
+  const color =
+    /^#[0-9a-f]{6}$/i.test(
+      String(
+        block?.color || ""
+      )
+    )
+      ? String(
+          block.color
+        )
+      : "#0f172a";
+
+  const fontFamily =
+    String(
+      block?.fontFamily ||
+      "inherit"
+    );
+
+  const fontWeight =
+    block?.bold === true
+      ? "800"
+      : "500";
+
+  const textDecoration =
+    block?.underline === true
+      ? "underline"
+      : "none";
+
+  return (
+    `<span style="` +
+    `font-size:${fontSize}px;` +
+    `color:${color};` +
+    `font-family:${fontFamily};` +
+    `font-weight:${fontWeight};` +
+    `text-decoration:${textDecoration};` +
+    `">` +
+    escapeHostRichText(
+      text
+    ) +
+    `</span>`
+  );
+}
+
+function sanitizeHostRichHtml(
+  value: string
+) {
+  if (
+    typeof document ===
+    "undefined"
+  ) {
+    return "";
+  }
+
+  const template =
+    document.createElement(
+      "template"
+    );
+
+  template.innerHTML =
+    String(value || "");
+
+  const allowedTags =
+    new Set([
+      "SPAN",
+      "BR",
+      "DIV",
+      "P",
+      "B",
+      "STRONG",
+      "U",
+    ]);
+
+  const allowedFontFamilies =
+    new Set(
+      HOST_FONT_OPTIONS.map(
+        item =>
+          item.value
+      )
+    );
+
+  const elements =
+    Array.from(
+      template.content
+        .querySelectorAll(
+          "*"
+        )
+    );
+
+  elements
+    .reverse()
+    .forEach(
+      element => {
+        if (
+          !allowedTags.has(
+            element.tagName
+          )
+        ) {
+          element.replaceWith(
+            document.createTextNode(
+              element.textContent ||
+              ""
+            )
+          );
+
+          return;
+        }
+
+        Array.from(
+          element.attributes
+        ).forEach(
+          attribute => {
+            if (
+              attribute.name !==
+              "style"
+            ) {
+              element.removeAttribute(
+                attribute.name
+              );
+            }
+          }
+        );
+
+        if (
+          !(
+            element instanceof
+            HTMLElement
+          )
+        ) {
+          return;
+        }
+
+        const originalStyle = {
+          fontSize:
+            element.style
+              .fontSize,
+
+          color:
+            element.style
+              .color,
+
+          fontFamily:
+            element.style
+              .fontFamily,
+
+          fontWeight:
+            element.style
+              .fontWeight,
+
+          textDecoration:
+            element.style
+              .textDecoration,
+        };
+
+        element.removeAttribute(
+          "style"
+        );
+
+        const fontSize =
+          Number.parseFloat(
+            originalStyle.fontSize
+          );
+
+        if (
+          Number.isFinite(
+            fontSize
+          )
+        ) {
+          element.style
+            .fontSize =
+            `${Math.min(
+              100,
+              Math.max(
+                1,
+                fontSize
+              )
+            )}px`;
+        }
+
+        if (
+          originalStyle.color
+        ) {
+          element.style.color =
+            originalStyle.color;
+        }
+
+        if (
+          allowedFontFamilies.has(
+            originalStyle
+              .fontFamily
+          )
+        ) {
+          element.style
+            .fontFamily =
+            originalStyle
+              .fontFamily;
+        }
+
+        if (
+          originalStyle
+            .fontWeight ===
+            "800" ||
+          originalStyle
+            .fontWeight ===
+            "700" ||
+          originalStyle
+            .fontWeight ===
+            "bold"
+        ) {
+          element.style
+            .fontWeight =
+            "800";
+        }
+
+        if (
+          originalStyle
+            .textDecoration
+            .includes(
+              "underline"
+            )
+        ) {
+          element.style
+            .textDecoration =
+            "underline";
+        }
+      }
+    );
+
+  return template.innerHTML;
+}
 
 function checkHostImage(
   file: File
@@ -200,14 +496,30 @@ function buildHostEditorBlocksFromPost(
                     17
                 );
 
+              const text =
+                String(
+                  block.text ||
+                    ""
+                );
+
               return {
-                id: `existing-text-${index}`,
-                type: "text",
-                text:
+                id:
+                  `existing-text-${index}`,
+
+                type:
+                  "text",
+
+                text,
+
+                html:
                   String(
-                    block.text ||
-                      ""
+                    block.html ||
+                    ""
+                  ).trim() ||
+                  buildHostLegacyHtml(
+                    block
                   ),
+
                 align:
                   block.align ===
                     "center" ||
@@ -215,23 +527,39 @@ function buildHostEditorBlocksFromPost(
                     "right"
                     ? block.align
                     : "left",
+
                 bold:
                   block.bold ===
                   true,
 
-underline:
-  block.underline ===
-  true,
+                underline:
+                  block.underline ===
+                  true,
 
                 color:
                   String(
                     block.color ||
                       "#0f172a"
                   ),
+
                 fontSize:
-  Number.isFinite(fontSize)
-    ? Math.min(100, Math.max(1, fontSize))
-    : 17,
+                  Number.isFinite(
+                    fontSize
+                  )
+                    ? Math.min(
+                        100,
+                        Math.max(
+                          1,
+                          fontSize
+                        )
+                      )
+                    : 17,
+
+                fontFamily:
+                  String(
+                    block.fontFamily ||
+                      "inherit"
+                  ),
               };
             }
 
@@ -818,18 +1146,30 @@ const uploadHostBlockImages =
             return {
               type:
                 "text",
+
               text:
                 block.text,
+
+              html:
+                block.html,
+
               align:
                 block.align,
+
               bold:
                 block.bold,
-underline:
-  block.underline,
+
+              underline:
+                block.underline,
+
               color:
                 block.color,
+
               fontSize:
                 block.fontSize,
+
+              fontFamily:
+                block.fontFamily,
             };
           }
         ),
@@ -1287,18 +1627,30 @@ try {
                 block => ({
                   type:
                     "text",
+
                   text:
                     block.text,
+
+                  html:
+                    block.html,
+
                   align:
                     block.align,
+
                   bold:
                     block.bold,
-underline:
-  block.underline,
+
+                  underline:
+                    block.underline,
+
                   color:
                     block.color,
+
                   fontSize:
                     block.fontSize,
+
+                  fontFamily:
+                    block.fontFamily,
                 })
               ),
         };
@@ -2763,6 +3115,476 @@ function HostBlockEditor({
         "image"
     ).length;
 
+  const editorRefs =
+    useRef<
+      Record<
+        string,
+        HTMLDivElement | null
+      >
+    >({});
+
+    const savedRangeRef =
+    useRef<
+      Range | null
+    >(null);
+
+  const [
+    selectionStyle,
+    setSelectionStyle,
+  ] = useState({
+    fontSize: 17,
+    color: "#0f172a",
+    fontFamily: "inherit",
+    bold: false,
+    underline: false,
+  });
+
+  const rgbToHex =
+    (
+      value: string
+    ) => {
+      if (
+        /^#[0-9a-f]{6}$/i.test(
+          value
+        )
+      ) {
+        return value;
+      }
+
+      const match =
+        value.match(
+          /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/
+        );
+
+      if (!match) {
+        return "#0f172a";
+      }
+
+      return `#${[
+        Number(match[1]),
+        Number(match[2]),
+        Number(match[3]),
+      ]
+        .map(value =>
+          Math.max(
+            0,
+            Math.min(
+              255,
+              value
+            )
+          )
+            .toString(16)
+            .padStart(
+              2,
+              "0"
+            )
+        )
+        .join("")}`;
+    };
+
+  const resolveHostFontFamily =
+    (
+      value: string
+    ) => {
+      const font =
+        String(
+          value || ""
+        ).toLowerCase();
+
+      if (
+        font.includes(
+          "malgun gothic"
+        )
+      ) {
+        return '"Malgun Gothic", sans-serif';
+      }
+
+      if (
+        font.includes(
+          "dotum"
+        )
+      ) {
+        return "Dotum, sans-serif";
+      }
+
+      if (
+        font.includes(
+          "gulim"
+        )
+      ) {
+        return "Gulim, sans-serif";
+      }
+
+      if (
+        font.includes(
+          "batang"
+        )
+      ) {
+        return "Batang, serif";
+      }
+
+      if (
+        font.includes(
+          "serif"
+        ) &&
+        !font.includes(
+          "sans-serif"
+        )
+      ) {
+        return "serif";
+      }
+
+      return "inherit";
+    };
+
+  const readSelectionStyle =
+    (
+      blockId: string,
+      range: Range
+    ) => {
+      const editor =
+        editorRefs.current[
+          blockId
+        ];
+
+      if (!editor) {
+        return;
+      }
+
+      let node:
+        Node | null =
+        range.startContainer;
+
+      if (
+        node.nodeType ===
+        Node.TEXT_NODE
+      ) {
+        node =
+          node.parentNode;
+      }
+
+      const element =
+        node instanceof
+        HTMLElement
+          ? node
+          : editor;
+
+      const target =
+        editor.contains(
+          element
+        )
+          ? element
+          : editor;
+
+      const computed =
+        window.getComputedStyle(
+          target
+        );
+
+      const fontSize =
+        Math.min(
+          100,
+          Math.max(
+            1,
+            Math.round(
+              Number.parseFloat(
+                computed.fontSize
+              ) || 17
+            )
+          )
+        );
+
+      const fontWeight =
+        Number.parseInt(
+          computed.fontWeight,
+          10
+        );
+
+      setSelectionStyle({
+        fontSize,
+
+        color:
+          rgbToHex(
+            computed.color
+          ),
+
+        fontFamily:
+          resolveHostFontFamily(
+            computed.fontFamily
+          ),
+
+        bold:
+          computed.fontWeight ===
+            "bold" ||
+          (
+            Number.isFinite(
+              fontWeight
+            ) &&
+            fontWeight >= 600
+          ),
+
+        underline:
+          computed.textDecorationLine
+            .includes(
+              "underline"
+            ),
+      });
+    };
+
+  const rememberSelection =
+    (
+      blockId: string
+    ) => {
+      setActiveId(
+        blockId
+      );
+
+      const editor =
+        editorRefs.current[
+          blockId
+        ];
+
+      const selection =
+        window.getSelection();
+
+      if (
+        !editor ||
+        !selection ||
+        selection.rangeCount ===
+          0
+      ) {
+        return;
+      }
+
+      const range =
+        selection.getRangeAt(
+          0
+        );
+
+      if (
+        !editor.contains(
+          range.commonAncestorContainer
+        )
+      ) {
+        return;
+      }
+
+            savedRangeRef.current =
+        range.cloneRange();
+
+      readSelectionStyle(
+        blockId,
+        range
+      );
+    };
+
+  const restoreSelection =
+    () => {
+      const editor =
+        editorRefs.current[
+          activeId
+        ];
+
+      const range =
+        savedRangeRef.current;
+
+      if (
+        !editor ||
+        !range ||
+        !editor.contains(
+          range.commonAncestorContainer
+        )
+      ) {
+        return null;
+      }
+
+      const selection =
+        window.getSelection();
+
+      if (!selection) {
+        return null;
+      }
+
+      editor.focus();
+
+      selection.removeAllRanges();
+
+      selection.addRange(
+        range
+      );
+
+      return {
+        editor,
+        selection,
+        range,
+      };
+    };
+
+  const syncRichBlock =
+    (
+      blockId: string
+    ) => {
+      const editor =
+        editorRefs.current[
+          blockId
+        ];
+
+      if (!editor) {
+        return;
+      }
+
+      const text =
+        editor.innerText
+          .replace(
+            /\u200B/g,
+            ""
+          );
+
+      const html =
+        editor.innerHTML;
+
+      setBlocks(
+        current =>
+          current.map(
+            block =>
+              block.type ===
+                "text" &&
+              block.id ===
+                blockId
+                ? {
+                    ...block,
+                    text,
+                    html,
+                  }
+                : block
+          )
+      );
+    };
+
+  const applyInlineStyle =
+    (
+      styles:
+        Record<
+          string,
+          string
+        >,
+      metadata:
+        Partial<
+          HostTextBlock
+        > = {}
+    ) => {
+      const restored =
+        restoreSelection();
+
+      if (
+        !restored ||
+        restored.range
+          .collapsed
+      ) {
+        window.alert(
+          "스타일을 변경할 글자를 먼저 드래그해서 선택해주세요."
+        );
+
+        return;
+      }
+
+      const {
+        selection,
+        range,
+      } = restored;
+
+      const span =
+        document.createElement(
+          "span"
+        );
+
+      Object.entries(
+        styles
+      ).forEach(
+        ([
+          key,
+          value,
+        ]) => {
+          (
+            span.style as any
+          )[key] =
+            value;
+        }
+      );
+
+      const fragment =
+        range.extractContents();
+
+      span.appendChild(
+        fragment
+      );
+
+      range.insertNode(
+        span
+      );
+
+      const nextRange =
+        document.createRange();
+
+      nextRange.selectNodeContents(
+        span
+      );
+
+      selection.removeAllRanges();
+
+      selection.addRange(
+        nextRange
+      );
+
+      savedRangeRef.current =
+        nextRange.cloneRange();
+
+      syncRichBlock(
+        activeId
+      );
+
+            setSelectionStyle(
+        current => ({
+          ...current,
+          ...(typeof metadata.fontSize ===
+          "number"
+            ? {
+                fontSize:
+                  metadata.fontSize,
+              }
+            : {}),
+          ...(typeof metadata.color ===
+          "string"
+            ? {
+                color:
+                  metadata.color,
+              }
+            : {}),
+          ...(typeof metadata.fontFamily ===
+          "string"
+            ? {
+                fontFamily:
+                  metadata.fontFamily,
+              }
+            : {}),
+          ...(typeof metadata.bold ===
+          "boolean"
+            ? {
+                bold:
+                  metadata.bold,
+              }
+            : {}),
+          ...(typeof metadata.underline ===
+          "boolean"
+            ? {
+                underline:
+                  metadata.underline,
+              }
+            : {}),
+        })
+      );
+    };
+
   const patch =
     (
       value:
@@ -2922,11 +3744,11 @@ function HostBlockEditor({
       );
     };
 
-  const handlePaste =
+    const handlePaste =
     (
       event:
         React.ClipboardEvent<
-          HTMLTextAreaElement
+          HTMLDivElement
         >
     ) => {
       const items =
@@ -2956,138 +3778,262 @@ function HostBlockEditor({
           );
 
       if (
-        imageFiles.length ===
+        imageFiles.length >
         0
       ) {
+        event.preventDefault();
+
+        addFiles(
+          imageFiles
+        );
+
+        return;
+      }
+
+      const plainText =
+        event.clipboardData
+          .getData(
+            "text/plain"
+          );
+
+      if (!plainText) {
         return;
       }
 
       event.preventDefault();
 
-      addFiles(
-        imageFiles
+      document.execCommand(
+        "insertText",
+        false,
+        plainText
+      );
+
+      window.requestAnimationFrame(
+        () => {
+          syncRichBlock(
+            activeId
+          );
+
+          rememberSelection(
+            activeId
+          );
+        }
       );
     };
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
       <div className="flex min-h-12 flex-wrap items-center gap-1 border-b border-slate-200 px-2 py-2">
-        <div className="flex h-9 items-center overflow-hidden rounded-lg border border-slate-200 bg-white">
-  <button
-    type="button"
-    disabled={disabled}
-    onClick={() =>
-      patch({
-        fontSize:
-          Math.max(
-            1,
-            Number(
-              active
-                ?.fontSize ||
-                17
-            ) - 1
-          ),
-      })
-    }
-    className="flex h-full w-8 items-center justify-center border-r border-slate-200 text-base font-black text-slate-600 hover:bg-slate-50 disabled:opacity-40"
-    aria-label="글씨 작게"
-  >
-    −
-  </button>
-
-  <input
-    type="number"
-    min={1}
-    max={100}
-    disabled={disabled}
-    value={
-      active?.fontSize ||
-      17
-    }
-    onChange={event =>
-      patch({
-        fontSize:
-          Math.min(
-            100,
-            Math.max(
-              1,
-              Number(
+        
+        <select
+          disabled={
+            disabled
+          }
+          value={
+            selectionStyle.fontFamily
+          }
+          onChange={
+            event => {
+              const fontFamily =
                 event.target
-                  .value
-              ) || 17
+                  .value;
+
+              applyInlineStyle(
+                {
+                  fontFamily,
+                },
+                {
+                  fontFamily,
+                }
+              );
+            }
+          }
+          className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold text-slate-700 outline-none disabled:opacity-40"
+          aria-label="글꼴"
+        >
+          {HOST_FONT_OPTIONS.map(
+            option => (
+              <option
+                key={
+                  option.value
+                }
+                value={
+                  option.value
+                }
+              >
+                {option.label}
+              </option>
             )
-          ),
-      })
-    }
-    className="h-full w-[48px] border-0 bg-white text-center text-xs font-black text-slate-800 outline-none disabled:bg-slate-50"
-  />
+          )}
+        </select>
 
-  <span className="pr-1 text-[10px] font-bold text-slate-400">
-    px
-  </span>
+        <div className="flex h-9 items-center overflow-hidden rounded-lg border border-slate-200 bg-white">
+          <button
+            type="button"
+            disabled={
+              disabled
+            }
+            onClick={() => {
+              const fontSize =
+                Math.max(
+                  1,
+                  Number(
+                    selectionStyle.fontSize ||
+                      17
+                  ) - 1
+                );
 
-  <button
-    type="button"
-    disabled={disabled}
-    onClick={() =>
-      patch({
-        fontSize:
-          Math.min(
-            100,
-            Number(
-              active
-                ?.fontSize ||
-                17
-            ) + 1
-          ),
-      })
-    }
-    className="flex h-full w-8 items-center justify-center border-l border-slate-200 text-base font-black text-slate-600 hover:bg-slate-50 disabled:opacity-40"
-    aria-label="글씨 크게"
-  >
-    +
-  </button>
-</div>
+              applyInlineStyle(
+                {
+                  fontSize:
+                    `${fontSize}px`,
+                },
+                {
+                  fontSize,
+                }
+              );
+            }}
+            className="flex h-full w-8 items-center justify-center border-r border-slate-200 text-base font-black text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+            aria-label="글씨 작게"
+          >
+            −
+          </button>
+
+          <input
+            type="number"
+            min={1}
+            max={100}
+            disabled={
+              disabled
+            }
+            value={
+              selectionStyle.fontSize
+            }
+            onChange={
+              event => {
+                const fontSize =
+                  Math.min(
+                    100,
+                    Math.max(
+                      1,
+                      Number(
+                        event.target
+                          .value
+                      ) || 17
+                    )
+                  );
+
+                applyInlineStyle(
+                  {
+                    fontSize:
+                      `${fontSize}px`,
+                  },
+                  {
+                    fontSize,
+                  }
+                );
+              }
+            }
+            className="h-full w-[48px] border-0 bg-white text-center text-xs font-black text-slate-800 outline-none disabled:bg-slate-50"
+          />
+
+          <span className="pr-1 text-[10px] font-bold text-slate-400">
+            px
+          </span>
+
+          <button
+            type="button"
+            disabled={
+              disabled
+            }
+            onClick={() => {
+              const fontSize =
+                Math.min(
+                  100,
+                  Number(
+                    selectionStyle.fontSize ||
+                      17
+                  ) + 1
+                );
+
+              applyInlineStyle(
+                {
+                  fontSize:
+                    `${fontSize}px`,
+                },
+                {
+                  fontSize,
+                }
+              );
+            }}
+            className="flex h-full w-8 items-center justify-center border-l border-slate-200 text-base font-black text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+            aria-label="글씨 크게"
+          >
+            +
+          </button>
+        </div>
 
         <button
           type="button"
           disabled={
             disabled
           }
-          onClick={() =>
-            patch({
-              bold:
-                !active?.bold,
-            })
-          }
+          onClick={() => {
+            const bold =
+              !selectionStyle.bold;
+
+            applyInlineStyle(
+              {
+                fontWeight:
+                  bold
+                    ? "800"
+                    : "500",
+              },
+              {
+                bold,
+              }
+            );
+          }}
           className={`h-8 min-w-8 rounded-lg px-2 text-sm font-black ${
-            active?.bold
-              ? "bg-slate-900 text-white"
+            selectionStyle.bold
+  ? "bg-slate-900 text-white"
               : "text-slate-700"
           }`}
         >
           B
         </button>
 
-<button
-  type="button"
-  disabled={disabled}
-  onClick={() =>
-    patch({
-      underline:
-        !active?.underline,
-    })
-  }
-  className={`h-8 min-w-8 rounded-lg px-2 text-sm font-black underline ${
-    active?.underline
-      ? "bg-slate-900 text-white"
-      : "text-slate-700"
-  }`}
-  aria-label="밑줄"
-  title="밑줄"
->
-  U
-</button>
+        <button
+          type="button"
+          disabled={
+            disabled
+          }
+          onClick={() => {
+            const underline =
+              !selectionStyle.underline;
+
+            applyInlineStyle(
+              {
+                textDecoration:
+                  underline
+                    ? "underline"
+                    : "none",
+              },
+              {
+                underline,
+              }
+            );
+          }}
+          className={`h-8 min-w-8 rounded-lg px-2 text-sm font-black underline ${
+            selectionStyle.underline
+  ? "bg-slate-900 text-white"
+              : "text-slate-700"
+          }`}
+          aria-label="밑줄"
+          title="밑줄"
+        >
+          U
+        </button>
 
         <button
           type="button"
@@ -3100,7 +4046,12 @@ function HostBlockEditor({
                 "left",
             })
           }
-          className="h-8 min-w-8 rounded-lg px-2 text-sm font-black text-slate-700"
+          className={`h-8 min-w-8 rounded-lg px-2 text-sm font-black ${
+            active?.align ===
+            "left"
+              ? "bg-slate-100 text-slate-950"
+              : "text-slate-700"
+          }`}
         >
           ≡
         </button>
@@ -3116,7 +4067,12 @@ function HostBlockEditor({
                 "center",
             })
           }
-          className="h-8 min-w-8 rounded-lg px-2 text-sm font-black text-slate-700"
+          className={`h-8 min-w-8 rounded-lg px-2 text-sm font-black ${
+            active?.align ===
+            "center"
+              ? "bg-slate-100 text-slate-950"
+              : "text-slate-700"
+          }`}
         >
           ≣
         </button>
@@ -3132,52 +4088,66 @@ function HostBlockEditor({
                 "right",
             })
           }
-          className="h-8 min-w-8 rounded-lg px-2 text-sm font-black text-slate-700"
+          className={`h-8 min-w-8 rounded-lg px-2 text-sm font-black ${
+            active?.align ===
+            "right"
+              ? "bg-slate-100 text-slate-950"
+              : "text-slate-700"
+          }`}
         >
           ≡›
         </button>
 
-<label className="relative flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-extrabold text-slate-700 hover:bg-slate-50">
-  <span
-    className="flex h-5 w-5 items-center justify-center rounded border border-slate-200 font-black"
-    style={{
-      color:
-        active?.color ||
-        "#0f172a",
-    }}
-  >
-    A
-  </span>
+        <label className="relative flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-extrabold text-slate-700 hover:bg-slate-50">
+          <span
+            className="flex h-5 w-5 items-center justify-center rounded border border-slate-200 font-black"
+            style={{
+              color:
+                selectionStyle.color,
+            }}
+          >
+            A
+          </span>
 
-  <span>
-    글자색
-  </span>
+          <span>
+            글자색
+          </span>
 
-  <span
-    className="h-3.5 w-3.5 rounded-full border border-black/10"
-    style={{
-      backgroundColor:
-        active?.color ||
-        "#0f172a",
-    }}
-  />
+          <span
+            className="h-3.5 w-3.5 rounded-full border border-black/10"
+            style={{
+              backgroundColor:
+                selectionStyle.color,
+            }}
+          />
 
-  <input
-    type="color"
-    disabled={disabled}
-    value={
-      active?.color ||
-      "#0f172a"
-    }
-    onChange={event =>
-      patch({
-        color:
-          event.target.value,
-      })
-    }
-    className="absolute inset-0 cursor-pointer opacity-0"
-  />
-</label>
+          <input
+            type="color"
+            disabled={
+              disabled
+            }
+            value={
+              selectionStyle.color
+            }
+            onChange={
+              event => {
+                const color =
+                  event.target
+                    .value;
+
+                applyInlineStyle(
+                  {
+                    color,
+                  },
+                  {
+                    color,
+                  }
+                );
+              }
+            }
+            className="absolute inset-0 cursor-pointer opacity-0"
+          />
+        </label>
 
         <button
           type="button"
@@ -3232,26 +4202,62 @@ function HostBlockEditor({
                 </button>
               </div>
             ) : (
-              <textarea
+                            <div
                 key={
                   block.id
                 }
-                value={
-                  block.text
+                ref={
+                  node => {
+                    editorRefs.current[
+                      block.id
+                    ] =
+                      node;
+                  }
                 }
-                disabled={
-                  disabled
+                contentEditable={
+                  !disabled
                 }
-                onFocus={() =>
+                suppressContentEditableWarning
+                onFocus={() => {
                   setActiveId(
+                    block.id
+                  );
+
+                  window.requestAnimationFrame(
+                    () =>
+                      rememberSelection(
+                        block.id
+                      )
+                  );
+                }}
+                onMouseUp={() =>
+                  rememberSelection(
+                    block.id
+                  )
+                }
+                onKeyUp={() =>
+                  rememberSelection(
                     block.id
                   )
                 }
                 onPaste={
                   handlePaste
                 }
-                onChange={
-                  event =>
+                onInput={
+                  event => {
+                    const editor =
+                      event.currentTarget;
+
+                    const text =
+                      editor.innerText
+                        .replace(
+                          /\u200B/g,
+                          ""
+                        );
+
+                    const html =
+                      editor.innerHTML;
+
                     setBlocks(
                       current =>
                         current.map(
@@ -3262,41 +4268,26 @@ function HostBlockEditor({
                               block.id
                               ? {
                                   ...item,
-                                  text:
-                                    event
-                                      .target
-                                      .value,
+                                  text,
+                                  html,
                                 }
                               : item
                         )
-                    )
+                    );
+                  }
                 }
-                rows={
-                  Math.max(
-                    4,
-                    block.text.split(
-                      "\n"
-                    ).length +
-                      2
-                  )
-                }
-                placeholder="내용을 입력하거나 캡처 이미지를 Ctrl+V로 붙여넣어주세요."
-                className="my-1 w-full resize-none bg-transparent px-1 py-2 font-medium leading-7 outline-none placeholder:text-slate-400"
+                data-placeholder="내용을 입력하거나 캡처 이미지를 Ctrl+V로 붙여넣어주세요."
+                className="my-1 min-h-[112px] w-full whitespace-pre-wrap bg-transparent px-1 py-2 text-[17px] font-medium leading-7 text-slate-900 outline-none empty:before:pointer-events-none empty:before:text-slate-400 empty:before:content-[attr(data-placeholder)]"
                 style={{
                   textAlign:
                     block.align,
-                  fontWeight:
-                    block.bold
-                      ? 800
-                      : 500,
-textDecoration:
-  block.underline
-    ? "underline"
-    : "none",
-                  color:
-                    block.color,
-                  fontSize:
-                    block.fontSize,
+                }}
+                dangerouslySetInnerHTML={{
+                  __html:
+                    block.html ||
+                    escapeHostRichText(
+                      block.text
+                    ),
                 }}
               />
             )
@@ -3462,10 +4453,42 @@ function HostPostBody({
             ) : null;
           }
 
-          if (
+                   if (
             block?.type ===
             "text"
           ) {
+            const richHtml =
+              String(
+                block.html ||
+                ""
+              ).trim();
+
+            if (
+              richHtml
+            ) {
+              return (
+                <div
+                  key={`text-${index}`}
+                  className="whitespace-pre-wrap text-[17px] font-medium leading-8 text-slate-800"
+                  style={{
+                    textAlign:
+                      block.align ===
+                        "center" ||
+                      block.align ===
+                        "right"
+                        ? block.align
+                        : "left",
+                  }}
+                  dangerouslySetInnerHTML={{
+                    __html:
+                      sanitizeHostRichHtml(
+                        richHtml
+                      ),
+                  }}
+                />
+              );
+            }
+
             return (
               <div
                 key={`text-${index}`}
@@ -3480,30 +4503,36 @@ function HostPostBody({
                       : "left",
 
                   fontSize:
-  Math.min(
-    100,
-    Math.max(
-      1,
-      Number(
-        block.fontSize
-      ) || 17
-    )
-  ),
+                    Math.min(
+                      100,
+                      Math.max(
+                        1,
+                        Number(
+                          block.fontSize
+                        ) || 17
+                      )
+                    ),
 
-fontWeight:
-  block.bold
-    ? 800
-    : 500,
+                  fontWeight:
+                    block.bold
+                      ? 800
+                      : 500,
 
-textDecoration:
-  block.underline
-    ? "underline"
-    : "none",
+                  textDecoration:
+                    block.underline
+                      ? "underline"
+                      : "none",
 
                   color:
                     String(
                       block.color ||
                         "#1e293b"
+                    ),
+
+                  fontFamily:
+                    String(
+                      block.fontFamily ||
+                        "inherit"
                     ),
                 }}
               >
@@ -3514,7 +4543,6 @@ textDecoration:
               </div>
             );
           }
-
           return null;
         }
       )}

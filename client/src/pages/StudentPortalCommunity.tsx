@@ -15,11 +15,13 @@ type TextBlock = {
   id: string;
   type: "text";
   text: string;
+  html: string;
   align: "left" | "center" | "right";
   bold: boolean;
   underline: boolean;
   color: string;
   fontSize: number;
+  fontFamily: string;
 };
 type ImageBlock = {
   id: string;
@@ -67,12 +69,300 @@ const newText = (): TextBlock => ({
   id: uid("text"),
   type: "text",
   text: "",
+  html: "",
   align: "left",
   bold: false,
   underline: false,
   color: "#0f172a",
   fontSize: 17,
+  fontFamily: "inherit",
 });
+
+const FONT_OPTIONS = [
+  {
+    label: "기본",
+    value: "inherit",
+  },
+  {
+    label: "맑은 고딕",
+    value: '"Malgun Gothic", sans-serif',
+  },
+  {
+    label: "돋움",
+    value: "Dotum, sans-serif",
+  },
+  {
+    label: "굴림",
+    value: "Gulim, sans-serif",
+  },
+  {
+    label: "바탕",
+    value: "Batang, serif",
+  },
+  {
+    label: "명조",
+    value: "serif",
+  },
+];
+
+function escapeRichText(
+  value: string
+) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;")
+    .replace(/\n/g, "<br>");
+}
+
+function buildLegacyRichHtml(
+  block: any
+) {
+  const text =
+    String(
+      block?.text || ""
+    );
+
+  if (!text) {
+    return "";
+  }
+
+  const fontSize =
+    Math.min(
+      100,
+      Math.max(
+        1,
+        Number(
+          block?.fontSize ||
+            17
+        ) || 17
+      )
+    );
+
+  const color =
+    /^#[0-9a-f]{6}$/i.test(
+      String(
+        block?.color || ""
+      )
+    )
+      ? String(
+          block.color
+        )
+      : "#0f172a";
+
+  const fontFamily =
+    String(
+      block?.fontFamily ||
+        "inherit"
+    );
+
+  return (
+    `<span style="` +
+    `font-size:${fontSize}px;` +
+    `color:${color};` +
+    `font-family:${fontFamily};` +
+    `font-weight:${
+      block?.bold === true
+        ? "800"
+        : "500"
+    };` +
+    `text-decoration:${
+      block?.underline === true
+        ? "underline"
+        : "none"
+    };` +
+    `">` +
+    escapeRichText(
+      text
+    ) +
+    `</span>`
+  );
+}
+
+function sanitizeRichHtml(
+  value: string
+) {
+  if (
+    typeof document ===
+    "undefined"
+  ) {
+    return "";
+  }
+
+  const template =
+    document.createElement(
+      "template"
+    );
+
+  template.innerHTML =
+    String(value || "");
+
+  const allowedTags =
+    new Set([
+      "SPAN",
+      "BR",
+      "DIV",
+      "P",
+      "B",
+      "STRONG",
+      "U",
+    ]);
+
+  const allowedFonts =
+    new Set(
+      FONT_OPTIONS.map(
+        item =>
+          item.value
+      )
+    );
+
+  const elements =
+    Array.from(
+      template.content
+        .querySelectorAll(
+          "*"
+        )
+    );
+
+  elements
+    .reverse()
+    .forEach(
+      element => {
+        if (
+          !allowedTags.has(
+            element.tagName
+          )
+        ) {
+          element.replaceWith(
+            document.createTextNode(
+              element.textContent ||
+                ""
+            )
+          );
+
+          return;
+        }
+
+        Array.from(
+          element.attributes
+        ).forEach(
+          attribute => {
+            if (
+              attribute.name !==
+              "style"
+            ) {
+              element.removeAttribute(
+                attribute.name
+              );
+            }
+          }
+        );
+
+        if (
+          !(
+            element instanceof
+            HTMLElement
+          )
+        ) {
+          return;
+        }
+
+        const originalStyle = {
+          fontSize:
+            element.style.fontSize,
+
+          color:
+            element.style.color,
+
+          fontFamily:
+            element.style.fontFamily,
+
+          fontWeight:
+            element.style.fontWeight,
+
+          textDecoration:
+            element.style
+              .textDecoration,
+        };
+
+        element.removeAttribute(
+          "style"
+        );
+
+        const fontSize =
+          Number.parseFloat(
+            originalStyle.fontSize
+          );
+
+        if (
+          Number.isFinite(
+            fontSize
+          )
+        ) {
+          element.style
+            .fontSize =
+            `${Math.min(
+              100,
+              Math.max(
+                1,
+                fontSize
+              )
+            )}px`;
+        }
+
+        if (
+          originalStyle.color
+        ) {
+          element.style.color =
+            originalStyle.color;
+        }
+
+        if (
+          allowedFonts.has(
+            originalStyle
+              .fontFamily
+          )
+        ) {
+          element.style
+            .fontFamily =
+            originalStyle
+              .fontFamily;
+        }
+
+        if (
+          originalStyle
+            .fontWeight ===
+            "800" ||
+          originalStyle
+            .fontWeight ===
+            "700" ||
+          originalStyle
+            .fontWeight ===
+            "bold"
+        ) {
+          element.style
+            .fontWeight =
+            "800";
+        }
+
+        if (
+          originalStyle
+            .textDecoration
+            .includes(
+              "underline"
+            )
+        ) {
+          element.style
+            .textDecoration =
+            "underline";
+        }
+      }
+    );
+
+  return template.innerHTML;
+}
 
 function buildEditorBlocksFromPost(
   post: any,
@@ -157,7 +447,7 @@ function buildEditorBlocksFromPost(
               };
             }
 
-            if (
+                        if (
               block?.type ===
               "text"
             ) {
@@ -167,6 +457,12 @@ function buildEditorBlocksFromPost(
                     17
                 );
 
+              const text =
+                String(
+                  block.text ||
+                    ""
+                );
+
               return {
                 id:
                   `existing-text-${index}`,
@@ -174,10 +470,15 @@ function buildEditorBlocksFromPost(
                 type:
                   "text",
 
-                text:
+                text,
+
+                html:
                   String(
-                    block.text ||
+                    block.html ||
                       ""
+                  ).trim() ||
+                  buildLegacyRichHtml(
+                    block
                   ),
 
                 align:
@@ -192,9 +493,10 @@ function buildEditorBlocksFromPost(
                   block.bold ===
                   true,
 
-underline:
-  block.underline ===
-  true,
+                underline:
+                  block.underline ===
+                  true,
+
                 color:
                   String(
                     block.color ||
@@ -202,9 +504,23 @@ underline:
                   ),
 
                 fontSize:
-  Number.isFinite(fontSize)
-    ? Math.min(100, Math.max(1, fontSize))
-    : 17,
+                  Number.isFinite(
+                    fontSize
+                  )
+                    ? Math.min(
+                        100,
+                        Math.max(
+                          1,
+                          fontSize
+                        )
+                      )
+                    : 17,
+
+                fontFamily:
+                  String(
+                    block.fontFamily ||
+                      "inherit"
+                  ),
               };
             }
 
@@ -922,10 +1238,42 @@ function Body({
             ) : null;
           }
 
-          if (
+                    if (
             b?.type ===
             "text"
           ) {
+            const richHtml =
+              String(
+                b.html ||
+                ""
+              ).trim();
+
+            if (
+              richHtml
+            ) {
+              return (
+                <div
+                  key={`t-${i}`}
+                  className="whitespace-pre-wrap text-[17px] font-medium leading-8 text-slate-800"
+                  style={{
+                    textAlign:
+                      b.align ===
+                        "center" ||
+                      b.align ===
+                        "right"
+                        ? b.align
+                        : "left",
+                  }}
+                  dangerouslySetInnerHTML={{
+                    __html:
+                      sanitizeRichHtml(
+                        richHtml
+                      ),
+                  }}
+                />
+              );
+            }
+
             return (
               <div
                 key={`t-${i}`}
@@ -965,6 +1313,12 @@ function Body({
                       b.color ||
                         "#1e293b"
                     ),
+
+                  fontFamily:
+                    String(
+                      b.fontFamily ||
+                        "inherit"
+                    ),
                 }}
               >
                 {String(
@@ -973,7 +1327,6 @@ function Body({
               </div>
             );
           }
-
           return null;
         }
       )}
@@ -1317,6 +1670,480 @@ const [
         "image"
     ).length;
 
+  const editorRefs =
+    useRef<
+      Record<
+        string,
+        HTMLDivElement | null
+      >
+    >({});
+
+    const savedRangeRef =
+    useRef<
+      Range | null
+    >(null);
+
+  const [
+    selectionStyle,
+    setSelectionStyle,
+  ] = useState({
+    fontSize: 17,
+    color: "#0f172a",
+    fontFamily: "inherit",
+    bold: false,
+    underline: false,
+  });
+
+  const rgbToHex =
+    (
+      value: string
+    ) => {
+      if (
+        /^#[0-9a-f]{6}$/i.test(
+          value
+        )
+      ) {
+        return value;
+      }
+
+      const match =
+        value.match(
+          /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/
+        );
+
+      if (!match) {
+        return "#0f172a";
+      }
+
+      return `#${[
+        Number(match[1]),
+        Number(match[2]),
+        Number(match[3]),
+      ]
+        .map(value =>
+          Math.max(
+            0,
+            Math.min(
+              255,
+              value
+            )
+          )
+            .toString(16)
+            .padStart(
+              2,
+              "0"
+            )
+        )
+        .join("")}`;
+    };
+
+  const resolveFontFamily =
+    (
+      value: string
+    ) => {
+      const font =
+        String(
+          value || ""
+        ).toLowerCase();
+
+      if (
+        font.includes(
+          "malgun gothic"
+        )
+      ) {
+        return '"Malgun Gothic", sans-serif';
+      }
+
+      if (
+        font.includes(
+          "dotum"
+        )
+      ) {
+        return "Dotum, sans-serif";
+      }
+
+      if (
+        font.includes(
+          "gulim"
+        )
+      ) {
+        return "Gulim, sans-serif";
+      }
+
+      if (
+        font.includes(
+          "batang"
+        )
+      ) {
+        return "Batang, serif";
+      }
+
+      if (
+        font.includes(
+          "serif"
+        ) &&
+        !font.includes(
+          "sans-serif"
+        )
+      ) {
+        return "serif";
+      }
+
+      return "inherit";
+    };
+
+  const readEditorSelectionStyle =
+    (
+      blockId: string,
+      range: Range
+    ) => {
+      const editor =
+        editorRefs.current[
+          blockId
+        ];
+
+      if (!editor) {
+        return;
+      }
+
+      let node:
+        Node | null =
+        range.startContainer;
+
+      if (
+        node.nodeType ===
+        Node.TEXT_NODE
+      ) {
+        node =
+          node.parentNode;
+      }
+
+      const element =
+        node instanceof
+        HTMLElement
+          ? node
+          : editor;
+
+      const target =
+        editor.contains(
+          element
+        )
+          ? element
+          : editor;
+
+      const computed =
+        window.getComputedStyle(
+          target
+        );
+
+      const fontSize =
+        Math.min(
+          100,
+          Math.max(
+            1,
+            Math.round(
+              Number.parseFloat(
+                computed.fontSize
+              ) || 17
+            )
+          )
+        );
+
+      const fontWeight =
+        Number.parseInt(
+          computed.fontWeight,
+          10
+        );
+
+      setSelectionStyle({
+        fontSize,
+
+        color:
+          rgbToHex(
+            computed.color
+          ),
+
+        fontFamily:
+          resolveFontFamily(
+            computed.fontFamily
+          ),
+
+        bold:
+          computed.fontWeight ===
+            "bold" ||
+          (
+            Number.isFinite(
+              fontWeight
+            ) &&
+            fontWeight >= 600
+          ),
+
+        underline:
+          computed.textDecorationLine
+            .includes(
+              "underline"
+            ),
+      });
+    };
+
+  const rememberEditorSelection =
+    (
+      blockId: string
+    ) => {
+      setActiveId(
+        blockId
+      );
+
+      const editor =
+        editorRefs.current[
+          blockId
+        ];
+
+      const selection =
+        window.getSelection();
+
+      if (
+        !editor ||
+        !selection ||
+        selection.rangeCount ===
+          0
+      ) {
+        return;
+      }
+
+      const range =
+        selection.getRangeAt(
+          0
+        );
+
+      if (
+        !editor.contains(
+          range.commonAncestorContainer
+        )
+      ) {
+        return;
+      }
+
+            savedRangeRef.current =
+        range.cloneRange();
+
+      readEditorSelectionStyle(
+        blockId,
+        range
+      );
+    };
+
+  const restoreEditorSelection =
+    () => {
+      const editor =
+        editorRefs.current[
+          activeId
+        ];
+
+      const range =
+        savedRangeRef.current;
+
+      if (
+        !editor ||
+        !range ||
+        !editor.contains(
+          range.commonAncestorContainer
+        )
+      ) {
+        return null;
+      }
+
+      const selection =
+        window.getSelection();
+
+      if (!selection) {
+        return null;
+      }
+
+      editor.focus();
+
+      selection.removeAllRanges();
+
+      selection.addRange(
+        range
+      );
+
+      return {
+        editor,
+        selection,
+        range,
+      };
+    };
+
+  const syncEditorBlock =
+    (
+      blockId: string
+    ) => {
+      const editor =
+        editorRefs.current[
+          blockId
+        ];
+
+      if (!editor) {
+        return;
+      }
+
+      const text =
+        editor.innerText
+          .replace(
+            /\u200B/g,
+            ""
+          );
+
+      const html =
+        editor.innerHTML;
+
+      setBlocks(
+        old =>
+          old.map(
+            b =>
+              b.type ===
+                "text" &&
+              b.id ===
+                blockId
+                ? {
+                    ...b,
+                    text,
+                    html,
+                  }
+                : b
+          )
+      );
+    };
+
+  const applyEditorInlineStyle =
+    (
+      styles:
+        Record<
+          string,
+          string
+        >,
+      metadata:
+        Partial<
+          TextBlock
+        > = {}
+    ) => {
+      const restored =
+        restoreEditorSelection();
+
+      if (
+        !restored ||
+        restored.range
+          .collapsed
+      ) {
+        setErr(
+          "스타일을 변경할 글자를 먼저 드래그해서 선택해주세요."
+        );
+
+        return;
+      }
+
+      setErr(
+        null
+      );
+
+      const {
+        selection,
+        range,
+      } = restored;
+
+      const span =
+        document.createElement(
+          "span"
+        );
+
+      Object.entries(
+        styles
+      ).forEach(
+        ([
+          key,
+          value,
+        ]) => {
+          (
+            span.style as any
+          )[key] =
+            value;
+        }
+      );
+
+      const fragment =
+        range.extractContents();
+
+      span.appendChild(
+        fragment
+      );
+
+      range.insertNode(
+        span
+      );
+
+      const nextRange =
+        document.createRange();
+
+      nextRange.selectNodeContents(
+        span
+      );
+
+      selection.removeAllRanges();
+
+      selection.addRange(
+        nextRange
+      );
+
+      savedRangeRef.current =
+        nextRange.cloneRange();
+
+      syncEditorBlock(
+        activeId
+      );
+
+            setSelectionStyle(
+        current => ({
+          ...current,
+          ...(typeof metadata.fontSize ===
+          "number"
+            ? {
+                fontSize:
+                  metadata.fontSize,
+              }
+            : {}),
+          ...(typeof metadata.color ===
+          "string"
+            ? {
+                color:
+                  metadata.color,
+              }
+            : {}),
+          ...(typeof metadata.fontFamily ===
+          "string"
+            ? {
+                fontFamily:
+                  metadata.fontFamily,
+              }
+            : {}),
+          ...(typeof metadata.bold ===
+          "boolean"
+            ? {
+                bold:
+                  metadata.bold,
+              }
+            : {}),
+          ...(typeof metadata.underline ===
+          "boolean"
+            ? {
+                underline:
+                  metadata.underline,
+              }
+            : {}),
+        })
+      );
+    };
+
   const patch =
     (
       p:
@@ -1440,7 +2267,7 @@ const handleEditorPaste =
   (
     event:
       React.ClipboardEvent<
-        HTMLTextAreaElement
+        HTMLDivElement
       >
   ) => {
     const items =
@@ -1470,16 +2297,46 @@ const handleEditorPaste =
         );
 
     if (
-      imageFiles.length ===
+      imageFiles.length >
       0
     ) {
+      event.preventDefault();
+
+      addFiles(
+        imageFiles
+      );
+
+      return;
+    }
+
+    const plainText =
+      event.clipboardData
+        .getData(
+          "text/plain"
+        );
+
+    if (!plainText) {
       return;
     }
 
     event.preventDefault();
 
-    addFiles(
-      imageFiles
+    document.execCommand(
+      "insertText",
+      false,
+      plainText
+    );
+
+    window.requestAnimationFrame(
+      () => {
+        syncEditorBlock(
+          activeId
+        );
+
+        rememberEditorSelection(
+          activeId
+        );
+      }
     );
   };
 
@@ -1589,6 +2446,9 @@ const handleEditorPaste =
                     text:
                       b.text,
 
+                    html:
+                      b.html,
+
                     align:
                       b.align,
 
@@ -1603,6 +2463,9 @@ underline:
 
                     fontSize:
                       b.fontSize,
+
+                    fontFamily:
+                      b.fontFamily,
                   })
                 ),
           };
@@ -1763,12 +2626,15 @@ underline:
                   };
                 }
 
-                return {
+                                return {
                   type:
                     "text",
 
                   text:
                     b.text,
+
+                  html:
+                    b.html,
 
                   align:
                     b.align,
@@ -1776,14 +2642,17 @@ underline:
                   bold:
                     b.bold,
 
-underline:
-  b.underline,
+                  underline:
+                    b.underline,
 
                   color:
                     b.color,
 
                   fontSize:
                     b.fontSize,
+
+                  fontFamily:
+                    b.fontFamily,
                 };
               }
             ),
@@ -1980,125 +2849,200 @@ deletedAttachmentIds:
 
           <div className="mt-2 overflow-hidden rounded-xl border border-slate-200">
             <div className="flex min-h-12 flex-wrap items-center gap-1 border-b border-slate-200 px-2 py-2">
+                            <select
+                value={
+                  selectionStyle.fontFamily
+                }
+                onChange={
+                  e => {
+                    const fontFamily =
+                      e.target.value;
+
+                    applyEditorInlineStyle(
+                      {
+                        fontFamily,
+                      },
+                      {
+                        fontFamily,
+                      }
+                    );
+                  }
+                }
+                className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-[12px] font-bold text-slate-700 outline-none"
+                aria-label="글꼴"
+              >
+                {FONT_OPTIONS.map(
+                  option => (
+                    <option
+                      key={
+                        option.value
+                      }
+                      value={
+                        option.value
+                      }
+                    >
+                      {option.label}
+                    </option>
+                  )
+                )}
+              </select>
+
               <div className="flex h-9 items-center overflow-hidden rounded-lg border border-slate-200 bg-white">
-  <button
-    type="button"
-    onClick={() =>
-      patch({
-        fontSize:
-          Math.max(
-            1,
-            Number(
-              active
-                ?.fontSize ||
-                17
-            ) - 1
-          ),
-      })
-    }
-    className="flex h-full w-8 items-center justify-center border-r border-slate-200 text-[16px] font-black text-slate-600 active:bg-slate-100"
-    aria-label="글씨 작게"
-  >
-    −
-  </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const fontSize =
+                      Math.max(
+                        1,
+                        Number(
+                          selectionStyle.fontSize ||
+                            17
+                        ) - 1
+                      );
 
-  <input
-    type="number"
-    min={1}
-    max={100}
-    value={
-      active?.fontSize ||
-      17
-    }
-    onChange={e =>
-      patch({
-        fontSize:
-          Math.min(
-            100,
-            Math.max(
-              1,
-              Number(
-                e.target.value
-              ) || 17
-            )
-          ),
-      })
-    }
-    className="h-full w-[48px] border-0 bg-white text-center text-[12px] font-black text-slate-800 outline-none"
-  />
+                    applyEditorInlineStyle(
+                      {
+                        fontSize:
+                          `${fontSize}px`,
+                      },
+                      {
+                        fontSize,
+                      }
+                    );
+                  }}
+                  className="flex h-full w-8 items-center justify-center border-r border-slate-200 text-[16px] font-black text-slate-600 active:bg-slate-100"
+                  aria-label="글씨 작게"
+                >
+                  −
+                </button>
 
-  <span className="pr-1 text-[10px] font-bold text-slate-400">
-    px
-  </span>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={
+                    selectionStyle.fontSize
+                  }
+                  onChange={
+                    e => {
+                      const fontSize =
+                        Math.min(
+                          100,
+                          Math.max(
+                            1,
+                            Number(
+                              e.target
+                                .value
+                            ) || 17
+                          )
+                        );
 
-  <button
-    type="button"
-    onClick={() =>
-      patch({
-        fontSize:
-          Math.min(
-            100,
-            Number(
-              active
-                ?.fontSize ||
-                17
-            ) + 1
-          ),
-      })
-    }
-    className="flex h-full w-8 items-center justify-center border-l border-slate-200 text-[16px] font-black text-slate-600 active:bg-slate-100"
-    aria-label="글씨 크게"
-  >
-    +
-  </button>
-</div>
+                      applyEditorInlineStyle(
+                        {
+                          fontSize:
+                            `${fontSize}px`,
+                        },
+                        {
+                          fontSize,
+                        }
+                      );
+                    }
+                  }
+                  className="h-full w-[48px] border-0 bg-white text-center text-[12px] font-black text-slate-800 outline-none"
+                />
+
+                <span className="pr-1 text-[10px] font-bold text-slate-400">
+                  px
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const fontSize =
+                      Math.min(
+                        100,
+                        Number(
+                          selectionStyle.fontSize ||
+                            17
+                        ) + 1
+                      );
+
+                    applyEditorInlineStyle(
+                      {
+                        fontSize:
+                          `${fontSize}px`,
+                      },
+                      {
+                        fontSize,
+                      }
+                    );
+                  }}
+                  className="flex h-full w-8 items-center justify-center border-l border-slate-200 text-[16px] font-black text-slate-600 active:bg-slate-100"
+                  aria-label="글씨 크게"
+                >
+                  +
+                </button>
+              </div>
 
               <Tool
                 active={
                   Boolean(
-                    active
-                      ?.bold
+                    selectionStyle.bold
                   )
                 }
+                onClick={() => {
+                  const bold =
+                    !selectionStyle.bold;
 
-                onClick={() =>
-                  patch({
-                    bold:
-                      !active
-                        ?.bold,
-                  })
-                }
+                  applyEditorInlineStyle(
+                    {
+                      fontWeight:
+                        bold
+                          ? "800"
+                          : "500",
+                    },
+                    {
+                      bold,
+                    }
+                  );
+                }}
               >
                 B
               </Tool>
 
-<Tool
-  active={
-    Boolean(
-      active
-        ?.underline
-    )
-  }
-  onClick={() =>
-    patch({
-      underline:
-        !active
-          ?.underline,
-    })
-  }
->
-  <span className="underline">
-    U
-  </span>
-</Tool>
+              <Tool
+                active={
+                  Boolean(
+                    selectionStyle.underline
+                  )
+                }
+                onClick={() => {
+                  const underline =
+                    !selectionStyle.underline;
+
+                  applyEditorInlineStyle(
+                    {
+                      textDecoration:
+                        underline
+                          ? "underline"
+                          : "none",
+                    },
+                    {
+                      underline,
+                    }
+                  );
+                }}
+              >
+                <span className="underline">
+                  U
+                </span>
+              </Tool>
 
               <Tool
                 active={
-                  active
-                    ?.align ===
+                  active?.align ===
                   "left"
                 }
-
                 onClick={() =>
                   patch({
                     align:
@@ -2111,11 +3055,9 @@ deletedAttachmentIds:
 
               <Tool
                 active={
-                  active
-                    ?.align ===
+                  active?.align ===
                   "center"
                 }
-
                 onClick={() =>
                   patch({
                     align:
@@ -2128,11 +3070,9 @@ deletedAttachmentIds:
 
               <Tool
                 active={
-                  active
-                    ?.align ===
+                  active?.align ===
                   "right"
                 }
-
                 onClick={() =>
                   patch({
                     align:
@@ -2144,45 +3084,51 @@ deletedAttachmentIds:
               </Tool>
 
               <label className="relative flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 text-[12px] font-extrabold text-slate-700 active:bg-slate-50">
-  <span
-    className="flex h-5 w-5 items-center justify-center rounded border border-slate-200 text-[12px] font-black"
-    style={{
-      color:
-        active?.color ||
-        "#0f172a",
-    }}
-  >
-    A
-  </span>
+                <span
+                  className="flex h-5 w-5 items-center justify-center rounded border border-slate-200 text-[12px] font-black"
+                  style={{
+                    color:
+                      selectionStyle.color,
+                  }}
+                >
+                  A
+                </span>
 
-  <span>
-    글자색
-  </span>
+                <span>
+                  글자색
+                </span>
 
-  <span
-    className="h-3.5 w-3.5 rounded-full border border-black/10"
-    style={{
-      backgroundColor:
-        active?.color ||
-        "#0f172a",
-    }}
-  />
+                <span
+                  className="h-3.5 w-3.5 rounded-full border border-black/10"
+                  style={{
+                    backgroundColor:
+                      selectionStyle.color,
+                  }}
+                />
 
-  <input
-    type="color"
-    value={
-      active?.color ||
-      "#0f172a"
-    }
-    onChange={e =>
-      patch({
-        color:
-          e.target.value,
-      })
-    }
-    className="absolute inset-0 cursor-pointer opacity-0"
-  />
-</label>
+                <input
+                  type="color"
+                  value={
+                    selectionStyle.color
+                  }
+                  onChange={
+                    e => {
+                      const color =
+                        e.target.value;
+
+                      applyEditorInlineStyle(
+                        {
+                          color,
+                        },
+                        {
+                          color,
+                        }
+                      );
+                    }
+                  }
+                  className="absolute inset-0 cursor-pointer opacity-0"
+                />
+              </label>
 
               <button
                 type="button"
@@ -2278,27 +3224,60 @@ deletedAttachmentIds:
 </button>
                     </div>
                   ) : (
-                    <textarea
+                                        <div
                       key={
                         b.id
                       }
-
-                      value={
-                        b.text
+                      ref={
+                        node => {
+                          editorRefs.current[
+                            b.id
+                          ] =
+                            node;
+                        }
                       }
-
-                      onFocus={() =>
+                      contentEditable
+                      suppressContentEditableWarning
+                      onFocus={() => {
                         setActiveId(
+                          b.id
+                        );
+
+                        window.requestAnimationFrame(
+                          () =>
+                            rememberEditorSelection(
+                              b.id
+                            )
+                        );
+                      }}
+                      onMouseUp={() =>
+                        rememberEditorSelection(
                           b.id
                         )
                       }
+                      onKeyUp={() =>
+                        rememberEditorSelection(
+                          b.id
+                        )
+                      }
+                      onPaste={
+                        handleEditorPaste
+                      }
+                      onInput={
+                        e => {
+                          const editor =
+                            e.currentTarget;
 
-onPaste={
-  handleEditorPaste
-}
+                          const text =
+                            editor.innerText
+                              .replace(
+                                /\u200B/g,
+                                ""
+                              );
 
-                      onChange={
-                        e =>
+                          const html =
+                            editor.innerHTML;
+
                           setBlocks(
                             old =>
                               old.map(
@@ -2309,51 +3288,26 @@ onPaste={
                                     b.id
                                     ? {
                                         ...x,
-
-                                        text:
-                                          e
-                                            .target
-                                            .value,
+                                        text,
+                                        html,
                                       }
                                     : x
                               )
-                          )
+                          );
+                        }
                       }
-
-                      rows={
-                        Math.max(
-                          4,
-
-                          b.text.split(
-                            "\n"
-                          ).length +
-                            2
-                        )
-                      }
-
-                      placeholder="궁금한 내용이나 회원들과 나누고 싶은 이야기를 작성해주세요."
-
-                      className="my-1 w-full resize-none bg-transparent px-1 py-2 font-medium leading-7 outline-none placeholder:text-slate-400"
-
+                      data-placeholder="궁금한 내용이나 회원들과 나누고 싶은 이야기를 작성해주세요."
+                      className="my-1 min-h-[112px] w-full whitespace-pre-wrap bg-transparent px-1 py-2 text-[17px] font-medium leading-7 text-slate-900 outline-none empty:before:pointer-events-none empty:before:text-slate-400 empty:before:content-[attr(data-placeholder)]"
                       style={{
                         textAlign:
                           b.align,
-
-                        fontWeight:
-                          b.bold
-                            ? 800
-                            : 500,
-
-textDecoration:
-  b.underline
-    ? "underline"
-    : "none",
-
-                        color:
-                          b.color,
-
-                        fontSize:
-                          b.fontSize,
+                      }}
+                      dangerouslySetInnerHTML={{
+                        __html:
+                          b.html ||
+                          escapeRichText(
+                            b.text
+                          ),
                       }}
                     />
                   )

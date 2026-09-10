@@ -229,13 +229,13 @@ function getPracticeAvailabilityLabel(type?: string | null) {
 function getPracticeAvailabilityBadgeClass(type?: string | null) {
   switch (type) {
     case "weekday":
-      return "border-sky-500/40 bg-sky-500/15 text-sky-300";
+      return "border-sky-200 bg-sky-50 text-sky-700";
     case "weekend":
-      return "border-violet-500/40 bg-violet-500/15 text-violet-300";
+      return "border-violet-200 bg-violet-50 text-violet-700";
     case "both":
-      return "border-emerald-500/40 bg-emerald-500/15 text-emerald-300";
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
     default:
-      return "border-slate-600 bg-slate-700/55 text-slate-300";
+      return "border-slate-200 bg-slate-100 text-slate-700";
   }
 }
 
@@ -264,18 +264,18 @@ function getSelectionStatusBadgeClass(status?: string | null) {
   const value = String(status || "").trim();
 
   if (value.includes("취소")) {
-    return "border-red-500/40 bg-red-500/15 text-red-300";
+    return "border-red-200 bg-red-50 text-red-700";
   }
 
   if (value.includes("정지")) {
-    return "border-amber-500/40 bg-amber-500/15 text-amber-300";
+    return "border-amber-200 bg-amber-50 text-amber-700";
   }
 
   if (value === "정상") {
-    return "border-emerald-500/40 bg-emerald-500/15 text-emerald-300";
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
   }
 
-  return "border-slate-600 bg-slate-700/55 text-slate-300";
+  return "border-slate-200 bg-slate-100 text-slate-700";
 }
 
 function getSelectionValidPeriodText(item: FinderItem) {
@@ -5504,15 +5504,15 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
   className={`relative overflow-hidden rounded-md border transition ${
   isSelected
     ? item.type === "education"
-      ? "border-orange-500 !bg-[#132031] shadow-[inset_3px_0_0_#f97316]"
-      : "border-blue-500 !bg-[#132031] shadow-[inset_3px_0_0_#3b82f6]"
+      ? "border-orange-400 bg-orange-50 shadow-[inset_3px_0_0_#f97316]"
+      : "border-blue-400 bg-blue-50 shadow-[inset_3px_0_0_#3b82f6]"
     : hasConfig
-    ? "border-amber-500/40 !bg-[#151d28]"
-    : "border-slate-800 !bg-[#0f1b2a]"
+      ? "border-amber-300 bg-amber-50"
+      : "border-slate-200 bg-white"
 }`}
 >
   <div
-    className="w-full cursor-pointer px-3 py-3 pr-10 text-left transition hover:bg-white/[0.025]"
+    className="w-full cursor-pointer px-3 py-3 pr-10 text-left transition hover:bg-slate-50"
     onClick={() => setSelectedFinderItem(item)}
   >
                           <button
@@ -5532,7 +5532,7 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
     <label
       className={`absolute right-3 top-12 z-10 inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-semibold shadow-sm ${
         item.isPartner
-          ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-300"
+          ? "border-emerald-500/30 bg-emerald-50 text-emerald-700"
           : "border-slate-700 bg-[#122033] text-slate-400"
       }`}
       onClick={(e) => e.stopPropagation()}
@@ -5562,34 +5562,34 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
                               <span
                                 className={`inline-flex rounded px-2 py-0.5 text-[10px] font-black ${
                                   item.type === "education"
-  ? "bg-orange-500/15 text-orange-300"
-  : "bg-blue-500/15 text-blue-300"
+  ? "bg-orange-50 text-orange-700"
+: "bg-blue-50 text-blue-700"
                                 }`}
                               >
                                 {getTypeLabel(item.type)}
                               </span>
 
-                              <span className="truncate text-[13px] font-black text-slate-100">
+                              <span className="truncate text-[13px] font-black text-slate-900">
                                 {item.name}
                               </span>
 {item.type === "education" && item.isPartner && (
-  <span className="inline-flex rounded bg-emerald-500/15 px-2 py-0.5 text-[10px] font-black text-emerald-300">
-    협약
-  </span>
+  <span className="inline-flex rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-black text-emerald-700">
+  협약
+</span>
 )}
                             </div>
 
                             {hasConfig ? (
                               <div className="space-y-1">
-                                <div className="inline-flex rounded bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-300">
+                                <div className="inline-flex rounded bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">
                                   {inactiveNow ? "현재 비활성화" : "비활성화 설정 있음"}
                                 </div>
-                                <div className="text-[10px] text-amber-300/80">
+                                <div className="text-[10px] font-medium text-amber-700">
                                   {getFinderInactiveText(item)}
                                 </div>
                               </div>
                             ) : (
-                              <div className="text-[10px] font-bold text-emerald-400">사용 가능</div>
+                              <div className="text-[10px] font-bold text-emerald-600">사용 가능</div>
                             )}
 {item.type === "institution" && (
   <div
@@ -5619,7 +5619,7 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
           className={`rounded border px-2 py-0.5 text-[10px] font-bold transition ${
             selected
               ? getPracticeAvailabilityBadgeClass(value)
-              : "border-slate-700 bg-[#122033] text-slate-400 hover:border-slate-600 hover:bg-[#18283d] hover:text-slate-200"
+             : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800"
           }`}
         >
           {label}
@@ -5630,29 +5630,29 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
 )}
 
                             {item.address && (
-                              <div className="flex items-start gap-1.5 text-[10px] text-slate-400">
+                              <div className="flex items-start gap-1.5 text-[10px] font-medium text-slate-600">
                                 <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                                 <span>{item.address}</span>
                               </div>
                             )}
 
                             {item.phone && (
-                              <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                              <div className="flex items-center gap-1.5 text-[10px] font-medium text-slate-600">
                                 <Phone className="h-3.5 w-3.5 shrink-0" />
                                 <span>{formatPhone(item.phone)}</span>
                               </div>
                             )}
 
                             {item.price && (
-                              <div className="text-[10px] text-slate-400">
+                              <div className="text-[10px] font-medium text-slate-600">
                                 금액: {item.price}
                               </div>
                             )}
 
                             {hasSelectionInformation(item) && (
-                              <div className="mt-2 space-y-1 border-t border-slate-700/70 pt-2">
+                              <div className="mt-2 space-y-1 border-t border-slate-200 pt-2">
                                 <div className="flex items-center justify-between gap-3">
-                                  <span className="text-[10px] font-medium text-slate-500">
+                                  <span className="text-[10px] font-semibold text-slate-600">
                                     선정상태
                                   </span>
 
@@ -5669,11 +5669,11 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
 
                                 {getSelectionValidPeriodText(item) && (
                                   <div className="flex items-start justify-between gap-3 text-[11px]">
-                                    <span className="shrink-0 font-medium text-slate-500">
+                                    <span className="shrink-0 font-semibold text-slate-600">
                                       선정유효기간
                                     </span>
 
-                                    <span className="text-right font-bold text-slate-300">
+                                    <span className="text-right font-bold text-slate-700">
                                       {getSelectionValidPeriodText(item)}
                                     </span>
                                   </div>
@@ -5683,13 +5683,13 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
 
                          <div className="flex items-center gap-2">
   {item.distanceKm && item.distanceKm !== "좌표없음" && (
-    <span className="inline-flex rounded text-[10px] font-black text-emerald-400">
+    <span className="inline-flex rounded text-[10px] font-black text-emerald-700">
       거리 {item.distanceKm}km
     </span>
   )}
 
   {item.distanceKm === "좌표없음" && (
-    <span className="inline-flex rounded text-[10px] font-black text-red-400">
+    <span className="inline-flex rounded text-[10px] font-black text-red-600">
       좌표 없음
     </span>
   )}
@@ -5737,8 +5737,8 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
             <span
               className={`inline-flex rounded px-2 py-0.5 text-[10px] font-black ${
                 selectedFinderItem.type === "education"
-                  ? "bg-orange-500/15 text-orange-300"
-                  : "bg-blue-500/15 text-blue-300"
+                  ? "bg-orange-500/15 text-orange-600"
+                  : "bg-blue-500/15 text-blue-600"
               }`}
             >
               {getTypeLabel(selectedFinderItem.type)}
