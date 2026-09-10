@@ -2468,6 +2468,7 @@ const companyLogoUrl =
     }
   />
 </div>
+</div>
 
       <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50 px-6 py-4">
         <button
