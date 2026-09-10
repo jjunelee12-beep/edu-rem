@@ -3476,15 +3476,11 @@ function HostBlockEditor({
       const restored =
         restoreSelection();
 
-      if (
+            if (
         !restored ||
         restored.range
           .collapsed
       ) {
-        window.alert(
-          "스타일을 변경할 글자를 먼저 드래그해서 선택해주세요."
-        );
-
         return;
       }
 
@@ -4207,13 +4203,27 @@ function HostBlockEditor({
                   block.id
                 }
                 ref={
-                  node => {
-                    editorRefs.current[
-                      block.id
-                    ] =
-                      node;
-                  }
-                }
+  node => {
+    editorRefs.current[
+      block.id
+    ] =
+      node;
+
+    if (
+      node &&
+      !node.dataset.initialized
+    ) {
+      node.innerHTML =
+        block.html ||
+        escapeHostRichText(
+          block.text
+        );
+
+      node.dataset.initialized =
+        "true";
+    }
+  }
+}
                 contentEditable={
                   !disabled
                 }
@@ -4281,13 +4291,6 @@ function HostBlockEditor({
                 style={{
                   textAlign:
                     block.align,
-                }}
-                dangerouslySetInnerHTML={{
-                  __html:
-                    block.html ||
-                    escapeHostRichText(
-                      block.text
-                    ),
                 }}
               />
             )

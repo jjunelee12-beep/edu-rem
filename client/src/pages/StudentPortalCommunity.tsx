@@ -2031,15 +2031,11 @@ const [
       const restored =
         restoreEditorSelection();
 
-      if (
+            if (
         !restored ||
         restored.range
           .collapsed
       ) {
-        setErr(
-          "스타일을 변경할 글자를 먼저 드래그해서 선택해주세요."
-        );
-
         return;
       }
 
@@ -3229,13 +3225,27 @@ deletedAttachmentIds:
                         b.id
                       }
                       ref={
-                        node => {
-                          editorRefs.current[
-                            b.id
-                          ] =
-                            node;
-                        }
-                      }
+  node => {
+    editorRefs.current[
+      b.id
+    ] =
+      node;
+
+    if (
+      node &&
+      !node.dataset.initialized
+    ) {
+      node.innerHTML =
+        b.html ||
+        escapeRichText(
+          b.text
+        );
+
+      node.dataset.initialized =
+        "true";
+    }
+  }
+}
                       contentEditable
                       suppressContentEditableWarning
                       onFocus={() => {
@@ -3301,13 +3311,6 @@ deletedAttachmentIds:
                       style={{
                         textAlign:
                           b.align,
-                      }}
-                      dangerouslySetInnerHTML={{
-                        __html:
-                          b.html ||
-                          escapeRichText(
-                            b.text
-                          ),
                       }}
                     />
                   )
