@@ -36,8 +36,9 @@ type HostTextBlock = {
   text: string;
   align: "left" | "center" | "right";
   bold: boolean;
+  underline: boolean;
   color: string;
-  fontSize: 15 | 17 | 20;
+  fontSize: number;
 };
 
 type HostImageBlock = {
@@ -81,8 +82,9 @@ const newHostTextBlock =
     text: "",
     align: "left",
     bold: false,
-    color: "#0f172a",
-    fontSize: 17,
+underline: false,
+color: "#0f172a",
+fontSize: 17,
   });
 
 function checkHostImage(
@@ -216,18 +218,20 @@ function buildHostEditorBlocksFromPost(
                 bold:
                   block.bold ===
                   true,
+
+underline:
+  block.underline ===
+  true,
+
                 color:
                   String(
                     block.color ||
                       "#0f172a"
                   ),
                 fontSize:
-                  fontSize ===
-                    15 ||
-                  fontSize ===
-                    20
-                    ? fontSize
-                    : 17,
+  Number.isFinite(fontSize)
+    ? Math.min(100, Math.max(1, fontSize))
+    : 17,
               };
             }
 
@@ -820,6 +824,8 @@ const uploadHostBlockImages =
                 block.align,
               bold:
                 block.bold,
+underline:
+  block.underline,
               color:
                 block.color,
               fontSize:
@@ -1287,6 +1293,8 @@ try {
                     block.align,
                   bold:
                     block.bold,
+underline:
+  block.underline,
                   color:
                     block.color,
                   fontSize:
@@ -2964,39 +2972,82 @@ function HostBlockEditor({
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
       <div className="flex min-h-12 flex-wrap items-center gap-1 border-b border-slate-200 px-2 py-2">
-        <select
-          value={
-            active
-              ?.fontSize ||
-            17
-          }
-          onChange={event =>
-            patch({
-              fontSize:
-                Number(
-                  event.target
-                    .value
-                ) as
-                  | 15
-                  | 17
-                  | 20,
-            })
-          }
-          disabled={
-            disabled
-          }
-          className="h-8 rounded-lg border border-slate-200 px-2 text-xs font-bold"
-        >
-          <option value={15}>
-            작게
-          </option>
-          <option value={17}>
-            보통
-          </option>
-          <option value={20}>
-            크게
-          </option>
-        </select>
+        <div className="flex h-9 items-center overflow-hidden rounded-lg border border-slate-200 bg-white">
+  <button
+    type="button"
+    disabled={disabled}
+    onClick={() =>
+      patch({
+        fontSize:
+          Math.max(
+            1,
+            Number(
+              active
+                ?.fontSize ||
+                17
+            ) - 1
+          ),
+      })
+    }
+    className="flex h-full w-8 items-center justify-center border-r border-slate-200 text-base font-black text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+    aria-label="글씨 작게"
+  >
+    −
+  </button>
+
+  <input
+    type="number"
+    min={1}
+    max={100}
+    disabled={disabled}
+    value={
+      active?.fontSize ||
+      17
+    }
+    onChange={event =>
+      patch({
+        fontSize:
+          Math.min(
+            100,
+            Math.max(
+              1,
+              Number(
+                event.target
+                  .value
+              ) || 17
+            )
+          ),
+      })
+    }
+    className="h-full w-[48px] border-0 bg-white text-center text-xs font-black text-slate-800 outline-none disabled:bg-slate-50"
+  />
+
+  <span className="pr-1 text-[10px] font-bold text-slate-400">
+    px
+  </span>
+
+  <button
+    type="button"
+    disabled={disabled}
+    onClick={() =>
+      patch({
+        fontSize:
+          Math.min(
+            100,
+            Number(
+              active
+                ?.fontSize ||
+                17
+            ) + 1
+          ),
+      })
+    }
+    className="flex h-full w-8 items-center justify-center border-l border-slate-200 text-base font-black text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+    aria-label="글씨 크게"
+  >
+    +
+  </button>
+</div>
 
         <button
           type="button"
@@ -3017,6 +3068,26 @@ function HostBlockEditor({
         >
           B
         </button>
+
+<button
+  type="button"
+  disabled={disabled}
+  onClick={() =>
+    patch({
+      underline:
+        !active?.underline,
+    })
+  }
+  className={`h-8 min-w-8 rounded-lg px-2 text-sm font-black underline ${
+    active?.underline
+      ? "bg-slate-900 text-white"
+      : "text-slate-700"
+  }`}
+  aria-label="밑줄"
+  title="밑줄"
+>
+  U
+</button>
 
         <button
           type="button"
@@ -3065,6 +3136,48 @@ function HostBlockEditor({
         >
           ≡›
         </button>
+
+<label className="relative flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-extrabold text-slate-700 hover:bg-slate-50">
+  <span
+    className="flex h-5 w-5 items-center justify-center rounded border border-slate-200 font-black"
+    style={{
+      color:
+        active?.color ||
+        "#0f172a",
+    }}
+  >
+    A
+  </span>
+
+  <span>
+    글자색
+  </span>
+
+  <span
+    className="h-3.5 w-3.5 rounded-full border border-black/10"
+    style={{
+      backgroundColor:
+        active?.color ||
+        "#0f172a",
+    }}
+  />
+
+  <input
+    type="color"
+    disabled={disabled}
+    value={
+      active?.color ||
+      "#0f172a"
+    }
+    onChange={event =>
+      patch({
+        color:
+          event.target.value,
+      })
+    }
+    className="absolute inset-0 cursor-pointer opacity-0"
+  />
+</label>
 
         <button
           type="button"
@@ -3176,6 +3289,10 @@ function HostBlockEditor({
                     block.bold
                       ? 800
                       : 500,
+textDecoration:
+  block.underline
+    ? "underline"
+    : "none",
                   color:
                     block.color,
                   fontSize:
@@ -3363,18 +3480,25 @@ function HostPostBody({
                       : "left",
 
                   fontSize:
-                    block.fontSize ===
-                    15
-                      ? 15
-                      : block.fontSize ===
-                          20
-                        ? 20
-                        : 17,
+  Math.min(
+    100,
+    Math.max(
+      1,
+      Number(
+        block.fontSize
+      ) || 17
+    )
+  ),
 
-                  fontWeight:
-                    block.bold
-                      ? 800
-                      : 500,
+fontWeight:
+  block.bold
+    ? 800
+    : 500,
+
+textDecoration:
+  block.underline
+    ? "underline"
+    : "none",
 
                   color:
                     String(

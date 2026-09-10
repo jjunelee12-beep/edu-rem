@@ -11,7 +11,16 @@ type View =
   | "profileEdit"
   | "onboarding";
 type ProfileSection = "posts" | "comments" | "bookmarks";
-type TextBlock = { id:string; type:"text"; text:string; align:"left"|"center"|"right"; bold:boolean; color:string; fontSize:15|17|20 };
+type TextBlock = {
+  id: string;
+  type: "text";
+  text: string;
+  align: "left" | "center" | "right";
+  bold: boolean;
+  underline: boolean;
+  color: string;
+  fontSize: number;
+};
 type ImageBlock = {
   id: string;
   type: "image";
@@ -54,7 +63,16 @@ const IMAGE_TYPES = new Set(["image/jpeg","image/png","image/webp","image/gif"])
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const MAX_IMAGES = 10;
 const uid = (p:string) => `${p}-${Date.now()}-${Math.random().toString(36).slice(2,9)}`;
-const newText = ():TextBlock => ({ id:uid("text"), type:"text", text:"", align:"left", bold:false, color:"#0f172a", fontSize:17 });
+const newText = (): TextBlock => ({
+  id: uid("text"),
+  type: "text",
+  text: "",
+  align: "left",
+  bold: false,
+  underline: false,
+  color: "#0f172a",
+  fontSize: 17,
+});
 
 function buildEditorBlocksFromPost(
   post: any,
@@ -174,6 +192,9 @@ function buildEditorBlocksFromPost(
                   block.bold ===
                   true,
 
+underline:
+  block.underline ===
+  true,
                 color:
                   String(
                     block.color ||
@@ -181,10 +202,9 @@ function buildEditorBlocksFromPost(
                   ),
 
                 fontSize:
-                  fontSize === 15 ||
-                  fontSize === 20
-                    ? fontSize
-                    : 17,
+  Number.isFinite(fontSize)
+    ? Math.min(100, Math.max(1, fontSize))
+    : 17,
               };
             }
 
@@ -823,10 +843,142 @@ onEdit,
 );
 }
 
-function Body({post,attachments}:{post:any;attachments:any[]}) {
-  const map=useMemo(()=>new Map(attachments.map((a:any)=>[Number(a.id),a])),[attachments]); const blocks=Array.isArray(post.contentData?.blocks)?post.contentData.blocks:null;
-  if(!blocks?.length) return <div className="py-6"><div className="whitespace-pre-wrap text-[16px] font-medium leading-8 text-slate-800">{post.content}</div>{attachments.length?<div className="mt-5 space-y-3">{attachments.map((a:any)=><img key={a.id} src={a.url} alt="" className="w-full rounded-xl object-cover"/>)}</div>:null}</div>;
-  return <div className="space-y-4 py-6">{blocks.map((b:any,i:number)=>{if(b?.type==="image"){const a=map.get(Number(b.attachmentId||0));return a?.url?<img key={`i-${i}`} src={a.url} alt="" className="w-full rounded-xl object-cover"/>:null;} if(b?.type==="text") return <div key={`t-${i}`} className="whitespace-pre-wrap leading-8" style={{textAlign:b.align==="center"||b.align==="right"?b.align:"left",fontSize:b.fontSize===15?15:b.fontSize===20?20:17,fontWeight:b.bold?800:500,color:String(b.color||"#1e293b")}}>{String(b.text||"")}</div>;return null;})}</div>;
+function Body({
+  post,
+  attachments,
+}: {
+  post: any;
+  attachments: any[];
+}) {
+  const map = useMemo(
+    () =>
+      new Map(
+        attachments.map((a: any) => [
+          Number(a.id),
+          a,
+        ])
+      ),
+    [attachments]
+  );
+
+  const blocks =
+    Array.isArray(
+      post.contentData?.blocks
+    )
+      ? post.contentData.blocks
+      : null;
+
+  if (!blocks?.length) {
+    return (
+      <div className="py-6">
+        <div className="whitespace-pre-wrap text-[16px] font-medium leading-8 text-slate-800">
+          {post.content}
+        </div>
+
+        {attachments.length ? (
+          <div className="mt-5 space-y-3">
+            {attachments.map(
+              (a: any) => (
+                <img
+                  key={a.id}
+                  src={a.url}
+                  alt=""
+                  className="w-full rounded-xl object-cover"
+                />
+              )
+            )}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4 py-6">
+      {blocks.map(
+        (
+          b: any,
+          i: number
+        ) => {
+          if (
+            b?.type ===
+            "image"
+          ) {
+            const a =
+              map.get(
+                Number(
+                  b.attachmentId ||
+                    0
+                )
+              );
+
+            return a?.url ? (
+              <img
+                key={`i-${i}`}
+                src={a.url}
+                alt=""
+                className="w-full rounded-xl object-cover"
+              />
+            ) : null;
+          }
+
+          if (
+            b?.type ===
+            "text"
+          ) {
+            return (
+              <div
+                key={`t-${i}`}
+                className="whitespace-pre-wrap leading-8"
+                style={{
+                  textAlign:
+                    b.align ===
+                      "center" ||
+                    b.align ===
+                      "right"
+                      ? b.align
+                      : "left",
+
+                  fontSize:
+                    Math.min(
+                      100,
+                      Math.max(
+                        1,
+                        Number(
+                          b.fontSize
+                        ) || 17
+                      )
+                    ),
+
+                  fontWeight:
+                    b.bold
+                      ? 800
+                      : 500,
+
+                  textDecoration:
+                    b.underline
+                      ? "underline"
+                      : "none",
+
+                  color:
+                    String(
+                      b.color ||
+                        "#1e293b"
+                    ),
+                }}
+              >
+                {String(
+                  b.text || ""
+                )}
+              </div>
+            );
+          }
+
+          return null;
+        }
+      )}
+    </div>
+  );
 }
 
 function Comment({
@@ -1443,6 +1595,9 @@ const handleEditorPaste =
                     bold:
                       b.bold,
 
+underline:
+  b.underline,
+
                     color:
                       b.color,
 
@@ -1620,6 +1775,9 @@ const handleEditorPaste =
 
                   bold:
                     b.bold,
+
+underline:
+  b.underline,
 
                   color:
                     b.color,
@@ -1822,40 +1980,78 @@ deletedAttachmentIds:
 
           <div className="mt-2 overflow-hidden rounded-xl border border-slate-200">
             <div className="flex min-h-12 flex-wrap items-center gap-1 border-b border-slate-200 px-2 py-2">
-              <select
-                value={
-                  active
-                    ?.fontSize ||
-                  17
-                }
+              <div className="flex h-9 items-center overflow-hidden rounded-lg border border-slate-200 bg-white">
+  <button
+    type="button"
+    onClick={() =>
+      patch({
+        fontSize:
+          Math.max(
+            1,
+            Number(
+              active
+                ?.fontSize ||
+                17
+            ) - 1
+          ),
+      })
+    }
+    className="flex h-full w-8 items-center justify-center border-r border-slate-200 text-[16px] font-black text-slate-600 active:bg-slate-100"
+    aria-label="글씨 작게"
+  >
+    −
+  </button>
 
-                onChange={
-                  e =>
-                    patch({
-                      fontSize:
-                        Number(
-                          e.target.value
-                        ) as
-                          | 15
-                          | 17
-                          | 20,
-                    })
-                }
+  <input
+    type="number"
+    min={1}
+    max={100}
+    value={
+      active?.fontSize ||
+      17
+    }
+    onChange={e =>
+      patch({
+        fontSize:
+          Math.min(
+            100,
+            Math.max(
+              1,
+              Number(
+                e.target.value
+              ) || 17
+            )
+          ),
+      })
+    }
+    className="h-full w-[48px] border-0 bg-white text-center text-[12px] font-black text-slate-800 outline-none"
+  />
 
-                className="h-8 rounded-lg border border-slate-200 px-2 text-[12px] font-bold"
-              >
-                <option value={15}>
-                  작게
-                </option>
+  <span className="pr-1 text-[10px] font-bold text-slate-400">
+    px
+  </span>
 
-                <option value={17}>
-                  보통
-                </option>
-
-                <option value={20}>
-                  크게
-                </option>
-              </select>
+  <button
+    type="button"
+    onClick={() =>
+      patch({
+        fontSize:
+          Math.min(
+            100,
+            Number(
+              active
+                ?.fontSize ||
+                17
+            ) + 1
+          ),
+      })
+    }
+    className="flex h-full w-8 items-center justify-center border-l border-slate-200 text-[16px] font-black text-slate-600 active:bg-slate-100"
+    aria-label="글씨 크게"
+  >
+    +
+  </button>
+</div>
 
               <Tool
                 active={
@@ -1875,6 +2071,26 @@ deletedAttachmentIds:
               >
                 B
               </Tool>
+
+<Tool
+  active={
+    Boolean(
+      active
+        ?.underline
+    )
+  }
+  onClick={() =>
+    patch({
+      underline:
+        !active
+          ?.underline,
+    })
+  }
+>
+  <span className="underline">
+    U
+  </span>
+</Tool>
 
               <Tool
                 active={
@@ -1927,41 +2143,46 @@ deletedAttachmentIds:
                 ≡›
               </Tool>
 
-              <label className="relative flex h-8 w-8 cursor-pointer items-center justify-center font-black">
-                A
+              <label className="relative flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 text-[12px] font-extrabold text-slate-700 active:bg-slate-50">
+  <span
+    className="flex h-5 w-5 items-center justify-center rounded border border-slate-200 text-[12px] font-black"
+    style={{
+      color:
+        active?.color ||
+        "#0f172a",
+    }}
+  >
+    A
+  </span>
 
-                <span
-                  className="absolute bottom-1 left-2 right-2 h-0.5"
+  <span>
+    글자색
+  </span>
 
-                  style={{
-                    backgroundColor:
-                      active
-                        ?.color ||
-                      "#0f172a",
-                  }}
-                />
+  <span
+    className="h-3.5 w-3.5 rounded-full border border-black/10"
+    style={{
+      backgroundColor:
+        active?.color ||
+        "#0f172a",
+    }}
+  />
 
-                <input
-                  type="color"
-
-                  value={
-                    active
-                      ?.color ||
-                    "#0f172a"
-                  }
-
-                  onChange={
-                    e =>
-                      patch({
-                        color:
-                          e.target
-                            .value,
-                      })
-                  }
-
-                  className="absolute inset-0 opacity-0"
-                />
-              </label>
+  <input
+    type="color"
+    value={
+      active?.color ||
+      "#0f172a"
+    }
+    onChange={e =>
+      patch({
+        color:
+          e.target.value,
+      })
+    }
+    className="absolute inset-0 cursor-pointer opacity-0"
+  />
+</label>
 
               <button
                 type="button"
@@ -2122,6 +2343,11 @@ onPaste={
                           b.bold
                             ? 800
                             : 500,
+
+textDecoration:
+  b.underline
+    ? "underline"
+    : "none",
 
                         color:
                           b.color,
