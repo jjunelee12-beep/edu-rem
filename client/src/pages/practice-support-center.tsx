@@ -2515,11 +2515,11 @@ practiceAvailabilityType:
       <button
         type="button"
         onClick={() => onChange(!checked)}
-        className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition ${
-          checked
-            ? activeClassName
-            : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
-        }`}
+        className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-sm font-bold transition ${
+  checked
+    ? activeClassName
+    : "border-slate-700 bg-[#121c29] text-slate-400 hover:border-slate-600 hover:bg-[#182331]"
+}`}
       >
         <span
           className={`h-2.5 w-2.5 rounded-full ${
@@ -5215,32 +5215,37 @@ useEffect(() => {
     aria-describedby="practice-finder-desc"
     className="h-screen w-screen max-w-none overflow-hidden rounded-none border-0 p-0 gap-0 sm:max-w-none"
   >
-    <DialogHeader className="border-b bg-white px-6 pt-5 pb-4">
-            <DialogTitle className="text-lg font-semibold">실습찾기</DialogTitle>
+    <DialogHeader className="border-b border-slate-800 bg-[#0b111b] px-6 pt-5 pb-4 text-white">
+            <DialogTitle className="text-lg font-black tracking-[-0.02em] text-white">
+  실습찾기
+</DialogTitle>
             <DialogDescription
               id="practice-finder-desc"
-              className="text-sm text-muted-foreground"
+              className="text-sm text-slate-400"
             >
               학생 주소 기준으로 가까운 실습교육원 / 실습기관을 검색합니다.
             </DialogDescription>
           </DialogHeader>
 
 <div className="flex h-[calc(100vh-72px)]">
-  <div className="flex w-[460px] min-w-[460px] flex-col border-r bg-white">
-              <div className="space-y-4 border-b p-4">
+  <div className="flex w-[460px] min-w-[460px] flex-col border-r border-slate-800 bg-[#0b111b] text-white">
+              <div className="space-y-2.5 border-b border-slate-800 p-4">
                 <div className="space-y-1">
-                  <Label className="text-xs">주소 검색</Label>
+                  <Label className="text-xs font-bold text-slate-300">
+  주소 검색
+</Label>
                   <div className="flex gap-2">
                     <Input
-                      placeholder="예: 서울 도봉구 방학동..."
-                      value={finderAddress}
-                      onChange={(e) => setFinderAddress(e.target.value)}
-                    />
+  placeholder="예: 서울 도봉구 방학동..."
+  value={finderAddress}
+  onChange={(e) => setFinderAddress(e.target.value)}
+  className="border-slate-700 bg-[#111a27] text-white placeholder:text-slate-500 focus-visible:ring-emerald-500"
+/>
                     <Button
-                      onClick={handleFinderSearch}
-                      className="shrink-0"
-                      disabled={isFinderSearching}
-                    >
+  onClick={handleFinderSearch}
+  className="shrink-0 bg-emerald-600 font-bold text-white hover:bg-emerald-500"
+  disabled={isFinderSearching}
+>
                       {isFinderSearching ? "검색중" : "검색"}
                     </Button>
                   </div>
@@ -5257,7 +5262,7 @@ useEffect(() => {
     }
   }}
                     label="실습교육원"
-                    activeClassName="bg-blue-50 text-blue-700 border-blue-200"
+activeClassName="border-orange-500 bg-orange-500/15 text-orange-400"
                   />
 
                   <FinderTypeToggle
@@ -5271,15 +5276,15 @@ setFinderPracticeAvailabilityFilter("전체");
     }
   }}
                     label="실습기관"
-                    activeClassName="bg-orange-50 text-orange-700 border-orange-200"
+activeClassName="border-blue-500 bg-blue-500/15 text-blue-400"
                   />
                 </div>
 
-<div className="space-y-3">
+<div className="space-y-1.5">
   {finderIncludeEducationCenter && (
     <div className="space-y-2">
-      <div className="text-xs font-medium text-muted-foreground">
-        실습교육원 리스트 선택 (전체 선택 시 모든 교육원 리스트가 함께 검색됩니다)
+      <div className="text-[11px] font-bold text-slate-400">
+        교육원
       </div>
       <div className="flex flex-wrap gap-2">
 {educationCategories.length === 0 && (
@@ -5293,8 +5298,8 @@ setFinderPracticeAvailabilityFilter("전체");
   size="sm"
   className={
     finderEducationCategoryId === null
-      ? "bg-blue-600 hover:bg-blue-700 text-white border-blue-600"
-      : "border-blue-200 text-blue-700 hover:bg-blue-50"
+      ? "border-orange-500 bg-orange-500 text-white hover:bg-orange-600"
+: "border-slate-700 bg-[#121c29] text-slate-300 hover:border-orange-500 hover:text-orange-400"
   }
   onClick={() => {
     setFinderEducationCategoryId(null);
@@ -5316,8 +5321,8 @@ const isRecommended = Number(finderRecommendedEducationCategoryId) === Number(ca
       size="sm"
       className={
         isSelected
-          ? "bg-blue-600 hover:bg-blue-700 text-white border-blue-600"
-          : "border-blue-200 text-blue-700 hover:bg-blue-50"
+          ? "border-orange-500 bg-orange-500 text-white hover:bg-orange-600"
+: "border-slate-700 bg-[#121c29] text-slate-300 hover:border-orange-500 hover:text-orange-400"
       }
       onClick={() => setFinderEducationCategoryId(cat.id)}
     >
@@ -5337,12 +5342,12 @@ const isRecommended = Number(finderRecommendedEducationCategoryId) === Number(ca
   {finderIncludePracticeInstitution && (
     <div className="space-y-2">
       <div className="text-xs font-medium text-muted-foreground">
-        실습기관 리스트 선택 (전체 선택 시 모든 기관 리스트가 함께 검색됩니다)
+        실습기관
       </div>
 {finderIncludePracticeInstitution && (
   <div className="space-y-2">
     <div className="text-xs font-medium text-muted-foreground">
-      실습 가능 유형 필터
+      실습유형
     </div>
 
     <div className="flex flex-wrap gap-2">
@@ -5363,8 +5368,8 @@ const isRecommended = Number(finderRecommendedEducationCategoryId) === Number(ca
             size="sm"
             className={
               selected
-                ? "bg-slate-800 text-white hover:bg-slate-900"
-                : "border-slate-200 text-slate-700 hover:bg-slate-50"
+                ? "border-emerald-500 bg-emerald-600 text-white hover:bg-emerald-500"
+: "border-slate-700 bg-[#121c29] text-slate-300 hover:border-slate-500 hover:bg-[#182331]"
             }
             onClick={() => setFinderPracticeAvailabilityFilter(value)}
           >
@@ -5387,8 +5392,8 @@ const isRecommended = Number(finderRecommendedEducationCategoryId) === Number(ca
   size="sm"
   className={
     finderInstitutionCategoryId === null
-      ? "bg-orange-500 hover:bg-orange-600 text-white border-orange-500"
-      : "border-orange-200 text-orange-700 hover:bg-orange-50"
+      ? "border-blue-500 bg-blue-600 text-white hover:bg-blue-500"
+: "border-slate-700 bg-[#121c29] text-slate-300 hover:border-blue-500 hover:text-blue-400"
   }
   onClick={() => {
     setFinderInstitutionCategoryId(null);
@@ -5410,8 +5415,8 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
       size="sm"
       className={
         isSelected
-          ? "bg-orange-500 hover:bg-orange-600 text-white border-orange-500"
-          : "border-orange-200 text-orange-700 hover:bg-orange-50"
+         ? "border-blue-500 bg-blue-600 text-white hover:bg-blue-500"
+: "border-slate-700 bg-[#121c29] text-slate-300 hover:border-blue-500 hover:text-blue-400"
       }
       onClick={() => setFinderInstitutionCategoryId(cat.id)}
     >
@@ -5443,12 +5448,12 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
 ) : null}
 
                 {finderSearchPoint && (
-                  <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-3 text-xs">
+                  <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5 text-xs">
                     <div className="flex items-center gap-2 font-medium text-green-700">
                       <CheckCircle2 className="h-4 w-4" />
                       검색 기준 주소
                     </div>
-                    <div className="mt-1 text-gray-700">
+                    <div className="mt-1 font-semibold text-slate-200">
                       {finderResolvedAddress || finderAddress}
                     </div>
                     <div className="mt-1 text-[11px] text-green-700">
@@ -5458,15 +5463,23 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
                 )}
               </div>
 
-              <div className="border-b px-4 py-3 text-sm">
-                <div className="font-medium">검색 결과</div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  왼쪽 리스트는 최대 100건까지 표시되고, 비활성 기관도 남아있지만
-                  지도에서는 비활성 기간 동안 숨길 수 있습니다.
-                </div>
+              <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+                <div className="flex items-center gap-2">
+  <div className="text-base font-black text-white">
+    검색 결과
+  </div>
+
+  <span className="text-xs font-bold text-slate-500">
+    총 {finderResults.length}개
+  </span>
+</div>
+
+<div className="text-xs font-bold text-slate-400">
+  거리순
+</div>
               </div>
 
-              <div className="min-h-0 flex-1 overflow-y-auto">
+              <div className="min-h-0 flex-1 overflow-y-auto bg-[#0b111b] p-2">
                 {finderResults.length === 0 ? (
                   <div className="p-4 text-sm text-muted-foreground">
                     <div className="rounded-lg border bg-muted/30 p-4 leading-6">
@@ -5477,7 +5490,7 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
                     </div>
                   </div>
                 ) : (
-                  <div className="divide-y">
+                  <div className="space-y-2">
                     {finderResults.map((item) => {
                       const isSelected =
                         String(selectedFinderItem?.id || "") === String(item.id);
@@ -5487,22 +5500,18 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
                       return (
   <div
   key={`${item.type}-${item.id}`}
-  className={`relative border-l-4 ${
+  className={`relative overflow-hidden rounded-xl border transition ${
   isSelected
     ? item.type === "education"
-      ? item.isPartner
-        ? "border-l-emerald-500 bg-emerald-50"
-        : "border-l-blue-500 bg-blue-50"
-      : "border-l-orange-500 bg-orange-50"
-    : item.type === "education" && item.isPartner
-    ? "border-l-emerald-400 bg-emerald-50/70"
+      ? "border-orange-500 bg-orange-500/10"
+      : "border-blue-500 bg-blue-500/10"
     : hasConfig
-    ? "border-l-yellow-400 bg-yellow-50/80"
-    : "border-l-transparent"
+    ? "border-yellow-500/40 bg-yellow-500/5"
+    : "border-slate-800 bg-[#121c29]"
 }`}
 >
   <div
-    className="w-full cursor-pointer p-4 pr-10 text-left transition hover:bg-slate-50"
+    className="w-full cursor-pointer p-4 pr-10 text-left transition hover:bg-white/[0.03]"
     onClick={() => setSelectedFinderItem(item)}
   >
                           <button
@@ -5552,14 +5561,14 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
                               <span
                                 className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
                                   item.type === "education"
-                                    ? "bg-blue-100 text-blue-700"
-                                    : "bg-orange-100 text-orange-700"
+  ? "bg-orange-500/15 text-orange-400"
+  : "bg-blue-500/15 text-blue-400"
                                 }`}
                               >
                                 {getTypeLabel(item.type)}
                               </span>
 
-                              <span className="truncate font-medium">
+                              <span className="truncate font-bold text-white">
                                 {item.name}
                               </span>
 {item.type === "education" && item.isPartner && (
@@ -5620,14 +5629,14 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
 )}
 
                             {item.address && (
-                              <div className="flex items-start gap-2 text-xs text-muted-foreground">
+                              <div className="flex items-start gap-2 text-xs text-slate-400">
                                 <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                                 <span>{item.address}</span>
                               </div>
                             )}
 
                             {item.phone && (
-                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <div className="flex items-center gap-2 text-xs text-slate-400">
                                 <Phone className="h-3.5 w-3.5 shrink-0" />
                                 <span>{formatPhone(item.phone)}</span>
                               </div>
@@ -5693,118 +5702,6 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
                 )}
               </div>
 
-              <div className="border-t p-4 space-y-3">
-                {selectedFinderItem && (
-                  <div className="rounded-lg border bg-muted/20 p-3 text-xs">
-                    <div className="mb-1 font-medium">선택된 기관</div>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                          selectedFinderItem.type === "education"
-                            ? "bg-blue-100 text-blue-700"
-                            : "bg-orange-100 text-orange-700"
-                        }`}
-                      >
-                        {getTypeLabel(selectedFinderItem.type)}
-                      </span>
-                      <span>{selectedFinderItem.name}</span>
-{selectedFinderItem.type === "education" && selectedFinderItem.isPartner && (
-  <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
-    협약교육원
-  </span>
-)}
-                    </div>
-                   <div className="mt-2">
-  {selectedFinderItem.distanceKm &&
-    selectedFinderItem.distanceKm !== "좌표없음" && (
-      <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-        거리 {selectedFinderItem.distanceKm}km
-      </span>
-    )}
-
-  {selectedFinderItem.distanceKm === "좌표없음" && (
-    <span className="inline-flex rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600">
-      좌표 없음
-    </span>
-  )}
-</div>
-
-                    {hasSelectionInformation(selectedFinderItem) && (
-                      <div className="mt-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-[11px] font-medium text-slate-500">
-                            선정상태
-                          </span>
-
-                          <span
-                            className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${getSelectionStatusBadgeClass(
-                              selectedFinderItem.selectionStatus
-                            )}`}
-                          >
-                            {getSelectionStatusLabel(
-                              selectedFinderItem.selectionStatus
-                            )}
-                          </span>
-                        </div>
-
-                        {getSelectionValidPeriodText(
-                          selectedFinderItem
-                        ) && (
-                          <div className="mt-1.5 flex items-start justify-between gap-3 text-[11px]">
-                            <span className="shrink-0 font-medium text-slate-500">
-                              선정유효기간
-                            </span>
-
-                            <span className="text-right font-medium text-slate-700">
-                              {getSelectionValidPeriodText(
-                                selectedFinderItem
-                              )}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {hasFinderInactiveConfig(selectedFinderItem) && (
-                      <div className="mt-2 text-yellow-700">
-                        {getFinderInactiveText(selectedFinderItem)}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    className="flex-1"
-                    onClick={() => setFinderOpen(false)}
-                  >
-                    닫기
-                  </Button>
-
-                  <Button
-  className="flex-1"
-  onClick={applyFinderSelectionToDetail}
-  disabled={
-    !selectedFinderItem ||
-    !hasFinderApplyTarget ||
-    updatePracticeSupportMut.isPending ||
-    (selectedFinderItem
-      ? isFinderItemInactiveNow(selectedFinderItem)
-      : false)
-  }
->
-  선택 반영
-</Button>
-                </div>
-{!hasFinderApplyTarget ? (
-  <p className="mt-2 text-xs text-muted-foreground">
-    상단 실습검색은 검색 전용입니다. 학생별 반영은 요청 리스트의 “실습찾기” 버튼을 이용해주세요.
-  </p>
-) : null}
-              </div>
-            </div>
-
             <div className="relative flex-1 overflow-hidden bg-slate-100">
               <div className="h-full w-full">
                 <KakaoMap
@@ -5824,6 +5721,114 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
                   onSelectResult={(item: FinderItem) => setSelectedFinderItem(item)}
                 />
               </div>
+
+{selectedFinderItem ? (
+  <div className="absolute right-5 top-5 z-20 w-[390px] overflow-hidden rounded-2xl border border-slate-700 bg-[#0b111b]/95 text-white shadow-2xl backdrop-blur">
+    <div className="border-b border-slate-800 bg-gradient-to-r from-[#111d2b] to-[#0b111b] px-5 py-4">
+      <div className="text-xs font-black text-slate-400">
+        선택된 기관
+      </div>
+
+      <div className="mt-3 flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-black ${
+                selectedFinderItem.type === "education"
+                  ? "bg-orange-500/15 text-orange-400"
+                  : "bg-blue-500/15 text-blue-400"
+              }`}
+            >
+              {getTypeLabel(selectedFinderItem.type)}
+            </span>
+
+            {selectedFinderItem.type === "education" &&
+            selectedFinderItem.isPartner ? (
+              <span className="inline-flex rounded-full bg-emerald-500/15 px-2.5 py-1 text-[11px] font-black text-emerald-400">
+                협약교육원
+              </span>
+            ) : null}
+          </div>
+
+          <div className="mt-2 truncate text-xl font-black tracking-[-0.03em]">
+            {selectedFinderItem.name}
+          </div>
+        </div>
+
+        {selectedFinderItem.distanceKm &&
+        selectedFinderItem.distanceKm !== "좌표없음" ? (
+          <div
+            className={`shrink-0 text-base font-black ${
+              selectedFinderItem.type === "education"
+                ? "text-orange-400"
+                : "text-blue-400"
+            }`}
+          >
+            {selectedFinderItem.distanceKm}km
+          </div>
+        ) : null}
+      </div>
+    </div>
+
+    <div className="space-y-2 px-5 py-4">
+      {selectedFinderItem.address ? (
+        <div className="flex items-start gap-2 text-sm text-slate-300">
+          <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+          <span>{selectedFinderItem.address}</span>
+        </div>
+      ) : null}
+
+      {selectedFinderItem.phone ? (
+        <div className="flex items-center gap-2 text-sm text-slate-300">
+          <Phone className="h-4 w-4 shrink-0 text-slate-500" />
+          <span>{formatPhone(selectedFinderItem.phone)}</span>
+        </div>
+      ) : null}
+
+      {selectedFinderItem.price ? (
+        <div className="text-sm text-slate-400">
+          금액: {selectedFinderItem.price}
+        </div>
+      ) : null}
+
+      {hasFinderInactiveConfig(selectedFinderItem) ? (
+        <div className="rounded-lg border border-yellow-500/20 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-300">
+          {getFinderInactiveText(selectedFinderItem)}
+        </div>
+      ) : null}
+    </div>
+
+    <div className="grid grid-cols-2 gap-2 border-t border-slate-800 p-4">
+      <Button
+        variant="outline"
+        className="border-slate-700 bg-[#151f2c] text-white hover:bg-[#1b2838] hover:text-white"
+        onClick={() => setFinderOpen(false)}
+      >
+        닫기
+      </Button>
+
+      <Button
+        className="bg-emerald-600 font-black text-white hover:bg-emerald-500"
+        onClick={applyFinderSelectionToDetail}
+        disabled={
+          !selectedFinderItem ||
+          !hasFinderApplyTarget ||
+          updatePracticeSupportMut.isPending ||
+          isFinderItemInactiveNow(selectedFinderItem)
+        }
+      >
+        선택 반영
+      </Button>
+    </div>
+
+    {!hasFinderApplyTarget ? (
+      <div className="border-t border-slate-800 px-4 py-3 text-[11px] leading-5 text-slate-500">
+        상단 실습검색은 검색 전용입니다. 학생별 반영은 요청 리스트의
+        “실습찾기” 버튼을 이용해주세요.
+      </div>
+    ) : null}
+  </div>
+) : null}
 
               {finderSettingsItem ? (
                 <div className="absolute bottom-5 right-5 z-10 w-[360px] rounded-2xl border bg-white/95 p-4 shadow-xl backdrop-blur">

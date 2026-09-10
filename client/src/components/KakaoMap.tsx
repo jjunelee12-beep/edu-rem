@@ -130,15 +130,66 @@ function getTypeClasses(
 
   return type === "education"
     ? {
-        badgeBg: "#dbeafe",
-        badgeColor: "#1d4ed8",
-        borderColor: "#bfdbfe",
+        badgeBg: "#ffedd5",
+        badgeColor: "#ea580c",
+        borderColor: "#fb923c",
       }
     : {
-        badgeBg: "#ffedd5",
-        badgeColor: "#c2410c",
-        borderColor: "#fdba74",
+        badgeBg: "#dbeafe",
+        badgeColor: "#2563eb",
+        borderColor: "#60a5fa",
       };
+}
+
+function createFinderMarkerImage(
+  kakao: any,
+  type: "education" | "institution",
+  selected: boolean
+) {
+  const fill =
+    type === "education"
+      ? "#f97316"
+      : "#2563eb";
+
+  const ring =
+    selected
+      ? "#10b981"
+      : "#ffffff";
+
+  const ringWidth =
+    selected ? 4 : 2;
+
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="44" height="52" viewBox="0 0 44 52">
+      <path
+        d="M22 2C11.5 2 3 10.5 3 21c0 14.5 19 29 19 29s19-14.5 19-29C41 10.5 32.5 2 22 2z"
+        fill="${fill}"
+        stroke="${ring}"
+        stroke-width="${ringWidth}"
+      />
+      <circle cx="22" cy="21" r="7" fill="#ffffff"/>
+      <circle cx="22" cy="21" r="3.5" fill="${fill}"/>
+    </svg>
+  `;
+
+  const imageUrl =
+    `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+
+  const size =
+    selected
+      ? new kakao.maps.Size(44, 52)
+      : new kakao.maps.Size(36, 43);
+
+  const offset =
+    selected
+      ? new kakao.maps.Point(22, 52)
+      : new kakao.maps.Point(18, 43);
+
+  return new kakao.maps.MarkerImage(
+    imageUrl,
+    size,
+    { offset }
+  );
 }
 
 function toDateOnly(value?: string | null) {
@@ -300,11 +351,11 @@ export default function KakaoMap({
 
     const pos = new kakao.maps.LatLng(searchPoint.lat, searchPoint.lng);
 
-    const marker = new kakao.maps.Marker({
-      map,
-      position: pos,
-      zIndex: 20,
-    });
+const marker = new kakao.maps.Marker({
+  map,
+  position: pos,
+  zIndex: 20,
+});
 
     const content = `
       <div style="
@@ -359,16 +410,30 @@ export default function KakaoMap({
         | "institution";
 
       const colors = getTypeClasses(type, item.isPartner);
-      const inactiveNow = isFinderItemInactiveNow(item);
-      const pos = new kakao.maps.LatLng(lat, lng);
+const inactiveNow = isFinderItemInactiveNow(item);
+const pos = new kakao.maps.LatLng(lat, lng);
 
-      const marker = new kakao.maps.Marker({
-        map,
-        position: pos,
-        zIndex: inactiveNow ? 3 : 5,
-      });
+const isSelected =
+  String(safeSelectedResult?.id || "") === String(item.id);
 
-      const inactiveText = getInactiveText(item);
+const markerImage = createFinderMarkerImage(
+  kakao,
+  type,
+  isSelected
+);
+
+const marker = new kakao.maps.Marker({
+  map,
+  position: pos,
+  image: markerImage,
+  zIndex: isSelected
+    ? 25
+    : inactiveNow
+      ? 3
+      : 5,
+});
+
+const inactiveText = getInactiveText(item);
 
       const overlayHtml = `
         <div style="
@@ -431,7 +496,7 @@ ${
             item.distanceKm !== null &&
             item.distanceKm !== undefined &&
             item.distanceKm !== ""
-              ? `<div style="margin-top:4px; color:#2563eb; font-weight:700;">${item.distanceKm}km</div>`
+              ? `<div style="margin-top:4px; color:${colors.badgeColor}; font-weight:800;">${item.distanceKm}km</div>`
               : ""
           }
         </div>
@@ -555,7 +620,7 @@ ${
           safeSelectedResult.distanceKm !== null &&
           safeSelectedResult.distanceKm !== undefined &&
           safeSelectedResult.distanceKm !== ""
-            ? `<div style="margin-top:4px; color:#2563eb; font-weight:700;">${safeSelectedResult.distanceKm}km</div>`
+            ? `<div style="margin-top:4px; color:${colors.badgeColor}; font-weight:700;">${safeSelectedResult.distanceKm}km</div>`
             : ""
         }
       </div>

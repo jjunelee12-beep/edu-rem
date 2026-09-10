@@ -12,13 +12,27 @@
       "destination": "https://edu-crm-api-production.up.railway.app/og/staff/:token"
     },
     {
-      "source": "/portal/:slug",
-      "destination": "https://edu-crm-api-production.up.railway.app/portal/:slug"
-    },
+  "source": "/portal/:slug",
+  "has": [
     {
-      "source": "/:slug/portal-management/community",
-      "destination": "https://edu-crm-api-production.up.railway.app/:slug/portal-management/community"
-    },
+      "type": "header",
+      "key": "user-agent",
+      "value": ".*(kakaotalk-scrap|facebookexternalhit|Twitterbot|Slackbot).*"
+    }
+  ],
+  "destination": "https://edu-crm-api-production.up.railway.app/portal/:slug"
+},
+{
+  "source": "/:slug/portal-management/community",
+  "has": [
+    {
+      "type": "header",
+      "key": "user-agent",
+      "value": ".*(kakaotalk-scrap|facebookexternalhit|Twitterbot|Slackbot).*"
+    }
+  ],
+  "destination": "https://edu-crm-api-production.up.railway.app/:slug/portal-management/community"
+},
     {
       "source": "/api/:path*",
       "destination": "https://edu-crm-api-production.up.railway.app/api/:path*"

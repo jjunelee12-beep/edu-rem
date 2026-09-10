@@ -286,6 +286,16 @@ function buildEditorBlocksFromPost(
     }
   );
 
+if (
+  fallback[
+    fallback.length - 1
+  ]?.type === "image"
+) {
+  fallback.push(
+    newText()
+  );
+}
+
   return fallback;
 }
 
@@ -1274,6 +1284,53 @@ const [
       }
     };
 
+const handleEditorPaste =
+  (
+    event:
+      React.ClipboardEvent<
+        HTMLTextAreaElement
+      >
+  ) => {
+    const items =
+      Array.from(
+        event.clipboardData
+          .items ||
+          []
+      );
+
+    const imageFiles =
+      items
+        .filter(
+          item =>
+            item.type.startsWith(
+              "image/"
+            )
+        )
+        .map(
+          item =>
+            item.getAsFile()
+        )
+        .filter(
+          (
+            file
+          ): file is File =>
+            Boolean(file)
+        );
+
+    if (
+      imageFiles.length ===
+      0
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+
+    addFiles(
+      imageFiles
+    );
+  };
+
   const publish =
     async () => {
       const t =
@@ -2014,6 +2071,10 @@ deletedAttachmentIds:
                           b.id
                         )
                       }
+
+onPaste={
+  handleEditorPaste
+}
 
                       onChange={
                         e =>

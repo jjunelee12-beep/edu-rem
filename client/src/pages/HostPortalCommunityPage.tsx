@@ -10,7 +10,7 @@ import {
   ShieldCheck,
   Users,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { trpc } from "@/lib/trpc";
 
@@ -29,6 +29,318 @@ type HostCommunityPost = {
   commentCount?: number | null;
   createdAt?: string | Date | null;
 };
+
+type HostTextBlock = {
+  id: string;
+  type: "text";
+  text: string;
+  align: "left" | "center" | "right";
+  bold: boolean;
+  color: string;
+  fontSize: 15 | 17 | 20;
+};
+
+type HostImageBlock = {
+  id: string;
+  type: "image";
+  file: File | null;
+  previewUrl: string;
+  attachmentId: number | null;
+  existing: boolean;
+};
+
+type HostEditorBlock =
+  | HostTextBlock
+  | HostImageBlock;
+
+const HOST_IMAGE_TYPES =
+  new Set([
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+  ]);
+
+const HOST_MAX_IMAGE_SIZE =
+  5 * 1024 * 1024;
+
+const HOST_MAX_IMAGES =
+  10;
+
+const hostUid = (
+  prefix: string
+) =>
+  `${prefix}-${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2, 9)}`;
+
+const newHostTextBlock =
+  (): HostTextBlock => ({
+    id: hostUid("text"),
+    type: "text",
+    text: "",
+    align: "left",
+    bold: false,
+    color: "#0f172a",
+    fontSize: 17,
+  });
+
+function checkHostImage(
+  file: File
+) {
+  if (
+    !HOST_IMAGE_TYPES.has(
+      file.type
+    )
+  ) {
+    throw new Error(
+      "JPG, PNG, WEBP, GIF 이미지만 등록할 수 있습니다."
+    );
+  }
+
+  if (
+    file.size <= 0 ||
+    file.size >
+      HOST_MAX_IMAGE_SIZE
+  ) {
+    throw new Error(
+      "이미지는 한 장당 최대 5MB까지 등록할 수 있습니다."
+    );
+  }
+}
+
+function buildHostEditorBlocksFromPost(
+  post: any,
+  attachments: any[]
+): HostEditorBlock[] {
+  const attachmentMap =
+    new Map<number, any>(
+      (
+        Array.isArray(
+          attachments
+        )
+          ? attachments
+          : []
+      ).map(
+        (attachment: any) => [
+          Number(
+            attachment.id
+          ),
+          attachment,
+        ]
+      )
+    );
+
+  const sourceBlocks =
+    Array.isArray(
+      post?.contentData
+        ?.blocks
+    )
+      ? post.contentData.blocks
+      : null;
+
+  if (
+    sourceBlocks &&
+    sourceBlocks.length > 0
+  ) {
+    const result =
+      sourceBlocks
+        .map(
+          (
+            block: any,
+            index: number
+          ):
+            | HostEditorBlock
+            | null => {
+            if (
+              block?.type ===
+              "image"
+            ) {
+              const attachmentId =
+                Number(
+                  block
+                    .attachmentId ||
+                    0
+                );
+
+              const attachment =
+                attachmentMap.get(
+                  attachmentId
+                );
+
+              if (
+                !attachment ||
+                !attachment.url
+              ) {
+                return null;
+              }
+
+              return {
+                id: `existing-image-${attachmentId}-${index}`,
+                type: "image",
+                file: null,
+                previewUrl:
+                  String(
+                    attachment.url
+                  ),
+                attachmentId,
+                existing: true,
+              };
+            }
+
+            if (
+              block?.type ===
+              "text"
+            ) {
+              const fontSize =
+                Number(
+                  block.fontSize ||
+                    17
+                );
+
+              return {
+                id: `existing-text-${index}`,
+                type: "text",
+                text:
+                  String(
+                    block.text ||
+                      ""
+                  ),
+                align:
+                  block.align ===
+                    "center" ||
+                  block.align ===
+                    "right"
+                    ? block.align
+                    : "left",
+                bold:
+                  block.bold ===
+                  true,
+                color:
+                  String(
+                    block.color ||
+                      "#0f172a"
+                  ),
+                fontSize:
+                  fontSize ===
+                    15 ||
+                  fontSize ===
+                    20
+                    ? fontSize
+                    : 17,
+              };
+            }
+
+            return null;
+          }
+        )
+        .filter(
+          (
+            block
+          ): block is HostEditorBlock =>
+            Boolean(block)
+        );
+
+    if (
+      result.length === 0 ||
+      result[
+        result.length - 1
+      ]?.type === "image"
+    ) {
+      result.push(
+        newHostTextBlock()
+      );
+    }
+
+    return result;
+  }
+
+  const fallback:
+    HostEditorBlock[] = [
+    {
+      ...newHostTextBlock(),
+      text:
+        String(
+          post?.content ||
+            ""
+        ),
+    },
+  ];
+
+  (
+    Array.isArray(
+      attachments
+    )
+      ? attachments
+      : []
+  ).forEach(
+    (
+      attachment: any,
+      index: number
+    ) => {
+      const attachmentId =
+        Number(
+          attachment?.id ||
+            0
+        );
+
+      const url =
+        String(
+          attachment?.url ||
+            ""
+        );
+
+      if (
+        !attachmentId ||
+        !url
+      ) {
+        return;
+      }
+
+      fallback.push({
+        id: `existing-image-${attachmentId}-${index}`,
+        type: "image",
+        file: null,
+        previewUrl: url,
+        attachmentId,
+        existing: true,
+      });
+    }
+  );
+
+  if (
+    fallback[
+      fallback.length - 1
+    ]?.type === "image"
+  ) {
+    fallback.push(
+      newHostTextBlock()
+    );
+  }
+
+  return fallback;
+}
+
+function getHostPlainContent(
+  blocks:
+    HostEditorBlock[]
+) {
+  return blocks
+    .filter(
+      (
+        block
+      ): block is HostTextBlock =>
+        block.type ===
+        "text"
+    )
+    .map(
+      block =>
+        block.text.trim()
+    )
+    .filter(Boolean)
+    .join("\n\n")
+    .trim();
+}
 
 function formatCommunityDate(value: unknown) {
   if (!value) return "";
@@ -69,11 +381,28 @@ const [writeBoardId, setWriteBoardId] =
 const [writeTitle, setWriteTitle] =
   useState("");
 
-const [writeContent, setWriteContent] =
-  useState("");
+const [
+  writeBlocks,
+  setWriteBlocks,
+] =
+  useState<
+    HostEditorBlock[]
+  >([
+    newHostTextBlock(),
+  ]);
 
-const [writeImages, setWriteImages] =
-  useState<File[]>([]);
+const [
+  writeActiveId,
+  setWriteActiveId,
+] =
+  useState(
+    () =>
+      writeBlocks.find(
+        block =>
+          block.type ===
+          "text"
+      )?.id || ""
+  );
 
 const [isUploadingImages, setIsUploadingImages] =
   useState(false);
@@ -102,14 +431,24 @@ const [isEditOpen, setIsEditOpen] =
 const [editTitle, setEditTitle] =
   useState("");
 
-const [editContent, setEditContent] =
-  useState("");
-
 const [editBoardId, setEditBoardId] =
   useState<number | null>(null);
 
-const [editNewImages, setEditNewImages] =
-  useState<File[]>([]);
+const [
+  editBlocks,
+  setEditBlocks,
+] =
+  useState<
+    HostEditorBlock[]
+  >([
+    newHostTextBlock(),
+  ]);
+
+const [
+  editActiveId,
+  setEditActiveId,
+] =
+  useState("");
 
 const [
   editDeletedAttachmentIds,
@@ -218,19 +557,40 @@ const openPostWriter = () => {
         ? Number(normalBoards[0].id)
         : null;
 
-  setWriteMode("post");
-  setWriteBoardId(initialBoardId);
-  setWriteTitle("");
-setWriteContent("");
-setWriteImages([]);
+  const firstBlock =
+  newHostTextBlock();
+
+setWriteMode("post");
+setWriteBoardId(
+  initialBoardId
+);
+setWriteTitle("");
+setWriteBlocks([
+  firstBlock,
+]);
+setWriteActiveId(
+  firstBlock.id
+);
 };
 
 const openNoticeWriter = () => {
-  setWriteMode("notice");
+  const firstBlock =
+    newHostTextBlock();
+
+  setWriteMode(
+    "notice"
+  );
+
   setWriteBoardId(null);
   setWriteTitle("");
-setWriteContent("");
-setWriteImages([]);
+
+  setWriteBlocks([
+    firstBlock,
+  ]);
+
+  setWriteActiveId(
+    firstBlock.id
+  );
 };
 
 const closeWriter = () => {
@@ -242,111 +602,69 @@ const closeWriter = () => {
     return;
   }
 
-  setWriteMode(null);
+  const firstBlock =
+  newHostTextBlock();
+
+setWriteMode(null);
 setWriteBoardId(null);
 setWriteTitle("");
-setWriteContent("");
-setWriteImages([]);
+setWriteBlocks([
+  firstBlock,
+]);
+setWriteActiveId(
+  firstBlock.id
+);
 };
 
-const handleWriteImagesChange = (
-  event: React.ChangeEvent<HTMLInputElement>
-) => {
-  const files =
-    Array.from(
-      event.target.files || []
-    );
+const uploadHostBlockImages =
+  async (
+    postId: number,
+    blocks:
+      HostEditorBlock[],
+    setUploading:
+      (
+        value: boolean
+      ) => void
+  ) => {
+    const attachmentIds =
+      new Map<
+        string,
+        number
+      >();
 
-  if (!files.length) {
-    return;
-  }
+    setUploading(true);
 
-  const allowedTypes =
-    new Set([
-      "image/jpeg",
-      "image/png",
-      "image/webp",
-      "image/gif",
-    ]);
-
-  const validFiles =
-    files.filter(file => {
-      if (!allowedTypes.has(file.type)) {
-        return false;
-      }
-
-      if (
-        file.size >
-        5 * 1024 * 1024
+    try {
+      for (
+        const block of
+        blocks
       ) {
-        return false;
-      }
+        if (
+          block.type !==
+          "image"
+        ) {
+          continue;
+        }
 
-      return true;
-    });
+        if (
+          block.existing &&
+          block.attachmentId
+        ) {
+          continue;
+        }
 
-  if (
-    validFiles.length !==
-    files.length
-  ) {
-    window.alert(
-      "JPG, PNG, WEBP, GIF 이미지만 가능하며 파일당 최대 5MB입니다."
-    );
-  }
+        if (!block.file) {
+          throw new Error(
+            "추가한 이미지 파일을 확인할 수 없습니다."
+          );
+        }
 
-  setWriteImages(current => {
-    const merged = [
-      ...current,
-      ...validFiles,
-    ];
-
-    if (merged.length > 10) {
-      window.alert(
-        "이미지는 게시글당 최대 10장까지 첨부할 수 있습니다."
-      );
-    }
-
-    return merged.slice(0, 10);
-  });
-
-  event.target.value = "";
-};
-
-const removeWriteImage = (
-  index: number
-) => {
-  setWriteImages(current =>
-    current.filter(
-      (_, currentIndex) =>
-        currentIndex !== index
-    )
-  );
-};
-
-const uploadPostImages = async (
-  postId: number
-) => {
-  if (!writeImages.length) {
-    return {
-      successCount: 0,
-      failedCount: 0,
-    };
-  }
-
-  let successCount = 0;
-  let failedCount = 0;
-
-  setIsUploadingImages(true);
-
-  try {
-    for (const file of writeImages) {
-      try {
         const formData =
           new FormData();
 
         formData.append(
           "file",
-          file
+          block.file
         );
 
         const response =
@@ -364,7 +682,9 @@ const uploadPostImages = async (
             }
           );
 
-        if (!response.ok) {
+        if (
+          !response.ok
+        ) {
           throw new Error(
             "이미지 업로드 실패"
           );
@@ -376,16 +696,18 @@ const uploadPostImages = async (
         const url =
           String(
             uploaded?.url ||
-            uploaded?.fileUrl ||
-            ""
+              uploaded?.fileUrl ||
+              ""
           ).trim();
 
         const storedName =
           String(
-            uploaded?.storedName ||
-            uploaded?.key ||
-            uploaded?.objectKey ||
-            ""
+            uploaded
+              ?.storedName ||
+              uploaded?.key ||
+              uploaded
+                ?.objectKey ||
+              ""
           ).trim();
 
         if (!url) {
@@ -394,46 +716,119 @@ const uploadPostImages = async (
           );
         }
 
-        await registerImageMutation.mutateAsync({
-          postId,
+        const registered =
+          await registerImageMutation
+            .mutateAsync({
+              postId,
 
-          originalName:
-            String(
-              uploaded?.originalName ||
-              file.name
-            ).slice(0, 255),
+              originalName:
+                String(
+                  uploaded
+                    ?.originalName ||
+                    block.file.name
+                ).slice(
+                  0,
+                  255
+                ),
 
-          storedName:
-            storedName ||
-            null,
+              storedName:
+                storedName ||
+                null,
 
-          url,
+              url,
 
-          mimeType:
-            file.type as
-              | "image/jpeg"
-              | "image/png"
-              | "image/webp"
-              | "image/gif",
+              mimeType:
+                block.file
+                  .type as
+                  | "image/jpeg"
+                  | "image/png"
+                  | "image/webp"
+                  | "image/gif",
 
-          sizeBytes:
-            file.size,
-        });
+              sizeBytes:
+                block.file
+                  .size,
+            });
 
-        successCount += 1;
-      } catch {
-        failedCount += 1;
+        const attachmentId =
+          Number(
+            (registered as any)
+              ?.attachmentId ||
+              (registered as any)
+                ?.id ||
+              0
+          );
+
+        if (
+          !attachmentId
+        ) {
+          throw new Error(
+            "이미지 첨부 정보를 확인할 수 없습니다."
+          );
+        }
+
+        attachmentIds.set(
+          block.id,
+          attachmentId
+        );
       }
+    } finally {
+      setUploading(
+        false
+      );
     }
-  } finally {
-    setIsUploadingImages(false);
-  }
 
-  return {
-    successCount,
-    failedCount,
+    return {
+      version: 1,
+
+      blocks:
+        blocks.map(
+          block => {
+            if (
+              block.type ===
+              "image"
+            ) {
+              const attachmentId =
+                block.existing
+                  ? block
+                      .attachmentId
+                  : attachmentIds.get(
+                      block.id
+                    );
+
+              if (
+                !attachmentId
+              ) {
+                throw new Error(
+                  "게시글 이미지 정보를 저장하지 못했습니다."
+                );
+              }
+
+              return {
+                type:
+                  "image",
+                attachmentId,
+              };
+            }
+
+            return {
+              type:
+                "text",
+              text:
+                block.text,
+              align:
+                block.align,
+              bold:
+                block.bold,
+              color:
+                block.color,
+              fontSize:
+                block.fontSize,
+            };
+          }
+        ),
+    };
   };
-};
 
 const openPostDetail = () => {
   if (!selectedPostId) {
@@ -615,32 +1010,63 @@ const handleDeleteComment = async (
   }
 };
 
-const openPostEditor = () => {
-  if (
-    !postDetail ||
-    postDetail.isMine !== true
-  ) {
-    return;
-  }
+const openPostEditor =
+  () => {
+    if (
+      !postDetail ||
+      postDetail.isMine !==
+        true
+    ) {
+      return;
+    }
 
-  setEditTitle(
-    String(postDetail.title || "")
-  );
+    const blocks =
+      buildHostEditorBlocksFromPost(
+        postDetail,
+        postAttachments
+      );
 
-  setEditContent(
-    String(postDetail.content || "")
-  );
+    const firstText =
+      blocks.find(
+        (
+          block
+        ): block is HostTextBlock =>
+          block.type ===
+          "text"
+      );
 
-  setEditBoardId(
-    postDetail.boardId
-      ? Number(postDetail.boardId)
-      : null
-  );
+    setEditTitle(
+      String(
+        postDetail.title ||
+          ""
+      )
+    );
 
-  setEditNewImages([]);
-  setEditDeletedAttachmentIds([]);
-  setIsEditOpen(true);
-};
+    setEditBoardId(
+      postDetail.boardId
+        ? Number(
+            postDetail.boardId
+          )
+        : null
+    );
+
+    setEditBlocks(
+      blocks
+    );
+
+    setEditActiveId(
+      firstText?.id ||
+        ""
+    );
+
+    setEditDeletedAttachmentIds(
+      []
+    );
+
+    setIsEditOpen(
+      true
+    );
+  };
 
 const closePostEditor = () => {
   if (
@@ -652,338 +1078,117 @@ const closePostEditor = () => {
   }
 
   setIsEditOpen(false);
-  setEditNewImages([]);
-  setEditDeletedAttachmentIds([]);
+
+  setEditDeletedAttachmentIds(
+    []
+  );
 };
 
-const handleEditImagesChange = (
-  event: React.ChangeEvent<HTMLInputElement>
-) => {
-  const files =
-    Array.from(
-      event.target.files || []
-    );
+const handleSubmitEdit =
+  async () => {
+    if (
+      !selectedPostId ||
+      !postDetail ||
+      postDetail.isMine !==
+        true
+    ) {
+      return;
+    }
 
-  if (!files.length) {
-    return;
-  }
+    const title =
+      editTitle.trim();
 
-  const allowedTypes =
-    new Set([
-      "image/jpeg",
-      "image/png",
-      "image/webp",
-      "image/gif",
-    ]);
+    const content =
+      getHostPlainContent(
+        editBlocks
+      );
 
-  const validFiles =
-    files.filter(file => {
-      if (!allowedTypes.has(file.type)) {
-        return false;
-      }
+    if (!title) {
+      window.alert(
+        "제목을 입력해주세요."
+      );
+      return;
+    }
+
+    if (!content) {
+      window.alert(
+        "내용을 입력해주세요."
+      );
+      return;
+    }
+
+    try {
+      const finalContentData =
+        await uploadHostBlockImages(
+          selectedPostId,
+          editBlocks,
+          setIsUploadingEditImages
+        );
 
       if (
-        file.size >
-        5 * 1024 * 1024
+        isDetailNotice
       ) {
-        return false;
-      }
-
-      return true;
-    });
-
-  if (
-    validFiles.length !==
-    files.length
-  ) {
-    window.alert(
-      "JPG, PNG, WEBP, GIF 이미지만 가능하며 파일당 최대 5MB입니다."
-    );
-  }
-
-  const remainingExistingCount =
-    postAttachments.filter(
-      (attachment: any) =>
-        !editDeletedAttachmentIds.includes(
-          Number(attachment.id)
-        )
-    ).length;
-
-  const availableCount =
-    Math.max(
-      10 -
-        remainingExistingCount -
-        editNewImages.length,
-      0
-    );
-
-  if (
-    validFiles.length >
-    availableCount
-  ) {
-    window.alert(
-      "기존 이미지를 포함하여 게시글당 최대 10장까지 가능합니다."
-    );
-  }
-
-  setEditNewImages(current => [
-    ...current,
-    ...validFiles.slice(
-      0,
-      availableCount
-    ),
-  ]);
-
-  event.target.value = "";
-};
-
-const removeEditNewImage = (
-  index: number
-) => {
-  setEditNewImages(current =>
-    current.filter(
-      (_, currentIndex) =>
-        currentIndex !== index
-    )
-  );
-};
-
-const toggleExistingAttachmentDelete = (
-  attachmentId: number
-) => {
-  setEditDeletedAttachmentIds(
-    current =>
-      current.includes(
-        attachmentId
-      )
-        ? current.filter(
-            id =>
-              id !==
-              attachmentId
-          )
-        : [
-            ...current,
-            attachmentId,
-          ]
-  );
-};
-
-const uploadEditImages = async (
-  postId: number
-) => {
-  if (!editNewImages.length) {
-    return {
-      successCount: 0,
-      failedCount: 0,
-    };
-  }
-
-  let successCount = 0;
-  let failedCount = 0;
-
-  setIsUploadingEditImages(true);
-
-  try {
-    for (
-      const file of
-      editNewImages
-    ) {
-      try {
-        const formData =
-          new FormData();
-
-        formData.append(
-          "file",
-          file
-        );
-
-        const response =
-          await fetch(
-            `${
-              import.meta.env
-                .VITE_API_BASE_URL ||
-              ""
-            }/api/student-portal/host-community/image`,
-            {
-              method: "POST",
-              body: formData,
-              credentials:
-                "include",
-            }
+        await updateNoticeMutation
+          .mutateAsync({
+            postId:
+              selectedPostId,
+            title,
+            content,
+            contentFormat:
+              "blocks",
+            contentData:
+              finalContentData,
+            deletedAttachmentIds:
+              editDeletedAttachmentIds,
+          });
+      } else {
+        if (
+          !editBoardId
+        ) {
+          window.alert(
+            "게시판을 선택해주세요."
           );
-
-        if (!response.ok) {
-          throw new Error(
-            "이미지 업로드 실패"
-          );
+          return;
         }
 
-        const uploaded =
-          await response.json();
-
-        const url =
-          String(
-            uploaded?.url ||
-            uploaded?.fileUrl ||
-            ""
-          ).trim();
-
-        const storedName =
-          String(
-            uploaded?.storedName ||
-            uploaded?.key ||
-            uploaded?.objectKey ||
-            ""
-          ).trim();
-
-        if (!url) {
-          throw new Error(
-            "업로드 URL 없음"
-          );
-        }
-
-        await registerImageMutation.mutateAsync({
-          postId,
-
-          originalName:
-            String(
-              uploaded?.originalName ||
-              file.name
-            ).slice(
-              0,
-              255
-            ),
-
-          storedName:
-            storedName ||
-            null,
-
-          url,
-
-          mimeType:
-            file.type as
-              | "image/jpeg"
-              | "image/png"
-              | "image/webp"
-              | "image/gif",
-
-          sizeBytes:
-            file.size,
-        });
-
-        successCount += 1;
-      } catch {
-        failedCount += 1;
-      }
-    }
-  } finally {
-    setIsUploadingEditImages(
-      false
-    );
-  }
-
-  return {
-    successCount,
-    failedCount,
-  };
-};
-
-const handleSubmitEdit = async () => {
-  if (
-    !selectedPostId ||
-    !postDetail ||
-    postDetail.isMine !== true
-  ) {
-    return;
-  }
-
-  const title =
-    editTitle.trim();
-
-  const content =
-    editContent.trim();
-
-  if (!title) {
-    window.alert(
-      "제목을 입력해주세요."
-    );
-    return;
-  }
-
-  if (!content) {
-    window.alert(
-      "내용을 입력해주세요."
-    );
-    return;
-  }
-
-  try {
-    if (isDetailNotice) {
-      await updateNoticeMutation.mutateAsync({
-        postId:
-          selectedPostId,
-        title,
-        content,
-        contentFormat:
-          "plain",
-        contentData:
-          null,
-        deletedAttachmentIds:
-          editDeletedAttachmentIds,
-      });
-    } else {
-      if (!editBoardId) {
-        window.alert(
-          "게시판을 선택해주세요."
-        );
-        return;
+        await updatePostMutation
+          .mutateAsync({
+            postId:
+              selectedPostId,
+            boardId:
+              editBoardId,
+            title,
+            content,
+            contentFormat:
+              "blocks",
+            contentData:
+              finalContentData,
+            deletedAttachmentIds:
+              editDeletedAttachmentIds,
+          });
       }
 
-      await updatePostMutation.mutateAsync({
-        postId:
-          selectedPostId,
-        boardId:
-          editBoardId,
-        title,
-        content,
-        contentFormat:
-          "plain",
-        contentData:
-          null,
-        deletedAttachmentIds:
-          editDeletedAttachmentIds,
-      });
-    }
+      await Promise.all([
+        postQuery.refetch(),
+        postsQuery.refetch(),
+      ]);
 
-    const imageResult =
-      await uploadEditImages(
-        selectedPostId
+      setIsEditOpen(
+        false
       );
 
-    await Promise.all([
-      postQuery.refetch(),
-      postsQuery.refetch(),
-    ]);
-
-    setIsEditOpen(false);
-    setEditNewImages([]);
-    setEditDeletedAttachmentIds([]);
-
-    if (
-      imageResult.failedCount >
-      0
+      setEditDeletedAttachmentIds(
+        []
+      );
+    } catch (
+      error: any
     ) {
       window.alert(
-        `게시글 수정은 완료되었습니다.\n새 이미지 ${imageResult.successCount}/${editNewImages.length}장 첨부 완료되었습니다.`
+        error?.message ||
+          "게시글 수정 중 오류가 발생했습니다."
       );
     }
-  } catch (error: any) {
-    window.alert(
-      error?.message ||
-        "게시글 수정 중 오류가 발생했습니다."
-    );
-  }
-};
+  };
 
 const handleDeletePost = async () => {
   if (!selectedPostId) {
@@ -1016,113 +1221,222 @@ const handleDeletePost = async () => {
   }
 };
 
-const handleSubmitWriter = async () => {
-  const title =
-    writeTitle.trim();
+const handleSubmitWriter =
+  async () => {
+    const title =
+      writeTitle.trim();
 
-  const content =
-    writeContent.trim();
+    const content =
+      getHostPlainContent(
+        writeBlocks
+      );
 
-  if (!title) {
-    window.alert(
-      "제목을 입력해주세요."
-    );
-    return;
-  }
-
-  if (!content) {
-    window.alert(
-      "내용을 입력해주세요."
-    );
-    return;
-  }
-
-  try {
-    let createdPostId:
-      number | null = null;
-
-    if (writeMode === "notice") {
-      const result =
-        await createNoticeMutation.mutateAsync({
-          title,
-          content,
-          contentFormat: "plain",
-          contentData: null,
-        });
-
-      createdPostId =
-        Number(
-          (result as any)?.postId ||
-          (result as any)?.id ||
-          0
-        ) || null;
-    } else {
-      if (!writeBoardId) {
-        window.alert(
-          "게시판을 선택해주세요."
-        );
-        return;
-      }
-
-      const result =
-        await createPostMutation.mutateAsync({
-          boardId: writeBoardId,
-          title,
-          content,
-          contentFormat: "plain",
-          contentData: null,
-        });
-
-      createdPostId =
-        Number(
-          (result as any)?.postId ||
-          0
-        ) || null;
+    if (!title) {
+      window.alert(
+        "제목을 입력해주세요."
+      );
+      return;
     }
 
-    let imageResult = {
-  successCount: 0,
-  failedCount: 0,
-};
+    if (!content) {
+      window.alert(
+        "내용을 입력해주세요."
+      );
+      return;
+    }
 
-if (
-  createdPostId &&
-  writeImages.length
+    if (
+      writeMode ===
+        "post" &&
+      !writeBoardId
+    ) {
+      window.alert(
+        "게시판을 선택해주세요."
+      );
+      return;
+    }
+
+    let createdPostId:
+  number | null =
+  null;
+
+let createdNewPost =
+  false;
+
+try {
+      const firstContentData =
+        {
+          version: 1,
+
+          blocks:
+            writeBlocks
+              .filter(
+                (
+                  block
+                ): block is HostTextBlock =>
+                  block.type ===
+                  "text"
+              )
+              .map(
+                block => ({
+                  type:
+                    "text",
+                  text:
+                    block.text,
+                  align:
+                    block.align,
+                  bold:
+                    block.bold,
+                  color:
+                    block.color,
+                  fontSize:
+                    block.fontSize,
+                })
+              ),
+        };
+
+      if (
+        writeMode ===
+        "notice"
+      ) {
+        const result =
+          await createNoticeMutation
+            .mutateAsync({
+              title,
+              content,
+              contentFormat:
+                "blocks",
+              contentData:
+                firstContentData,
+            });
+
+        createdPostId =
+          Number(
+            (result as any)
+              ?.postId ||
+              (result as any)
+                ?.id ||
+              0
+          ) || null;
+      } else {
+        const result =
+          await createPostMutation
+            .mutateAsync({
+              boardId:
+                writeBoardId!,
+              title,
+              content,
+              contentFormat:
+                "blocks",
+              contentData:
+                firstContentData,
+            });
+
+        createdPostId =
+          Number(
+            (result as any)
+              ?.postId ||
+              (result as any)
+                ?.id ||
+              0
+          ) || null;
+      }
+
+      if (
+        !createdPostId
+      ) {
+        throw new Error(
+          "생성된 게시글 정보를 확인할 수 없습니다."
+        );
+      }
+
+createdNewPost =
+  true;
+
+      const finalContentData =
+        await uploadHostBlockImages(
+          createdPostId,
+          writeBlocks,
+          setIsUploadingImages
+        );
+
+      if (
+        writeMode ===
+        "notice"
+      ) {
+        await updateNoticeMutation
+          .mutateAsync({
+            postId:
+              createdPostId,
+            title,
+            content,
+            contentFormat:
+              "blocks",
+            contentData:
+              finalContentData,
+            deletedAttachmentIds:
+              [],
+          });
+      } else {
+        await updatePostMutation
+          .mutateAsync({
+            postId:
+              createdPostId,
+            boardId:
+              writeBoardId!,
+            title,
+            content,
+            contentFormat:
+              "blocks",
+            contentData:
+              finalContentData,
+            deletedAttachmentIds:
+              [],
+          });
+      }
+
+      await postsQuery.refetch();
+
+      setSelectedPostId(
+        createdPostId
+      );
+
+      const firstBlock =
+        newHostTextBlock();
+
+      setWriteMode(null);
+      setWriteBoardId(null);
+      setWriteTitle("");
+      setWriteBlocks([
+        firstBlock,
+      ]);
+      setWriteActiveId(
+        firstBlock.id
+      );
+   } catch (
+  error: any
 ) {
-  imageResult =
-    await uploadPostImages(
-      createdPostId
-    );
-}
-
-await postsQuery.refetch();
-
-if (createdPostId) {
-  setSelectedPostId(
+  if (
+    createdNewPost &&
     createdPostId
-  );
-}
-
-if (
-  imageResult.failedCount > 0
-) {
-  window.alert(
-    `게시글은 저장되었습니다.\n이미지 ${imageResult.successCount}/${writeImages.length}장 첨부 완료되었습니다.`
-  );
-}
-
-    setWriteMode(null);
-setWriteBoardId(null);
-setWriteTitle("");
-setWriteContent("");
-setWriteImages([]);
-  } catch (error: any) {
-    window.alert(
-      error?.message ||
-        "게시글 저장 중 오류가 발생했습니다."
-    );
+  ) {
+    try {
+      await deletePostMutation
+        .mutateAsync({
+          postId:
+            createdPostId,
+        });
+    } catch {
+      // cleanup 실패는 원래 저장 오류를 덮지 않음
+    }
   }
-};
+
+  window.alert(
+    error?.message ||
+      "게시글 저장 중 오류가 발생했습니다."
+  );
+}
+  };
 
   const bootstrap =
     bootstrapQuery.data as any;
@@ -1758,59 +2072,20 @@ const companyLogoUrl =
             </div>
 
             <div className="mt-6">
-              <div className="text-xl font-black leading-8 text-slate-950">
-                {postDetail.title ||
-                  "제목 없음"}
-              </div>
+  <div className="text-xl font-black leading-8 text-slate-950">
+    {postDetail.title ||
+      "제목 없음"}
+  </div>
 
-              <div className="mt-4 whitespace-pre-wrap text-sm leading-7 text-slate-700">
-                {postDetail.content ||
-                  ""}
-              </div>
-            </div>
-
-            {postAttachments.length > 0 ? (
-              <div className="mt-7">
-                <div className="mb-3 flex items-center justify-between">
-                  <div className="text-sm font-black text-slate-800">
-                    첨부 이미지
-                  </div>
-
-                  <div className="text-xs font-bold text-slate-400">
-                    {postAttachments.length}장
-                  </div>
-                </div>
-
-                <div
-                  className={`grid gap-3 ${
-                    postAttachments.length === 1
-                      ? "grid-cols-1"
-                      : "grid-cols-2"
-                  }`}
-                >
-                  {postAttachments.map(
-                    (attachment: any) => (
-                      <a
-                        key={attachment.id}
-                        href={attachment.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50"
-                      >
-                        <img
-                          src={attachment.url}
-                          alt={
-                            attachment.originalName ||
-                            ""
-                          }
-                          className="max-h-[520px] w-full object-contain"
-                        />
-                      </a>
-                    )
-                  )}
-                </div>
-              </div>
-            ) : null}
+  <HostPostBody
+    post={
+      postDetail
+    }
+    attachments={
+      postAttachments
+    }
+  />
+</div>
 
             <div className="my-8 border-t border-slate-100" />
 
@@ -2157,167 +2432,42 @@ const companyLogoUrl =
         </div>
 
         <div>
-          <label className="text-xs font-black text-slate-500">
-            내용
-          </label>
+  <div className="mb-2 flex items-center justify-between">
+    <label className="text-xs font-black text-slate-500">
+      내용
+    </label>
 
-          <textarea
-            value={
-              editContent
-            }
-            onChange={event =>
-              setEditContent(
-                event.target.value
-              )
-            }
-            rows={10}
-            className="mt-2 w-full resize-none rounded-xl border border-slate-200 px-4 py-3 text-sm leading-6 text-slate-700 outline-none focus:border-blue-400"
-          />
-        </div>
+    <span className="text-[11px] font-bold text-slate-400">
+      글 · 사진 자유배치 / Ctrl+V 지원
+    </span>
+  </div>
 
-        {postAttachments.length >
-        0 ? (
-          <div>
-            <div className="flex items-center justify-between">
-              <div className="text-xs font-black text-slate-500">
-                기존 이미지
-              </div>
-
-              <div className="text-[11px] text-slate-400">
-                클릭하면 삭제 대상으로 선택됩니다.
-              </div>
-            </div>
-
-            <div className="mt-3 grid grid-cols-5 gap-2">
-              {postAttachments.map(
-                (
-                  attachment: any
-                ) => {
-                  const isDeleted =
-                    editDeletedAttachmentIds.includes(
-                      Number(
-                        attachment.id
-                      )
-                    );
-
-                  return (
-                    <button
-                      key={
-                        attachment.id
-                      }
-                      type="button"
-                      onClick={() =>
-                        toggleExistingAttachmentDelete(
-                          Number(
-                            attachment.id
-                          )
-                        )
-                      }
-                      className={`relative aspect-square overflow-hidden rounded-xl border ${
-                        isDeleted
-                          ? "border-red-400 opacity-40"
-                          : "border-slate-200"
-                      }`}
-                    >
-                      <img
-                        src={
-                          attachment.url
-                        }
-                        alt=""
-                        className="h-full w-full object-cover"
-                      />
-
-                      {isDeleted ? (
-                        <div className="absolute inset-0 flex items-center justify-center bg-red-950/40 text-xs font-black text-white">
-                          삭제 예정
-                        </div>
-                      ) : null}
-                    </button>
-                  );
-                }
-              )}
-            </div>
-          </div>
-        ) : null}
-
-        <div>
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-black text-slate-500">
-              새 이미지 추가
-            </label>
-
-            <div className="text-[11px] font-bold text-slate-400">
-              최대 10장
-            </div>
-          </div>
-
-          <label className="mt-2 flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-sm font-extrabold text-slate-600 hover:bg-slate-100">
-            <ImageIcon
-              size={18}
-            />
-            이미지 선택
-
-            <input
-              type="file"
-              multiple
-              accept="image/jpeg,image/png,image/webp,image/gif"
-              onChange={
-                handleEditImagesChange
-              }
-              className="hidden"
-            />
-          </label>
-
-          {editNewImages.length >
-          0 ? (
-            <div className="mt-3 grid grid-cols-5 gap-2">
-              {editNewImages.map(
-                (
-                  file,
-                  index
-                ) => {
-                  const previewUrl =
-                    URL.createObjectURL(
-                      file
-                    );
-
-                  return (
-                    <div
-                      key={`${file.name}-${file.size}-${index}`}
-                      className="relative aspect-square overflow-hidden rounded-xl border border-slate-200"
-                    >
-                      <img
-                        src={
-                          previewUrl
-                        }
-                        alt=""
-                        className="h-full w-full object-cover"
-                        onLoad={() =>
-                          URL.revokeObjectURL(
-                            previewUrl
-                          )
-                        }
-                      />
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          removeEditNewImage(
-                            index
-                          )
-                        }
-                        className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-slate-950/80 text-xs font-black text-white"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  );
-                }
-              )}
-            </div>
-          ) : null}
-        </div>
-      </div>
+  <HostBlockEditor
+    blocks={
+      editBlocks
+    }
+    setBlocks={
+      setEditBlocks
+    }
+    activeId={
+      editActiveId
+    }
+    setActiveId={
+      setEditActiveId
+    }
+    deletedAttachmentIds={
+      editDeletedAttachmentIds
+    }
+    setDeletedAttachmentIds={
+      setEditDeletedAttachmentIds
+    }
+    disabled={
+      updatePostMutation.isPending ||
+      updateNoticeMutation.isPending ||
+      isUploadingEditImages
+    }
+  />
+</div>
 
       <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50 px-6 py-4">
         <button
@@ -2454,94 +2604,39 @@ const companyLogoUrl =
         </div>
 
         <div>
-          <label className="text-xs font-black text-slate-500">
-            내용
-          </label>
-
-          <textarea
-            value={writeContent}
-            onChange={event =>
-              setWriteContent(
-                event.target.value
-              )
-            }
-            rows={10}
-            placeholder="내용을 입력해주세요."
-            className="mt-2 w-full resize-none rounded-xl border border-slate-200 px-4 py-3 text-sm leading-6 text-slate-700 outline-none focus:border-blue-400"
-          />
-        </div>
-<div>
-  <div className="flex items-center justify-between">
+  <div className="mb-2 flex items-center justify-between">
     <label className="text-xs font-black text-slate-500">
-      이미지 첨부
+      내용
     </label>
 
-    <div className="text-[11px] font-bold text-slate-400">
-      {writeImages.length}/10
-    </div>
+    <span className="text-[11px] font-bold text-slate-400">
+      글 · 사진 자유배치 / Ctrl+V 지원
+    </span>
   </div>
 
-  <label className="mt-2 flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-sm font-extrabold text-slate-600 transition hover:bg-slate-100">
-    <ImageIcon size={18} />
-    이미지 선택
-
-    <input
-      type="file"
-      multiple
-      accept="image/jpeg,image/png,image/webp,image/gif"
-      onChange={
-        handleWriteImagesChange
-      }
-      className="hidden"
-    />
-  </label>
-
-  {writeImages.length > 0 ? (
-    <div className="mt-3 grid grid-cols-5 gap-2">
-      {writeImages.map(
-        (file, index) => {
-          const previewUrl =
-            URL.createObjectURL(
-              file
-            );
-
-          return (
-            <div
-              key={`${file.name}-${file.size}-${index}`}
-              className="relative aspect-square overflow-hidden rounded-xl border border-slate-200 bg-slate-50"
-            >
-              <img
-                src={previewUrl}
-                alt=""
-                className="h-full w-full object-cover"
-                onLoad={() =>
-                  URL.revokeObjectURL(
-                    previewUrl
-                  )
-                }
-              />
-
-              <button
-                type="button"
-                onClick={() =>
-                  removeWriteImage(
-                    index
-                  )
-                }
-                className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-slate-950/80 text-xs font-black text-white"
-              >
-                ×
-              </button>
-            </div>
-          );
-        }
-      )}
-    </div>
-  ) : null}
-
-  <div className="mt-2 text-[11px] leading-5 text-slate-400">
-    JPG, PNG, WEBP, GIF · 파일당 최대 5MB · 최대 10장
-  </div>
+  <HostBlockEditor
+    blocks={
+      writeBlocks
+    }
+    setBlocks={
+      setWriteBlocks
+    }
+    activeId={
+      writeActiveId
+    }
+    setActiveId={
+      setWriteActiveId
+    }
+    deletedAttachmentIds={
+      []
+    }
+    setDeletedAttachmentIds={() => {}}
+    disabled={
+      createPostMutation.isPending ||
+      createNoticeMutation.isPending ||
+      isUploadingImages
+    }
+  />
 </div>
       </div>
 
@@ -2589,6 +2684,715 @@ isUploadingImages
     </div>
   </div>
 ) : null}
+    </div>
+  );
+}
+
+function HostBlockEditor({
+  blocks,
+  setBlocks,
+  activeId,
+  setActiveId,
+  deletedAttachmentIds,
+  setDeletedAttachmentIds,
+  disabled = false,
+}: {
+  blocks:
+    HostEditorBlock[];
+
+  setBlocks:
+    React.Dispatch<
+      React.SetStateAction<
+        HostEditorBlock[]
+      >
+    >;
+
+  activeId:
+    string;
+
+  setActiveId:
+    React.Dispatch<
+      React.SetStateAction<
+        string
+      >
+    >;
+
+  deletedAttachmentIds:
+    number[];
+
+  setDeletedAttachmentIds:
+    React.Dispatch<
+      React.SetStateAction<
+        number[]
+      >
+    >;
+
+  disabled?: boolean;
+}) {
+  const fileRef =
+    useRef<
+      HTMLInputElement | null
+    >(
+      null
+    );
+
+  const active =
+    blocks.find(
+      (
+        block
+      ): block is HostTextBlock =>
+        block.type ===
+          "text" &&
+        block.id ===
+          activeId
+    );
+
+  const imageCount =
+    blocks.filter(
+      block =>
+        block.type ===
+        "image"
+    ).length;
+
+  const patch =
+    (
+      value:
+        Partial<
+          HostTextBlock
+        >
+    ) => {
+      setBlocks(
+        current =>
+          current.map(
+            block =>
+              block.type ===
+                "text" &&
+              block.id ===
+                activeId
+                ? {
+                    ...block,
+                    ...value,
+                  }
+                : block
+          )
+      );
+    };
+
+  const addFiles =
+    (
+      files:
+        File[]
+    ) => {
+      if (
+        !files.length
+      ) {
+        return;
+      }
+
+      try {
+        if (
+          imageCount +
+            files.length >
+          HOST_MAX_IMAGES
+        ) {
+          throw new Error(
+            `사진은 최대 ${HOST_MAX_IMAGES}장까지 등록할 수 있습니다.`
+          );
+        }
+
+        files.forEach(
+          checkHostImage
+        );
+
+        const imageBlocks:
+          HostImageBlock[] =
+          files.map(
+            file => ({
+              id:
+                hostUid(
+                  "img"
+                ),
+              type:
+                "image",
+              file,
+              previewUrl:
+                URL.createObjectURL(
+                  file
+                ),
+              attachmentId:
+                null,
+              existing:
+                false,
+            })
+          );
+
+        const nextText =
+          newHostTextBlock();
+
+        setBlocks(
+          current => {
+            const index =
+              current.findIndex(
+                block =>
+                  block.id ===
+                  activeId
+              );
+
+            const copy =
+              [
+                ...current,
+              ];
+
+            copy.splice(
+              index >= 0
+                ? index + 1
+                : copy.length,
+              0,
+              ...imageBlocks,
+              nextText
+            );
+
+            return copy;
+          }
+        );
+
+        setActiveId(
+          nextText.id
+        );
+      } catch (
+        error: any
+      ) {
+        window.alert(
+          error?.message ||
+            "사진을 추가하지 못했습니다."
+        );
+      }
+    };
+
+  const removeImage =
+    (
+      block:
+        HostImageBlock
+    ) => {
+      if (
+        block.existing &&
+        block.attachmentId
+      ) {
+        setDeletedAttachmentIds(
+          current =>
+            Array.from(
+              new Set([
+                ...current,
+                Number(
+                  block.attachmentId
+                ),
+              ])
+            )
+        );
+      }
+
+      if (
+        !block.existing &&
+        block.previewUrl
+          .startsWith(
+            "blob:"
+          )
+      ) {
+        URL.revokeObjectURL(
+          block.previewUrl
+        );
+      }
+
+      setBlocks(
+        current =>
+          current.filter(
+            item =>
+              item.id !==
+              block.id
+          )
+      );
+    };
+
+  const handlePaste =
+    (
+      event:
+        React.ClipboardEvent<
+          HTMLTextAreaElement
+        >
+    ) => {
+      const items =
+        Array.from(
+          event.clipboardData
+            .items ||
+            []
+        );
+
+      const imageFiles =
+        items
+          .filter(
+            item =>
+              item.type.startsWith(
+                "image/"
+              )
+          )
+          .map(
+            item =>
+              item.getAsFile()
+          )
+          .filter(
+            (
+              file
+            ): file is File =>
+              Boolean(file)
+          );
+
+      if (
+        imageFiles.length ===
+        0
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+
+      addFiles(
+        imageFiles
+      );
+    };
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <div className="flex min-h-12 flex-wrap items-center gap-1 border-b border-slate-200 px-2 py-2">
+        <select
+          value={
+            active
+              ?.fontSize ||
+            17
+          }
+          onChange={event =>
+            patch({
+              fontSize:
+                Number(
+                  event.target
+                    .value
+                ) as
+                  | 15
+                  | 17
+                  | 20,
+            })
+          }
+          disabled={
+            disabled
+          }
+          className="h-8 rounded-lg border border-slate-200 px-2 text-xs font-bold"
+        >
+          <option value={15}>
+            작게
+          </option>
+          <option value={17}>
+            보통
+          </option>
+          <option value={20}>
+            크게
+          </option>
+        </select>
+
+        <button
+          type="button"
+          disabled={
+            disabled
+          }
+          onClick={() =>
+            patch({
+              bold:
+                !active?.bold,
+            })
+          }
+          className={`h-8 min-w-8 rounded-lg px-2 text-sm font-black ${
+            active?.bold
+              ? "bg-slate-900 text-white"
+              : "text-slate-700"
+          }`}
+        >
+          B
+        </button>
+
+        <button
+          type="button"
+          disabled={
+            disabled
+          }
+          onClick={() =>
+            patch({
+              align:
+                "left",
+            })
+          }
+          className="h-8 min-w-8 rounded-lg px-2 text-sm font-black text-slate-700"
+        >
+          ≡
+        </button>
+
+        <button
+          type="button"
+          disabled={
+            disabled
+          }
+          onClick={() =>
+            patch({
+              align:
+                "center",
+            })
+          }
+          className="h-8 min-w-8 rounded-lg px-2 text-sm font-black text-slate-700"
+        >
+          ≣
+        </button>
+
+        <button
+          type="button"
+          disabled={
+            disabled
+          }
+          onClick={() =>
+            patch({
+              align:
+                "right",
+            })
+          }
+          className="h-8 min-w-8 rounded-lg px-2 text-sm font-black text-slate-700"
+        >
+          ≡›
+        </button>
+
+        <button
+          type="button"
+          disabled={
+            disabled
+          }
+          onClick={() =>
+            fileRef.current
+              ?.click()
+          }
+          className="ml-auto flex h-8 items-center gap-1 rounded-lg px-2 text-xs font-extrabold text-slate-600"
+        >
+          <ImageIcon
+            size={16}
+          />
+          사진
+        </button>
+      </div>
+
+      <div className="min-h-[330px] px-3 py-3">
+        {blocks.map(
+          block =>
+            block.type ===
+            "image" ? (
+              <div
+                key={
+                  block.id
+                }
+                className="relative my-3 overflow-hidden rounded-xl bg-slate-50"
+              >
+                <img
+                  src={
+                    block.previewUrl
+                  }
+                  alt=""
+                  className="max-h-[520px] w-full object-contain"
+                />
+
+                <button
+                  type="button"
+                  disabled={
+                    disabled
+                  }
+                  onClick={() =>
+                    removeImage(
+                      block
+                    )
+                  }
+                  className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/75 text-sm font-black text-white"
+                >
+                  ×
+                </button>
+              </div>
+            ) : (
+              <textarea
+                key={
+                  block.id
+                }
+                value={
+                  block.text
+                }
+                disabled={
+                  disabled
+                }
+                onFocus={() =>
+                  setActiveId(
+                    block.id
+                  )
+                }
+                onPaste={
+                  handlePaste
+                }
+                onChange={
+                  event =>
+                    setBlocks(
+                      current =>
+                        current.map(
+                          item =>
+                            item.type ===
+                              "text" &&
+                            item.id ===
+                              block.id
+                              ? {
+                                  ...item,
+                                  text:
+                                    event
+                                      .target
+                                      .value,
+                                }
+                              : item
+                        )
+                    )
+                }
+                rows={
+                  Math.max(
+                    4,
+                    block.text.split(
+                      "\n"
+                    ).length +
+                      2
+                  )
+                }
+                placeholder="내용을 입력하거나 캡처 이미지를 Ctrl+V로 붙여넣어주세요."
+                className="my-1 w-full resize-none bg-transparent px-1 py-2 font-medium leading-7 outline-none placeholder:text-slate-400"
+                style={{
+                  textAlign:
+                    block.align,
+                  fontWeight:
+                    block.bold
+                      ? 800
+                      : 500,
+                  color:
+                    block.color,
+                  fontSize:
+                    block.fontSize,
+                }}
+              />
+            )
+        )}
+      </div>
+
+      <div className="flex items-center justify-between border-t border-slate-100 px-3 py-3">
+        <button
+          type="button"
+          disabled={
+            disabled
+          }
+          onClick={() =>
+            fileRef.current
+              ?.click()
+          }
+          className="flex items-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs font-extrabold text-slate-600"
+        >
+          <ImageIcon
+            size={16}
+          />
+          사진 추가
+        </button>
+
+        <div className="text-[11px] font-bold text-slate-400">
+          이미지{" "}
+          {imageCount}/
+          {HOST_MAX_IMAGES} ·
+          Ctrl+V 가능
+        </div>
+      </div>
+
+      <input
+        ref={fileRef}
+        type="file"
+        multiple
+        accept="image/jpeg,image/png,image/webp,image/gif"
+        className="hidden"
+        onChange={
+          event => {
+            const files =
+              Array.from(
+                event.target
+                  .files ||
+                  []
+              );
+
+            event.currentTarget.value =
+              "";
+
+            addFiles(files);
+          }
+        }
+      />
+    </div>
+  );
+}
+
+function HostPostBody({
+  post,
+  attachments,
+}: {
+  post: any;
+  attachments: any[];
+}) {
+  const attachmentMap =
+    useMemo(
+      () =>
+        new Map(
+          (
+            Array.isArray(
+              attachments
+            )
+              ? attachments
+              : []
+          ).map(
+            (
+              attachment: any
+            ) => [
+              Number(
+                attachment.id
+              ),
+              attachment,
+            ]
+          )
+        ),
+      [
+        attachments,
+      ]
+    );
+
+  const blocks =
+    Array.isArray(
+      post?.contentData
+        ?.blocks
+    )
+      ? post.contentData.blocks
+      : null;
+
+  if (
+    !blocks?.length
+  ) {
+    return (
+      <div className="py-6">
+        <div className="whitespace-pre-wrap text-sm leading-7 text-slate-700">
+          {post?.content ||
+            ""}
+        </div>
+
+        {attachments.length >
+        0 ? (
+          <div className="mt-5 space-y-4">
+            {attachments.map(
+              (
+                attachment: any
+              ) => (
+                <img
+                  key={
+                    attachment.id
+                  }
+                  src={
+                    attachment.url
+                  }
+                  alt=""
+                  className="max-h-[520px] w-full rounded-xl object-contain"
+                />
+              )
+            )}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4 py-6">
+      {blocks.map(
+        (
+          block: any,
+          index: number
+        ) => {
+          if (
+            block?.type ===
+            "image"
+          ) {
+            const attachment =
+              attachmentMap.get(
+                Number(
+                  block.attachmentId ||
+                    0
+                )
+              );
+
+            return attachment?.url ? (
+              <img
+                key={`image-${index}`}
+                src={
+                  attachment.url
+                }
+                alt=""
+                className="max-h-[520px] w-full rounded-xl object-contain"
+              />
+            ) : null;
+          }
+
+          if (
+            block?.type ===
+            "text"
+          ) {
+            return (
+              <div
+                key={`text-${index}`}
+                className="whitespace-pre-wrap leading-8"
+                style={{
+                  textAlign:
+                    block.align ===
+                      "center" ||
+                    block.align ===
+                      "right"
+                      ? block.align
+                      : "left",
+
+                  fontSize:
+                    block.fontSize ===
+                    15
+                      ? 15
+                      : block.fontSize ===
+                          20
+                        ? 20
+                        : 17,
+
+                  fontWeight:
+                    block.bold
+                      ? 800
+                      : 500,
+
+                  color:
+                    String(
+                      block.color ||
+                        "#1e293b"
+                    ),
+                }}
+              >
+                {String(
+                  block.text ||
+                    ""
+                )}
+              </div>
+            );
+          }
+
+          return null;
+        }
+      )}
     </div>
   );
 }
