@@ -7594,6 +7594,8 @@ toast.success("환불 요청 등록 완료");
         비워둔 항목은 공통엔진의 자동 계산값을 사용합니다.
       </p>
 
+</div>
+
 
     <DialogFooter className="gap-2">
       {!usingQualificationEngine && (
