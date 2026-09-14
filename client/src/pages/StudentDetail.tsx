@@ -7489,7 +7489,6 @@ toast.success("환불 요청 등록 완료");
               </SelectItem>
             </SelectContent>
           </Select>
-        </div>
       </div>
     </div>
 )}
