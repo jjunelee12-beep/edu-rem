@@ -679,7 +679,7 @@ setBulkCertificateCompanyShareAmount((prev) =>
 
     const label = draft.label.trim();
     const thresholdAmount = draft.thresholdAmount.replace(/[^0-9]/g, "");
-    const creditValue = Number(draft.creditValue.replace(/[^0-9]/g, ""));
+    const creditValue = Number(draft.creditValue);
     const sortOrder = Number(draft.sortOrder.replace(/[^0-9]/g, "") || 0);
 
     if (!label) {
@@ -711,7 +711,7 @@ setBulkCertificateCompanyShareAmount((prev) =>
   const handleCreateSubjectPriceRule = () => {
     const label = newSubjectPriceRule.label.trim();
     const thresholdAmount = newSubjectPriceRule.thresholdAmount.replace(/[^0-9]/g, "");
-    const creditValue = Number(newSubjectPriceRule.creditValue.replace(/[^0-9]/g, ""));
+    const creditValue = Number(newSubjectPriceRule.creditValue);
     const sortOrder = Number(newSubjectPriceRule.sortOrder.replace(/[^0-9]/g, "") || 0);
 
     if (!label) {
@@ -1093,10 +1093,9 @@ if (!companyShareAmount) {
                                   ...prev,
                                   [String(rule.id)]: {
                                     ...draft,
-                                    creditValue: e.target.value.replace(
-                                      /[^0-9]/g,
-                                      ""
-                                    ),
+                                    creditValue: e.target.value
+  .replace(/[^0-9.]/g, "")
+  .replace(/(\..*)\./g, "$1"),
                                   },
                                 }))
                               }
@@ -1211,7 +1210,9 @@ if (!companyShareAmount) {
                         onChange={(e) =>
                           setNewSubjectPriceRule((prev) => ({
                             ...prev,
-                            creditValue: e.target.value.replace(/[^0-9]/g, ""),
+                            creditValue: e.target.value
+  .replace(/[^0-9.]/g, "")
+  .replace(/(\..*)\./g, "$1"),
                           }))
                         }
                         placeholder="학점값"

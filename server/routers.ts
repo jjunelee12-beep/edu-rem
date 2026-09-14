@@ -4068,6 +4068,119 @@ export const appRouter = router({
                   session.studentId,
               });
 
+/**
+ * -------------------------------------------------
+ * 공통엔진 인정과목
+ * -------------------------------------------------
+ *
+ * recognizedSubjects:
+ * 실제 취득/인정 완료 기준
+ *
+ * projectedRecognizedSubjects:
+ * 실제 인정과목 + 예정/진행중 과목까지 포함한
+ * 전체 설계 기준
+ *
+ * Portal에서는 과목 중복/동일교과목 여부를
+ * 다시 계산하지 않고 공통엔진 결과를 그대로 사용한다.
+ */
+const portalRecognizedSubjects =
+  (
+    portalEngine
+      .recognizedSubjects ||
+    []
+  ).map(
+    (
+      subject: any
+    ) => ({
+      id:
+        subject.id ??
+        null,
+
+      source:
+        subject.source ??
+        null,
+
+      sourceLabel:
+        subject.sourceLabel ??
+        null,
+
+      subjectName:
+        subject.subjectName ??
+        null,
+
+      requirementType:
+        subject.requirementType ??
+        null,
+
+      category:
+        subject.category ??
+        null,
+
+      credits:
+        Number(
+          subject.credits ||
+          0
+        ),
+
+      semesterNo:
+        subject.semesterNo ??
+        null,
+
+      progressStatus:
+        subject.progressStatus ??
+        null,
+    })
+  );
+
+const portalProjectedRecognizedSubjects =
+  (
+    portalEngine
+      .projectedRecognizedSubjects ||
+    []
+  ).map(
+    (
+      subject: any
+    ) => ({
+      id:
+        subject.id ??
+        null,
+
+      source:
+        subject.source ??
+        null,
+
+      sourceLabel:
+        subject.sourceLabel ??
+        null,
+
+      subjectName:
+        subject.subjectName ??
+        null,
+
+      requirementType:
+        subject.requirementType ??
+        null,
+
+      category:
+        subject.category ??
+        null,
+
+      credits:
+        Number(
+          subject.credits ||
+          0
+        ),
+
+      semesterNo:
+        subject.semesterNo ??
+        null,
+
+      progressStatus:
+        subject.progressStatus ??
+        null,
+    })
+  );
+
             /**
              * -------------------------------------------------
              * 등록회원 실제 행정절차 상태
@@ -5137,389 +5250,200 @@ export const appRouter = router({
              * 담당자가 저장한 관리값을 그대로 전달한다.
              */
             const qualificationOverrides =
-              source.qualificationOverrides.map(
-                (
-                  row: any
-                ) => ({
-                  courseKey:
-                    row.courseKey ??
-                    null,
+  source.qualificationOverrides.map(
+    (
+      row: any
+    ) => ({
+      courseKey:
+        row.courseKey ??
+        null,
 
-                  requirementProfileKey:
-                    row.requirementProfileKey ??
-                    null,
+      requirementProfileKey:
+        row.requirementProfileKey ??
+        null,
 
-                  requiredMajorRequiredSubjects:
-                    row.requiredMajorRequiredSubjects ??
-                    null,
+      requiredMajorRequiredSubjects:
+        row.requiredMajorRequiredSubjects ??
+        null,
 
-                  requiredMajorElectiveSubjects:
-                    row.requiredMajorElectiveSubjects ??
-                    null,
+      requiredMajorElectiveSubjects:
+        row.requiredMajorElectiveSubjects ??
+        null,
 
-                  requiredLiberalSubjects:
-                    row.requiredLiberalSubjects ??
-                    null,
+      // 자격증 전체 필요 과목 수
+      requiredTotalSubjects:
+        row.requiredTotalSubjects ??
+        null,
 
-                  requiredGeneralSubjects:
-                    row.requiredGeneralSubjects ??
-                    null,
+      requiredLiberalSubjects:
+        row.requiredLiberalSubjects ??
+        null,
 
-                  requiredTotalCredits:
-                    row.requiredTotalCredits ??
-                    null,
+      requiredGeneralSubjects:
+        row.requiredGeneralSubjects ??
+        null,
 
-                  degreeApplicationOverride:
-                    row.degreeApplicationOverride ??
-                    null,
+      // 학위 총 필요학점
+      requiredTotalCredits:
+        row.requiredTotalCredits ??
+        null,
 
-                  memo:
-                    row.memo ??
-                    null,
-                })
-              );
+      // 학위 최소 전공학점
+      requiredMajorCredits:
+        row.requiredMajorCredits ??
+        null,
 
-            /**
-             * -------------------------------------------------
-             * 현재 확정 데이터 기준 안전검사
-             * -------------------------------------------------
-             *
-             * 중요:
-             *
-             * 미래 계획이 비어있다는 이유로
-             * 부족 경고를 만들지 않는다.
-             *
-             * 현재 실제 입력되어 있는 데이터의
-             * 명백한 모순만 검사한다.
-             */
+      // 학위 최소 교양학점
+      requiredLiberalCredits:
+        row.requiredLiberalCredits ??
+        null,
 
-            const safetyIssues:
-              Array<{
-                code: string;
-                message: string;
-              }> =
-              [];
+degreeTrackType:
+  row.degreeTrackType ??
+  null,
 
-            /**
-             * 학기별 최대 8과목 검사.
-             */
-            const semesterSubjectCountMap =
-              new Map<
-                number,
-                number
-              >();
+additionalQualificationKeys:
+  (() => {
+    try {
+      const parsed =
+        JSON.parse(
+          String(
+            row.additionalQualificationKeysJson ||
+            "[]"
+          )
+        );
 
-            for (
-              const subject of
-              subjectRows
-            ) {
-              const semesterNo =
-                Number(
-                  subject.semesterNo ||
-                  0
-                );
+      return Array.isArray(parsed)
+        ? parsed
+        : [];
+    } catch {
+      return [];
+    }
+  })(),
 
-              if (
-                semesterNo <=
-                0
-              ) {
-                continue;
-              }
+      degreeApplicationOverride:
+        row.degreeApplicationOverride ??
+        null,
 
-              semesterSubjectCountMap.set(
-                semesterNo,
-                (
-                  semesterSubjectCountMap.get(
-                    semesterNo
-                  ) ||
-                  0
-                ) +
-                  1
-              );
-            }
-
-            for (
-              const [
-                semesterNo,
-                count,
-              ] of
-              semesterSubjectCountMap
-            ) {
-              if (
-                count >
-                8
-              ) {
-                safetyIssues.push({
-                  code:
-                    "SEMESTER_SUBJECT_LIMIT",
-
-                  message:
-                    `${semesterNo}학기에 8과목을 초과한 과목이 확인되었습니다.`,
-                });
-              }
-            }
+      memo:
+        row.memo ??
+        null,
+    })
+  );
 
             /**
-             * 연간 최대 14과목 검사.
-             *
-             * 실제 학기의 semesterLabel에
-             * 연도가 입력된 경우에만 검사한다.
-             *
-             * 연도를 추측하지 않는다.
-             */
-            const semesterYearMap =
-              new Map<
-                number,
-                string
-              >();
+ * -------------------------------------------------
+ * 현재 확정 데이터 기준 안전검사
+ * -------------------------------------------------
+ *
+ * Portal에서 별도 계산하지 않는다.
+ *
+ * 동일한 공통 Risk Engine이 생성한 이슈 중
+ * 실제 설계 오류 / 과목 오류 / 수강제한 오류만
+ * 등록자용 안전검사에 노출한다.
+ *
+ * 단순 미이수 / 학점부족 / 행정미진행 /
+ * 결제 상태 등은 안전검사에서 제외한다.
+ */
+const uniqueSafetyIssues =
+  (
+    portalEngine
+      .issues ||
+    []
+  )
+    .filter(
+      (
+        issue: any
+      ) => {
+        const code =
+          String(
+            issue?.code ||
+            ""
+          ).trim();
 
-            for (
-              const semester of
-              semesterRows
-            ) {
-              const label =
-                String(
-                  semester.semesterLabel ||
-                  ""
-                ).trim();
+        if (
+          !code
+        ) {
+          return false;
+        }
 
-              const yearMatch =
-                label.match(
-                  /^(20\d{2})년/
-                );
+        /**
+         * 학기 / 연간 수강제한.
+         */
+        if (
+          code ===
+            "SEMESTER_SUBJECT_LIMIT" ||
+          code ===
+            "ANNUAL_SUBJECT_LIMIT"
+        ) {
+          return true;
+        }
 
-              if (
-                !yearMatch
-              ) {
-                continue;
-              }
+        /**
+         * 공통 동일교과목 판정에 의한
+         * 플랜 / 전적대 / 추가인정 전체 중복.
+         */
+        if (
+          code.startsWith(
+            "DUPLICATE_SUBJECT_"
+          )
+        ) {
+          return true;
+        }
 
-              semesterYearMap.set(
-                Number(
-                  semester.semesterOrder
-                ),
-                yearMatch[1]
-              );
-            }
+        /**
+         * 진행중 / 완료 상태인데
+         * '새 과목' placeholder가 남은 경우.
+         *
+         * 예정 상태 placeholder는
+         * 엔진 자체가 이슈를 만들지 않는다.
+         */
+        if (
+          code.startsWith(
+            "PLACEHOLDER_SUBJECT_"
+          )
+        ) {
+          return true;
+        }
 
-            const annualSubjectMap =
-              new Map<
-                string,
-                number
-              >();
+        /**
+         * 실제 등록된 과목 자체의
+         * 필수 데이터 오류.
+         */
+        if (
+          code.startsWith(
+            "SUBJECT_NAME_MISSING_"
+          ) ||
+          code.startsWith(
+            "SUBJECT_CREDIT_INVALID_"
+          ) ||
+          code.startsWith(
+            "SUBJECT_REQUIREMENT_MISSING_"
+          )
+        ) {
+          return true;
+        }
 
-            for (
-              const subject of
-              subjectRows
-            ) {
-              const year =
-                semesterYearMap.get(
-                  Number(
-                    subject.semesterNo
-                  )
-                );
+        return false;
+      }
+    )
+    .map(
+      (
+        issue: any
+      ) => ({
+        code:
+          String(
+            issue.code ||
+            ""
+          ),
 
-              if (!year) {
-                continue;
-              }
-
-              annualSubjectMap.set(
-                year,
-                (
-                  annualSubjectMap.get(
-                    year
-                  ) ||
-                  0
-                ) +
-                  1
-              );
-            }
-
-            for (
-              const [
-                year,
-                count,
-              ] of
-              annualSubjectMap
-            ) {
-              if (
-                count >
-                14
-              ) {
-                safetyIssues.push({
-                  code:
-                    "ANNUAL_SUBJECT_LIMIT",
-
-                  message:
-                    `${year}년 연간 14과목을 초과한 과목이 확인되었습니다.`,
-                });
-              }
-            }
-
-            /**
-             * 우리플랜 내부 중복과목 검사.
-             *
-             * 공백과 대소문자 차이만 정규화한다.
-             * 과목명을 임의로 유사판정하지 않는다.
-             */
-            const planSubjectNameMap =
-              new Map<
-                string,
-                {
-                  name: string;
-                  count: number;
-                }
-              >();
-
-                       for (
-              const subject of
-              subjectRows
-            ) {
-              /**
-               * 담당자가 명시적으로 재수강 처리한 과목은
-               * 의도된 중복이므로 설계오류 중복검사에서 제외한다.
-               *
-               * 단, 학기/연간 이수과목 수 계산에는 포함된다.
-               */
-              if (
-                subject.retakeRequired ===
-                true
-              ) {
-                continue;
-              }
-
-              const name =
-                String(
-                  subject.subjectName ||
-                  ""
-                ).trim();
-
-              if (!name) {
-                continue;
-              }
-
-              const key =
-                name.toLowerCase();
-
-              const current =
-                planSubjectNameMap.get(
-                  key
-                );
-
-              if (current) {
-                current.count +=
-                  1;
-              } else {
-                planSubjectNameMap.set(
-                  key,
-                  {
-                    name,
-                    count:
-                      1,
-                  }
-                );
-              }
-            }
-
-            for (
-              const item of
-              planSubjectNameMap.values()
-            ) {
-              if (
-                item.count >
-                1
-              ) {
-                safetyIssues.push({
-                  code:
-                    "DUPLICATE_PLAN_SUBJECT",
-
-                  message:
-                    `동일 과목이 중복으로 확인되었습니다: ${item.name}`,
-                });
-              }
-            }
-
-            /**
-             * 전적대와 우리플랜 중복 검사.
-             *
-             * 실제 입력된 과목명끼리만 정확히 비교한다.
-             */
-            const transferSubjectNameSet =
-              new Set(
-                transferRows
-                  .map(
-                    (
-                      row: any
-                    ) =>
-                      String(
-                        row.subjectName ||
-                        ""
-                      )
-                        .trim()
-                        .toLowerCase()
-                  )
-                  .filter(
-                    Boolean
-                  )
-              );
-
-                        for (
-              const subject of
-              subjectRows
-            ) {
-              /**
-               * 담당자가 재수강으로 확정한 과목은
-               * 전적대와 동일한 과목명이 있어도
-               * 단순 중복오류로 처리하지 않는다.
-               */
-              if (
-                subject.retakeRequired ===
-                true
-              ) {
-                continue;
-              }
-
-              const name =
-                String(
-                  subject.subjectName ||
-                  ""
-                ).trim();
-
-              if (!name) {
-                continue;
-              }
-
-              if (
-                transferSubjectNameSet.has(
-                  name.toLowerCase()
-                )
-              ) {
-                safetyIssues.push({
-                  code:
-                    "DUPLICATE_TRANSFER_SUBJECT",
-
-                  message:
-                    `전적대 이수과목과 중복된 과목이 확인되었습니다: ${name}`,
-                });
-              }
-            }
-
-            /**
-             * 같은 경고 중복 제거.
-             */
-            const uniqueSafetyIssues =
-              Array.from(
-                new Map(
-                  safetyIssues.map(
-                    (
-                      issue
-                    ) => [
-                      `${issue.code}:${issue.message}`,
-                      issue,
-                    ]
-                  )
-                ).values()
-              );
+        message:
+          String(
+            issue.message ||
+            ""
+          ),
+      })
+    );
 
             /**
              * -------------------------------------------------
@@ -5676,6 +5600,54 @@ export const appRouter = router({
               portalRequirements
                 ?.degree ??
               null;
+
+/**
+ * -------------------------------------------------
+ * 등록자용 전체 설계 완료 기준 취득요건
+ * -------------------------------------------------
+ *
+ * requirements:
+ * 전적대 + 실제 이수완료
+ *
+ * projectedRequirements:
+ * 전적대 + 이수완료 + 진행중 + 예정
+ *
+ * projectedRequirements가 없는 구버전 결과에서는
+ * 실제 requirements를 fallback으로 사용한다.
+ */
+const portalProjectedRequirements =
+  portalEngine
+    .projectedRequirements ??
+  portalRequirements;
+
+const portalProjectedQualificationRequirement =
+  portalProjectedRequirements
+    ?.qualification ??
+  null;
+
+const portalProjectedQualificationDetails =
+  (
+    portalProjectedQualificationRequirement
+      ?.details &&
+    typeof portalProjectedQualificationRequirement
+      .details ===
+      "object" &&
+    !Array.isArray(
+      portalProjectedQualificationRequirement
+        .details
+    )
+  )
+    ? portalProjectedQualificationRequirement
+        .details as Record<
+          string,
+          any
+        >
+    : {};
+
+const portalProjectedDegreeRequirement =
+  portalProjectedRequirements
+    ?.degree ??
+  null;
 
             const requirementSummary = {
               courseKey:
@@ -5981,6 +5953,250 @@ export const appRouter = router({
                   null,
               },
             };
+
+/**
+ * -------------------------------------------------
+ * 등록자용 전체 설계 충족요약
+ * -------------------------------------------------
+ *
+ * requirementSummary:
+ * 실제 취득 완료 기준
+ *
+ * projectedRequirementSummary:
+ * 현재 등록된 예정/진행 과목까지
+ * 모두 정상 이수했다고 가정한 설계 기준
+ *
+ * 목표값(required)은 동일하고,
+ * 완료/현재/잔여값만 projected 엔진값으로 교체한다.
+ */
+const projectedRequirementSummary =
+  structuredClone(
+    requirementSummary
+  );
+
+/**
+ * 전체 공통상태.
+ */
+projectedRequirementSummary.courseKey =
+  portalProjectedRequirements
+    ?.courseKey ??
+  requirementSummary.courseKey;
+
+projectedRequirementSummary.status =
+  portalProjectedRequirements
+    ?.status ??
+  requirementSummary.status;
+
+projectedRequirementSummary.canPlan =
+  portalProjectedRequirements
+    ?.canPlan ===
+  true;
+
+projectedRequirementSummary.requiresReview =
+  portalProjectedRequirements
+    ?.requiresReview ===
+  true;
+
+/**
+ * 자격증 전체 과목수.
+ */
+projectedRequirementSummary
+  .qualification
+  .canAnalyze =
+  portalProjectedQualificationRequirement
+    ?.canAnalyze ===
+  true;
+
+projectedRequirementSummary
+  .qualification
+  .completedSubjects =
+  portalProjectedQualificationRequirement
+    ?.completedSubjects ??
+  null;
+
+projectedRequirementSummary
+  .qualification
+  .remainingSubjects =
+  portalProjectedQualificationRequirement
+    ?.remainingSubjects ??
+  null;
+
+projectedRequirementSummary
+  .qualification
+  .completedCredits =
+  portalProjectedQualificationRequirement
+    ?.completedCredits ??
+  null;
+
+projectedRequirementSummary
+  .qualification
+  .remainingCredits =
+  portalProjectedQualificationRequirement
+    ?.remainingCredits ??
+  null;
+
+/**
+ * 사회복지사 2급 필수 / 선택 / 총 과목수.
+ */
+if (
+  projectedRequirementSummary
+    .qualification
+    .socialWorker &&
+  portalProjectedRequirements
+    ?.courseKey ===
+    "social_worker_2"
+) {
+  projectedRequirementSummary
+    .qualification
+    .socialWorker
+    .completedRequiredSubjects =
+    Number(
+      portalProjectedQualificationDetails
+        .completedRequiredSubjects ??
+      0
+    );
+
+  projectedRequirementSummary
+    .qualification
+    .socialWorker
+    .remainingRequiredSubjects =
+    portalProjectedQualificationDetails
+      .remainingRequiredSubjects ===
+        null ||
+    portalProjectedQualificationDetails
+      .remainingRequiredSubjects ===
+        undefined
+      ? null
+      : Number(
+          portalProjectedQualificationDetails
+            .remainingRequiredSubjects
+        );
+
+  projectedRequirementSummary
+    .qualification
+    .socialWorker
+    .completedElectiveSubjects =
+    Number(
+      portalProjectedQualificationDetails
+        .completedElectiveSubjects ??
+      0
+    );
+
+  projectedRequirementSummary
+    .qualification
+    .socialWorker
+    .remainingElectiveSubjects =
+    portalProjectedQualificationDetails
+      .remainingElectiveSubjects ===
+        null ||
+    portalProjectedQualificationDetails
+      .remainingElectiveSubjects ===
+        undefined
+      ? null
+      : Number(
+          portalProjectedQualificationDetails
+            .remainingElectiveSubjects
+        );
+
+  projectedRequirementSummary
+    .qualification
+    .socialWorker
+    .completedTotalSubjects =
+    portalProjectedQualificationDetails
+      .completedTotalSubjects ===
+        null ||
+    portalProjectedQualificationDetails
+      .completedTotalSubjects ===
+        undefined
+      ? portalProjectedQualificationRequirement
+          ?.completedSubjects ??
+        null
+      : Number(
+          portalProjectedQualificationDetails
+            .completedTotalSubjects
+        );
+
+  projectedRequirementSummary
+    .qualification
+    .socialWorker
+    .remainingTotalSubjects =
+    portalProjectedQualificationDetails
+      .remainingTotalSubjects ===
+        null ||
+    portalProjectedQualificationDetails
+      .remainingTotalSubjects ===
+        undefined
+      ? portalProjectedQualificationRequirement
+          ?.remainingSubjects ??
+        null
+      : Number(
+          portalProjectedQualificationDetails
+            .remainingTotalSubjects
+        );
+}
+
+/**
+ * 학위학점.
+ *
+ * 목표학점은 actual/projected 모두 동일하고
+ * 현재 인정학점 및 잔여학점만 projected 기준으로 바꾼다.
+ */
+projectedRequirementSummary
+  .degree
+  .currentTotalCredits =
+  Number(
+    portalProjectedDegreeRequirement
+      ?.currentTotalCredits ??
+    0
+  );
+
+projectedRequirementSummary
+  .degree
+  .remainingTotalCredits =
+  portalProjectedDegreeRequirement
+    ?.remainingTotalCredits ??
+  null;
+
+projectedRequirementSummary
+  .degree
+  .currentMajorCredits =
+  Number(
+    portalProjectedDegreeRequirement
+      ?.currentMajorCredits ??
+    0
+  );
+
+projectedRequirementSummary
+  .degree
+  .remainingMajorCredits =
+  portalProjectedDegreeRequirement
+    ?.remainingMajorCredits ??
+  null;
+
+projectedRequirementSummary
+  .degree
+  .currentLiberalCredits =
+  Number(
+    portalProjectedDegreeRequirement
+      ?.currentLiberalCredits ??
+    0
+  );
+
+projectedRequirementSummary
+  .degree
+  .remainingLiberalCredits =
+  portalProjectedDegreeRequirement
+    ?.remainingLiberalCredits ??
+  null;
+
+projectedRequirementSummary
+  .degree
+  .currentGeneralCredits =
+  Number(
+    portalProjectedDegreeRequirement
+      ?.currentGeneralCredits ??
+    0
+  );
 
             /**
              * -------------------------------------------------
@@ -6326,14 +6542,30 @@ export const appRouter = router({
                   null,
               },
 
-                                            plan:
-                planSummary,
+              plan:
+  planSummary,
 
-              qualificationProgress,
+qualificationProgress,
 
-              requirementSummary,
+requirementSummary,
 
-              learningProgress,
+projectedRequirementSummary,
+
+/**
+ * 공통엔진이 이미 중복제거 및
+ * 동일교과목 판정을 끝낸 인정과목.
+ */
+recognizedSubjects:
+  portalRecognizedSubjects,
+
+/**
+ * 예정/진행 과목까지 포함한
+ * 전체 설계 기준 인정과목.
+ */
+projectedRecognizedSubjects:
+  portalProjectedRecognizedSubjects,
+
+learningProgress,
 
               /**
                * 학위신청 대상 여부.
@@ -12675,6 +12907,255 @@ qualificationOverrides: router({
     }),
 
   /**
+   * 취득요건 설정창의 추가 학위 선택 미리보기.
+   *
+   * DB에는 아무것도 저장하지 않는다.
+   *
+   * 담당자가
+   *
+   * - 시스템 자동
+   * - 추가 학위 없음
+   * - 전문학사
+   * - 학사
+   * - 타전공 전문학사
+   * - 타전공 학사
+   *
+   * 중 하나를 선택했을 때
+   * 공통 학위 Resolver의 결과만 즉시 계산해서 반환한다.
+   */
+  previewDegreeRequirement:
+    protectedProcedure
+      .input(
+        z.object({
+          studentId:
+            z.number(),
+
+          degreeTrackType:
+            z.enum([
+              "auto",
+              "none",
+              "associate",
+              "bachelor",
+              "second_major_associate",
+              "second_major_bachelor",
+            ]),
+        })
+      )
+      .query(
+        async ({
+          ctx,
+          input,
+        }) => {
+          const organizationId =
+            getCtxOrganizationId(ctx);
+
+          const student =
+            await db.getStudent(
+              input.studentId,
+              {
+                organizationId,
+              }
+            );
+
+          if (!student) {
+            throwAppError(
+              ERROR_CODES.DATA_NOT_FOUND,
+              "학생을 찾을 수 없습니다.",
+              404
+            );
+          }
+
+          /**
+           * 조회 권한은
+           * qualificationOverrides.get과 동일하게 적용한다.
+           */
+          if (
+            !isAdminOrHost(
+              ctx.user
+            ) &&
+            Number(
+              student.assigneeId
+            ) !==
+              Number(
+                ctx.user.id
+              )
+          ) {
+            throwAppError(
+              ERROR_CODES.PERMISSION_DENIED,
+              "권한이 없습니다.",
+              403
+            );
+          }
+
+          /**
+           * 학생 과정명을 서버에서
+           * 공통엔진 canonical key로 변환한다.
+           */
+          const courseKey =
+            resolveQualificationRiskCourseKey(
+              String(
+                student.course ||
+                ""
+              ).trim()
+            );
+
+          /**
+           * 아직 공통엔진에 연결되지 않은 과정은
+           * 저장 오류가 아니라
+           * preview 미지원 상태로 내려준다.
+           */
+          if (
+            courseKey ===
+            "unknown"
+          ) {
+            return {
+              supported:
+                false as const,
+
+              courseKey:
+                null,
+
+              degreeTrackType:
+                input.degreeTrackType,
+
+              requiresDegree:
+                false,
+
+              requiresNewDegreeTrack:
+                false,
+
+              existingDegreeSatisfiesRequirement:
+                false,
+
+              minimumDegreeLevel:
+                "none" as const,
+
+              degreeType:
+                null,
+
+              requiredTotalCredits:
+                null,
+
+              requiredMajorCredits:
+                null,
+
+              requiredLiberalCredits:
+                null,
+
+              reason:
+                "현재 학생의 등록과정을 공통 학위엔진과 연결할 수 없습니다.",
+            };
+          }
+
+          /**
+           * ai-risk-engine과 동일하게
+           * 학생 최종학력을 우선 사용하고,
+           * 없으면 플랜의 최종학력을 fallback으로 사용한다.
+           */
+          const plan =
+            await db.getPlan(
+              input.studentId,
+              {
+                organizationId,
+              }
+            );
+
+          const finalEducation =
+            (student as any)
+              .finalEducation ??
+            (plan as any)
+              ?.finalEducation ??
+            null;
+
+          /**
+           * auto:
+           * 담당자의 수동 학위트랙이 없는 상태.
+           *
+           * null을 넘겨서
+           * 기존 공통엔진 자동판정을 그대로 사용한다.
+           */
+          const degreeRequirement =
+            resolveDegreeRequirement({
+              courseKey,
+
+              finalEducation,
+
+              degreeTrackType:
+                input.degreeTrackType ===
+                "auto"
+                  ? null
+                  : input.degreeTrackType,
+            });
+
+          const degreeRule =
+            degreeRequirement
+              .defaultDegreeRule;
+
+          return {
+            supported:
+              true as const,
+
+            courseKey,
+
+            degreeTrackType:
+              input.degreeTrackType,
+
+            finalEducation,
+
+            requiresDegree:
+              degreeRequirement
+                .requiresDegree,
+
+            requiresNewDegreeTrack:
+              degreeRequirement
+                .requiresNewDegreeTrack,
+
+            existingDegreeSatisfiesRequirement:
+              degreeRequirement
+                .existingDegreeSatisfiesRequirement,
+
+            minimumDegreeLevel:
+              degreeRequirement
+                .minimumDegreeLevel,
+
+            degreeType:
+              degreeRule
+                ?.degreeType ??
+              null,
+
+            /**
+             * Rule 원본 필드:
+             *
+             * totalCredits
+             * majorCredits
+             * liberalCredits
+             *
+             * 프론트에서는 취득요건 설정 명칭에 맞춰
+             * required* 형태로 반환한다.
+             */
+            requiredTotalCredits:
+              degreeRule
+                ?.totalCredits ??
+              null,
+
+            requiredMajorCredits:
+              degreeRule
+                ?.majorCredits ??
+              null,
+
+            requiredLiberalCredits:
+              degreeRule
+                ?.liberalCredits ??
+              null,
+
+            reason:
+              degreeRequirement
+                .reason,
+          };
+        }
+      ),
+
+  /**
    * 학생별 override 저장.
    *
    * 중요:
@@ -12697,39 +13178,50 @@ qualificationOverrides: router({
             .nullable(),
 
         requiredMajorRequiredSubjects:
-          z.number()
-            .int()
-            .min(0)
-            .optional()
-            .nullable(),
+  z.number().min(0).nullable().optional(),
 
-        requiredMajorElectiveSubjects:
-          z.number()
-            .int()
-            .min(0)
-            .optional()
-            .nullable(),
+requiredMajorElectiveSubjects:
+  z.number().min(0).nullable().optional(),
 
-        requiredLiberalSubjects:
-          z.number()
-            .int()
-            .min(0)
-            .optional()
-            .nullable(),
+requiredTotalSubjects:
+  z.number().min(0).nullable().optional(),
 
-        requiredGeneralSubjects:
-          z.number()
-            .int()
-            .min(0)
-            .optional()
-            .nullable(),
+requiredLiberalSubjects:
+  z.number().min(0).nullable().optional(),
 
-        requiredTotalCredits:
-          z.number()
-            .int()
-            .min(0)
-            .optional()
-            .nullable(),
+requiredGeneralSubjects:
+  z.number().min(0).nullable().optional(),
+
+requiredTotalCredits:
+  z.number().min(0).nullable().optional(),
+
+requiredMajorCredits:
+  z.number().min(0).nullable().optional(),
+
+requiredLiberalCredits:
+  z.number().min(0).nullable().optional(),
+
+degreeTrackType:
+  z.enum([
+    "none",
+    "associate",
+    "bachelor",
+    "second_major_associate",
+    "second_major_bachelor",
+  ])
+    .nullable()
+    .optional(),
+
+additionalQualificationKeys:
+  z.array(
+    z.string()
+      .trim()
+      .min(1)
+      .max(100)
+  )
+    .max(20)
+    .optional()
+    .default([]),
 
         degreeApplicationOverride:
           z.enum([
@@ -12831,31 +13323,39 @@ qualificationOverrides: router({
        * 빈 override 행을 만들지 않는다.
        */
       const hasActualOverride =
-        requirementProfileKey !== null ||
-        input.requiredMajorRequiredSubjects !==
-          null &&
-        input.requiredMajorRequiredSubjects !==
-          undefined ||
-        input.requiredMajorElectiveSubjects !==
-          null &&
-        input.requiredMajorElectiveSubjects !==
-          undefined ||
-        input.requiredLiberalSubjects !==
-          null &&
-        input.requiredLiberalSubjects !==
-          undefined ||
-        input.requiredGeneralSubjects !==
-          null &&
-        input.requiredGeneralSubjects !==
-          undefined ||
-        input.requiredTotalCredits !==
-          null &&
-        input.requiredTotalCredits !==
-          undefined ||
-        input.degreeApplicationOverride !==
-          null &&
-        input.degreeApplicationOverride !==
-          undefined;
+  requirementProfileKey !== null ||
+
+  input.requiredMajorRequiredSubjects !== null &&
+  input.requiredMajorRequiredSubjects !== undefined ||
+
+  input.requiredMajorElectiveSubjects !== null &&
+  input.requiredMajorElectiveSubjects !== undefined ||
+
+  input.requiredTotalSubjects !== null &&
+  input.requiredTotalSubjects !== undefined ||
+
+  input.requiredLiberalSubjects !== null &&
+  input.requiredLiberalSubjects !== undefined ||
+
+  input.requiredGeneralSubjects !== null &&
+  input.requiredGeneralSubjects !== undefined ||
+
+  input.requiredTotalCredits !== null &&
+  input.requiredTotalCredits !== undefined ||
+
+  input.requiredMajorCredits !== null &&
+  input.requiredMajorCredits !== undefined ||
+
+  input.requiredLiberalCredits !== null &&
+input.requiredLiberalCredits !== undefined ||
+
+input.degreeTrackType !== null &&
+input.degreeTrackType !== undefined ||
+
+input.additionalQualificationKeys.length > 0 ||
+
+input.degreeApplicationOverride !== null &&
+input.degreeApplicationOverride !== undefined;
 
       /**
        * 모든 override가 해제됐다면
@@ -12931,28 +13431,49 @@ qualificationOverrides: router({
           requirementProfileKey,
 
           requiredMajorRequiredSubjects:
-            input.requiredMajorRequiredSubjects ??
-            null,
+  input.requiredMajorRequiredSubjects ??
+  null,
 
-          requiredMajorElectiveSubjects:
-            input.requiredMajorElectiveSubjects ??
-            null,
+requiredMajorElectiveSubjects:
+  input.requiredMajorElectiveSubjects ??
+  null,
 
-          requiredLiberalSubjects:
-            input.requiredLiberalSubjects ??
-            null,
+requiredTotalSubjects:
+  input.requiredTotalSubjects ??
+  null,
 
-          requiredGeneralSubjects:
-            input.requiredGeneralSubjects ??
-            null,
+requiredLiberalSubjects:
+  input.requiredLiberalSubjects ??
+  null,
 
-          requiredTotalCredits:
-            input.requiredTotalCredits ??
-            null,
+requiredGeneralSubjects:
+  input.requiredGeneralSubjects ??
+  null,
 
-          degreeApplicationOverride:
-            input.degreeApplicationOverride ??
-            null,
+requiredTotalCredits:
+  input.requiredTotalCredits ??
+  null,
+
+requiredMajorCredits:
+  input.requiredMajorCredits ??
+  null,
+
+requiredLiberalCredits:
+  input.requiredLiberalCredits ??
+  null,
+
+degreeTrackType:
+  input.degreeTrackType ??
+  null,
+
+additionalQualificationKeysJson:
+  JSON.stringify(
+    input.additionalQualificationKeys || []
+  ),
+
+degreeApplicationOverride:
+  input.degreeApplicationOverride ??
+  null,
 
           memo,
 

@@ -4198,6 +4198,20 @@ payment: {
     UnifiedQualificationRequirements;
 
   /**
+   * 현재 등록된 예정/진행 과목까지
+   * 모두 정상 완료되었을 때의
+   * 전체 설계 완료 기준 취득요건.
+   *
+   * requirements:
+   * 실제 취득 기준
+   *
+   * projectedRequirements:
+   * 전체 설계 완료 기준
+   */
+  projectedRequirements:
+    UnifiedQualificationRequirements;
+
+  /**
    * 법적 자격/학위 Requirements를 기준으로
    * 실제 선택된 추가과목 계획.
    *
@@ -4238,9 +4252,54 @@ academicSummary:
 
   issues: StudentRiskItem[];
 
-  subjects: StudentRiskSubjectItem[];
+/**
+ * 원본 과목 전체.
+ *
+ * 우리플랜 / 전적대 / 추가입력 데이터를
+ * 검증상태까지 포함하여 그대로 반환한다.
+ */
+subjects: StudentRiskSubjectItem[];
 
-  sourceStatus: {
+/**
+ * 현재 실제 취득/인정된 과목.
+ *
+ * 공통엔진에서 이미:
+ * - 공식 동일교과목 중복 제거
+ * - 전적대 우선 인정
+ * - 추가입력 인정
+ * - 우리플랜 completed만 인정
+ * - placeholder 제외
+ * - 재수강 제외
+ *
+ * 처리가 끝난 결과다.
+ *
+ * 등록자포탈의:
+ * - 실제 취득현황
+ * - 실습 선이수조건
+ * - 현재 인정과목
+ *
+ * 은 이 배열을 기준으로 사용한다.
+ */
+recognizedSubjects:
+  StudentRiskSubjectItem[];
+
+/**
+ * 현재 실제 인정과목 +
+ * 예정/진행중/확인필요 우리플랜 과목.
+ *
+ * 모든 등록된 학습계획이 정상 완료된다고
+ * 가정했을 때의 전체 설계 기준이다.
+ *
+ * 등록자포탈의:
+ * - 전체 설계현황
+ * - 설계 충족 여부
+ *
+ * 에 사용한다.
+ */
+projectedRecognizedSubjects:
+  StudentRiskSubjectItem[];
+
+sourceStatus: {
     hasPlan: boolean;
     hasCreditRule: boolean;
     hasTransferSubjects: boolean;

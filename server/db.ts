@@ -29922,8 +29922,12 @@ institutionName: params.institutionName ?? null,
         title: params.title,
         quantity: params.quantity ?? 1,
         actualCredits: params.actualCredits ?? null,
-        settlementCredits: params.settlementCredits ?? null,
-        subjectType: params.subjectType ?? null,
+settlementCredits:
+  params.settlementCredits === null ||
+  params.settlementCredits === undefined
+    ? null
+    : String(params.settlementCredits),
+subjectType: params.subjectType ?? null,
         subjectCount: params.subjectCount ?? 0,
         actualUnitPrice: String(actualUnitPrice),
         normalUnitPrice: String(normalUnitPrice),
@@ -29985,8 +29989,12 @@ institutionName: params.institutionName ?? null,
     title: params.title,
     quantity: params.quantity ?? 1,
     actualCredits: params.actualCredits ?? null,
-    settlementCredits: params.settlementCredits ?? null,
-    subjectType: params.subjectType ?? null,
+settlementCredits:
+  params.settlementCredits === null ||
+  params.settlementCredits === undefined
+    ? null
+    : String(params.settlementCredits),
+subjectType: params.subjectType ?? null,
     subjectCount: params.subjectCount ?? 0,
     actualUnitPrice: String(actualUnitPrice),
     normalUnitPrice: String(normalUnitPrice),
@@ -37558,20 +37566,40 @@ export async function upsertStudentQualificationOverride(
         null,
 
       requiredMajorElectiveSubjects:
-        (data as any).requiredMajorElectiveSubjects ??
-        null,
+  (data as any).requiredMajorElectiveSubjects ??
+  null,
 
-      requiredLiberalSubjects:
-        (data as any).requiredLiberalSubjects ??
-        null,
+requiredTotalSubjects:
+  (data as any).requiredTotalSubjects ??
+  null,
 
-      requiredGeneralSubjects:
-        (data as any).requiredGeneralSubjects ??
-        null,
+requiredLiberalSubjects:
+  (data as any).requiredLiberalSubjects ??
+  null,
 
-      requiredTotalCredits:
-        (data as any).requiredTotalCredits ??
-        null,
+requiredGeneralSubjects:
+  (data as any).requiredGeneralSubjects ??
+  null,
+
+requiredTotalCredits:
+  (data as any).requiredTotalCredits ??
+  null,
+
+requiredMajorCredits:
+  (data as any).requiredMajorCredits ??
+  null,
+
+requiredLiberalCredits:
+  (data as any).requiredLiberalCredits ??
+  null,
+
+degreeTrackType:
+  (data as any).degreeTrackType ??
+  null,
+
+additionalQualificationKeysJson:
+  (data as any).additionalQualificationKeysJson ??
+  null,
 
       degreeApplicationOverride:
         (data as any).degreeApplicationOverride ??
@@ -39328,7 +39356,7 @@ export async function upsertSettlementSubjectPriceRule(input: {
     educationInstitutionId,
     label,
     thresholdAmount: String(thresholdAmount),
-    creditValue,
+    creditValue: String(creditValue),
     sortOrder: Number(input.sortOrder ?? 0),
     isActive: input.isActive === undefined ? true : Boolean(input.isActive),
   };

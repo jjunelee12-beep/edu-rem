@@ -9,6 +9,13 @@ export type DegreeRequirementLevel =
   | "associate"
   | "bachelor";
 
+export type DegreeTrackType =
+  | "none"
+  | "associate"
+  | "bachelor"
+  | "second_major_associate"
+  | "second_major_bachelor";
+
 export type DegreeRequirementResolution = {
   finalEducationGroup:
     FinalEducationGroup;
@@ -202,6 +209,77 @@ if (
   return "unknown";
 }
 
+function resolveManualDegreeTrackRule(
+  degreeTrackType:
+    DegreeTrackType |
+    null |
+    undefined
+) {
+  switch (degreeTrackType) {
+    case "associate":
+      return {
+        minimumDegreeLevel:
+          "associate" as const,
+
+        rule:
+          DEGREE_RULES.associate,
+
+        label:
+          "전문학사",
+      };
+
+    case "bachelor":
+      return {
+        minimumDegreeLevel:
+          "bachelor" as const,
+
+        rule:
+          DEGREE_RULES.bachelor,
+
+        label:
+          "학사",
+      };
+
+    case "second_major_associate":
+      return {
+        minimumDegreeLevel:
+          "associate" as const,
+
+        rule:
+          DEGREE_RULES
+            .associate_second_major,
+
+        label:
+          "타전공 전문학사",
+      };
+
+    case "second_major_bachelor":
+      return {
+        minimumDegreeLevel:
+          "bachelor" as const,
+
+        rule:
+          DEGREE_RULES
+            .bachelor_second_major,
+
+        label:
+          "타전공 학사",
+      };
+
+    /**
+     * none은
+     * 기존 과정 자체가 요구하는 학위까지
+     * 없애는 의미가 아니다.
+     *
+     * 추가 학위 지정이 없다는 의미이므로
+     * 기존 자동판정으로 계속 내려간다.
+     */
+    case "none":
+    default:
+      return null;
+  }
+}
+
 export function resolveDegreeRequirement(
   params: {
     courseKey:
@@ -210,6 +288,17 @@ export function resolveDegreeRequirement(
 
     finalEducation:
       unknown;
+
+    /**
+     * 담당자가 취득요건 설정에서
+     * 추가로 지정한 학위트랙.
+     *
+     * null / undefined / none:
+     * → 기존 과정 + 최종학력 자동판정 사용
+     */
+    degreeTrackType?:
+      DegreeTrackType |
+      null;
   }
 ): DegreeRequirementResolution {
   const finalEducationGroup =
@@ -288,6 +377,49 @@ if (
       "최종학력이 확인되지 않아 학위 필요 여부를 판정할 수 없습니다.",
   };
 }
+
+  /**
+   * 담당자 추가 학위트랙 강제 적용.
+   *
+   * 주의:
+   * degreeTrackType === "none"은
+   * 과정 자체에서 자동으로 필요한 학위를
+   * 제거하는 값이 아니다.
+   *
+   * 따라서 none / null이면
+   * 아래 기존 자동판정 로직을 그대로 사용한다.
+   */
+  const manualDegreeTrack =
+    resolveManualDegreeTrackRule(
+      params.degreeTrackType
+    );
+
+  if (manualDegreeTrack) {
+    return {
+      finalEducationGroup,
+
+      courseKey,
+
+      requiresDegree:
+        true,
+
+      minimumDegreeLevel:
+        manualDegreeTrack
+          .minimumDegreeLevel,
+
+      existingDegreeSatisfiesRequirement:
+        false,
+
+      requiresNewDegreeTrack:
+        true,
+
+      defaultDegreeRule:
+        manualDegreeTrack.rule,
+
+      reason:
+        `담당자가 추가 학위과정을 ${manualDegreeTrack.label} 과정으로 지정했습니다.`,
+    };
+  }
 
   /**
    * 사회복지사 2급

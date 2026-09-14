@@ -4002,11 +4002,16 @@ export const studentQualificationOverrides = mysqlTable(
       "requiredMajorRequiredSubjects"
     ),
 
-    requiredMajorElectiveSubjects: int(
-      "requiredMajorElectiveSubjects"
-    ),
+   requiredMajorElectiveSubjects: int(
+  "requiredMajorElectiveSubjects"
+),
 
-    requiredLiberalSubjects: int(
+// 자격증 취득에 필요한 전체 과목 수
+requiredTotalSubjects: int(
+  "requiredTotalSubjects"
+),
+
+requiredLiberalSubjects: int(
       "requiredLiberalSubjects"
     ),
 
@@ -4015,8 +4020,63 @@ export const studentQualificationOverrides = mysqlTable(
     ),
 
     requiredTotalCredits: int(
-      "requiredTotalCredits"
-    ),
+  "requiredTotalCredits"
+),
+
+// 학위 취득 최소 전공학점
+requiredMajorCredits: int(
+  "requiredMajorCredits"
+),
+
+// 학위 취득 최소 교양학점
+requiredLiberalCredits: int(
+  "requiredLiberalCredits"
+),
+
+/**
+ * 학생의 추가 학위 취득 트랙.
+ *
+ * null:
+ * → 시스템 자동판정
+ *
+ * none:
+ * → 추가 학위 없음
+ *
+ * associate:
+ * → 전문학사
+ *
+ * bachelor:
+ * → 학사
+ *
+ * second_major_associate:
+ * → 타전공 전문학사
+ *
+ * second_major_bachelor:
+ * → 타전공 학사
+ */
+degreeTrackType: mysqlEnum(
+  "degreeTrackType",
+  [
+    "none",
+    "associate",
+    "bachelor",
+    "second_major_associate",
+    "second_major_bachelor",
+  ]
+),
+
+/**
+ * 주 과정 외 추가 취득 자격증 목록.
+ *
+ * JSON 문자열 예:
+ * ["healthy_family","lifelong_educator"]
+ *
+ * null:
+ * → 추가 자격증 없음
+ */
+additionalQualificationKeysJson: text(
+  "additionalQualificationKeysJson"
+),
 
     /**
      * 학위신청 필요 여부 override.
@@ -4584,7 +4644,12 @@ export const settlementSubjectPriceRules = mysqlTable(
     thresholdAmount: decimal("thresholdAmount", { precision: 12, scale: 0 })
       .notNull()
       .default("0"),
-    creditValue: int("creditValue").notNull().default(0),
+    creditValue: decimal("creditValue", {
+  precision: 6,
+  scale: 2,
+})
+  .notNull()
+  .default("0.00"),
 
     sortOrder: int("sortOrder").notNull().default(0),
     isActive: boolean("isActive").notNull().default(true),
@@ -8928,7 +8993,10 @@ institutionName: varchar("institutionName", { length: 255 }),
   title: varchar("title", { length: 255 }).notNull(),
   quantity: int("quantity").notNull().default(1),
   actualCredits: int("actualCredits"),
-  settlementCredits: int("settlementCredits"),
+settlementCredits: decimal("settlementCredits", {
+  precision: 8,
+  scale: 2,
+}),
   grossAmount: decimal("grossAmount", { precision: 12, scale: 0 }).default("0"),
   companyAmount: decimal("companyAmount", { precision: 12, scale: 0 }).default("0"),
   freelancerAmount: decimal("freelancerAmount", { precision: 12, scale: 0 }).default("0"),

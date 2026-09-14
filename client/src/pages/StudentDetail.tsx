@@ -278,6 +278,12 @@ const [highlightSection, setHighlightSection] = useState<
 
 const ENABLE_PLAN_REQUIREMENT = FEATURE_FLAGS.PLAN_REQUIREMENT_ENFORCE;
 const [studentAuditDialogOpen, setStudentAuditDialogOpen] = useState(false);
+const [
+  qualificationOverrideDialogOpen,
+  setQualificationOverrideDialogOpen,
+] = useState(false);
+const degreeTrackUserChangedRef =
+  useRef(false);
 
 const { data: student, isLoading: studentLoading } =
   trpc.student.get.useQuery({ id: studentId });
@@ -311,16 +317,31 @@ const [
     "",
 
   requiredMajorElectiveSubjects:
-    "",
+  "",
 
-  requiredLiberalSubjects:
-    "",
+requiredTotalSubjects:
+  "",
 
-  requiredGeneralSubjects:
-    "",
+requiredLiberalSubjects:
+  "",
 
-  requiredTotalCredits:
-    "",
+requiredGeneralSubjects:
+  "",
+
+requiredTotalCredits:
+  "",
+
+requiredMajorCredits:
+  "",
+
+requiredLiberalCredits:
+  "",
+
+degreeTrackType:
+  "auto",
+
+additionalQualificationKeys:
+  [] as string[],
 
   degreeApplicationOverride:
     "auto",
@@ -362,10 +383,9 @@ const {
     studentId,
   },
   {
-    enabled:
-      studentInfoTab === "administrative" &&
-      !!studentId,
-  }
+  enabled:
+    !!studentId,
+}
 );
 
 const {
@@ -377,10 +397,137 @@ const {
   },
   {
     enabled:
-      studentInfoTab === "administrative" &&
-      !!studentId,
+  !!studentId,
   }
 );
+
+const degreeTrackTypeForPreview =
+  qualificationOverrideForm
+    .degreeTrackType as
+    | "auto"
+    | "none"
+    | "associate"
+    | "bachelor"
+    | "second_major_associate"
+    | "second_major_bachelor";
+
+const {
+  data: degreeRequirementPreview,
+  isFetching:
+    degreeRequirementPreviewLoading,
+} =
+  trpc.creditSummary
+    .qualificationOverrides
+    .previewDegreeRequirement
+    .useQuery(
+      {
+        studentId,
+
+        degreeTrackType:
+          degreeTrackTypeForPreview,
+      },
+      {
+        enabled:
+          qualificationOverrideDialogOpen &&
+          !!studentId,
+
+        refetchOnWindowFocus:
+          false,
+      }
+    );
+
+useEffect(() => {
+  /**
+   * Dialog 최초 진입 시에는
+   * 기존 담당자 override 값을 유지해야 한다.
+   *
+   * 담당자가 추가 학위 Select를
+   * 실제로 변경한 경우에만
+   * 새 학위트랙 기본값을 form에 반영한다.
+   */
+  if (
+    !degreeTrackUserChangedRef.current
+  ) {
+    return;
+  }
+
+  if (
+    !degreeRequirementPreview
+  ) {
+    return;
+  }
+
+  /**
+   * 이전 요청 응답이 늦게 도착하는 경우
+   * 현재 선택값과 일치하는 응답만 반영한다.
+   */
+  if (
+    degreeRequirementPreview
+      .degreeTrackType !==
+    qualificationOverrideForm
+      .degreeTrackType
+  ) {
+    return;
+  }
+
+  degreeTrackUserChangedRef.current =
+    false;
+
+  setQualificationOverrideForm(
+    (prev) => ({
+      ...prev,
+
+      requiredTotalCredits:
+        degreeRequirementPreview
+          .requiresNewDegreeTrack &&
+        degreeRequirementPreview
+          .requiredTotalCredits !==
+          null &&
+        degreeRequirementPreview
+          .requiredTotalCredits !==
+          undefined
+          ? String(
+              degreeRequirementPreview
+                .requiredTotalCredits
+            )
+          : "",
+
+      requiredMajorCredits:
+        degreeRequirementPreview
+          .requiresNewDegreeTrack &&
+        degreeRequirementPreview
+          .requiredMajorCredits !==
+          null &&
+        degreeRequirementPreview
+          .requiredMajorCredits !==
+          undefined
+          ? String(
+              degreeRequirementPreview
+                .requiredMajorCredits
+            )
+          : "",
+
+      requiredLiberalCredits:
+        degreeRequirementPreview
+          .requiresNewDegreeTrack &&
+        degreeRequirementPreview
+          .requiredLiberalCredits !==
+          null &&
+        degreeRequirementPreview
+          .requiredLiberalCredits !==
+          undefined
+          ? String(
+              degreeRequirementPreview
+                .requiredLiberalCredits
+            )
+          : "",
+    })
+  );
+}, [
+  degreeRequirementPreview,
+  qualificationOverrideForm
+    .degreeTrackType,
+]);
 
 const upsertAdministrativeProcedureMut =
   trpc.creditSummary.administrativeProcedures.upsert.useMutation({
@@ -1068,6 +1215,35 @@ const qualificationOverride =
 const usingQualificationEngine =
   !qualificationOverride;
 
+const systemDegreeRequirement =
+  (
+    administrativeRequirements
+      ?.degree ||
+    null
+  ) as Record<string, any> | null;
+
+const degreeRequirementPreviewMatches =
+  degreeRequirementPreview
+    ?.degreeTrackType ===
+  qualificationOverrideForm
+    .degreeTrackType;
+
+const shouldShowDegreeCalculator =
+  degreeRequirementPreviewMatches
+    ? degreeRequirementPreview
+        ?.requiresNewDegreeTrack ===
+      true
+    : qualificationOverrideForm
+        .degreeTrackType ===
+        "auto" ||
+      qualificationOverrideForm
+        .degreeTrackType ===
+        "none"
+    ? systemDegreeRequirement
+        ?.requiresNewDegreeTrack ===
+      true
+    : true;
+
 const getAdministrativeProcedure = (
   procedureType: string
 ) => {
@@ -1145,96 +1321,232 @@ const saveAdministrativeProcedure =
     });
   };
 
-const openQualificationOverrideEditor =
-  () => {
-    setQualificationOverrideForm({
-      requirementProfileKey:
-        qualificationOverride
-          ?.requirementProfileKey ||
-        "auto",
+const openQualificationOverrideEditor = () => {
+  degreeTrackUserChangedRef.current =
+    false;
 
-      requiredMajorRequiredSubjects:
-        qualificationOverride
-          ?.requiredMajorRequiredSubjects !==
-          null &&
-        qualificationOverride
-          ?.requiredMajorRequiredSubjects !==
-          undefined
-          ? String(
-              qualificationOverride
-                .requiredMajorRequiredSubjects
-            )
-          : "",
+  const systemQualificationDetails =
+    (
+      administrativeRequirements
+        ?.qualification
+        ?.details ||
+      {}
+    ) as Record<string, any>;
 
-      requiredMajorElectiveSubjects:
-        qualificationOverride
-          ?.requiredMajorElectiveSubjects !==
-          null &&
-        qualificationOverride
-          ?.requiredMajorElectiveSubjects !==
-          undefined
-          ? String(
-              qualificationOverride
-                .requiredMajorElectiveSubjects
-            )
-          : "",
+  const systemDegree =
+    (
+      administrativeRequirements
+        ?.degree ||
+      {}
+    ) as Record<string, any>;
 
-      requiredLiberalSubjects:
-        qualificationOverride
-          ?.requiredLiberalSubjects !==
-          null &&
-        qualificationOverride
-          ?.requiredLiberalSubjects !==
-          undefined
-          ? String(
-              qualificationOverride
-                .requiredLiberalSubjects
-            )
-          : "",
+  const systemRequiredSubjects =
+    systemQualificationDetails
+      .requiredSubjects !== null &&
+    systemQualificationDetails
+      .requiredSubjects !== undefined
+      ? Number(
+          systemQualificationDetails
+            .requiredSubjects
+        )
+      : null;
 
-      requiredGeneralSubjects:
-        qualificationOverride
-          ?.requiredGeneralSubjects !==
-          null &&
-        qualificationOverride
-          ?.requiredGeneralSubjects !==
-          undefined
-          ? String(
-              qualificationOverride
-                .requiredGeneralSubjects
-            )
-          : "",
+  const systemElectiveSubjects =
+    systemQualificationDetails
+      .electiveSubjects !== null &&
+    systemQualificationDetails
+      .electiveSubjects !== undefined
+      ? Number(
+          systemQualificationDetails
+            .electiveSubjects
+        )
+      : null;
 
-      requiredTotalCredits:
-        qualificationOverride
-          ?.requiredTotalCredits !==
-          null &&
-        qualificationOverride
-          ?.requiredTotalCredits !==
-          undefined
-          ? String(
-              qualificationOverride
-                .requiredTotalCredits
-            )
-          : "",
+  const systemTotalSubjects =
+    systemQualificationDetails
+      .totalSubjects !== null &&
+    systemQualificationDetails
+      .totalSubjects !== undefined
+      ? Number(
+          systemQualificationDetails
+            .totalSubjects
+        )
+      : systemRequiredSubjects !== null &&
+        systemElectiveSubjects !== null
+      ? systemRequiredSubjects +
+        systemElectiveSubjects
+      : null;
 
-      degreeApplicationOverride:
+  setQualificationOverrideForm({
+    requirementProfileKey:
+      qualificationOverride
+        ?.requirementProfileKey ||
+      "auto",
+
+    requiredMajorRequiredSubjects:
+      qualificationOverride
+        ?.requiredMajorRequiredSubjects !== null &&
+      qualificationOverride
+        ?.requiredMajorRequiredSubjects !== undefined
+        ? String(
+            qualificationOverride
+              .requiredMajorRequiredSubjects
+          )
+        : systemRequiredSubjects !== null
+        ? String(systemRequiredSubjects)
+        : "",
+
+    requiredMajorElectiveSubjects:
+      qualificationOverride
+        ?.requiredMajorElectiveSubjects !== null &&
+      qualificationOverride
+        ?.requiredMajorElectiveSubjects !== undefined
+        ? String(
+            qualificationOverride
+              .requiredMajorElectiveSubjects
+          )
+        : systemElectiveSubjects !== null
+        ? String(systemElectiveSubjects)
+        : "",
+
+    requiredTotalSubjects:
+      qualificationOverride
+        ?.requiredTotalSubjects !== null &&
+      qualificationOverride
+        ?.requiredTotalSubjects !== undefined
+        ? String(
+            qualificationOverride
+              .requiredTotalSubjects
+          )
+        : systemTotalSubjects !== null
+        ? String(systemTotalSubjects)
+        : "",
+
+    requiredLiberalSubjects:
+      qualificationOverride
+        ?.requiredLiberalSubjects !== null &&
+      qualificationOverride
+        ?.requiredLiberalSubjects !== undefined
+        ? String(
+            qualificationOverride
+              .requiredLiberalSubjects
+          )
+        : "",
+
+    requiredGeneralSubjects:
+      qualificationOverride
+        ?.requiredGeneralSubjects !== null &&
+      qualificationOverride
+        ?.requiredGeneralSubjects !== undefined
+        ? String(
+            qualificationOverride
+              .requiredGeneralSubjects
+          )
+        : "",
+
+    requiredTotalCredits:
+      qualificationOverride
+        ?.requiredTotalCredits !== null &&
+      qualificationOverride
+        ?.requiredTotalCredits !== undefined
+        ? String(
+            qualificationOverride
+              .requiredTotalCredits
+          )
+        : systemDegree
+            ?.requiredTotalCredits !== null &&
+          systemDegree
+            ?.requiredTotalCredits !== undefined
+        ? String(
+            systemDegree
+              .requiredTotalCredits
+          )
+        : "",
+
+    requiredMajorCredits:
+      qualificationOverride
+        ?.requiredMajorCredits !== null &&
+      qualificationOverride
+        ?.requiredMajorCredits !== undefined
+        ? String(
+            qualificationOverride
+              .requiredMajorCredits
+          )
+        : systemDegree
+            ?.requiredMajorCredits !== null &&
+          systemDegree
+            ?.requiredMajorCredits !== undefined
+        ? String(
+            systemDegree
+              .requiredMajorCredits
+          )
+        : "",
+
+    requiredLiberalCredits:
+      qualificationOverride
+        ?.requiredLiberalCredits !== null &&
+      qualificationOverride
+        ?.requiredLiberalCredits !== undefined
+        ? String(
+            qualificationOverride
+              .requiredLiberalCredits
+          )
+        : systemDegree
+            ?.requiredLiberalCredits !== null &&
+          systemDegree
+            ?.requiredLiberalCredits !== undefined
+        ? String(
+            systemDegree
+              .requiredLiberalCredits
+          )
+        : "",
+
+    degreeTrackType:
+      qualificationOverride
+        ?.degreeTrackType ||
+      "auto",
+
+    additionalQualificationKeys:
+      (() => {
+        try {
+          const parsed =
+            JSON.parse(
+              String(
+                qualificationOverride
+                  ?.additionalQualificationKeysJson ||
+                "[]"
+              )
+            );
+
+          return Array.isArray(parsed)
+            ? parsed
+            : [];
+        } catch {
+          return [];
+        }
+      })(),
+
+    degreeApplicationOverride:
+      qualificationOverride
+        ?.degreeApplicationOverride ||
+      "auto",
+
+    memo:
+      String(
         qualificationOverride
-          ?.degreeApplicationOverride ||
-        "auto",
+          ?.memo ||
+        ""
+      ),
+  });
 
-      memo:
-        String(
-          qualificationOverride
-            ?.memo ||
-          ""
-        ),
-    });
+  setQualificationOverrideEditing(
+    true
+  );
 
-    setQualificationOverrideEditing(
-      true
-    );
-  };
+  setQualificationOverrideDialogOpen(
+    true
+  );
+};
 
 const parseOverrideNumber = (
   value: string
@@ -1277,27 +1589,125 @@ const saveQualificationOverride =
       return;
     }
 
+    const systemQualificationDetails =
+      (
+        administrativeRequirements
+          ?.qualification
+          ?.details ||
+        {}
+      ) as Record<string, any>;
+
+    const systemDegree =
+      (
+        administrativeRequirements
+          ?.degree ||
+        {}
+      ) as Record<string, any>;
+
+    const systemRequiredSubjects =
+      Number.isFinite(
+        Number(
+          systemQualificationDetails
+            .requiredSubjects
+        )
+      )
+        ? Number(
+            systemQualificationDetails
+              .requiredSubjects
+          )
+        : null;
+
+    const systemElectiveSubjects =
+      Number.isFinite(
+        Number(
+          systemQualificationDetails
+            .electiveSubjects
+        )
+      )
+        ? Number(
+            systemQualificationDetails
+              .electiveSubjects
+          )
+        : null;
+
+    const systemTotalSubjects =
+      Number.isFinite(
+        Number(
+          systemQualificationDetails
+            .totalSubjects
+        )
+      )
+        ? Number(
+            systemQualificationDetails
+              .totalSubjects
+          )
+        : systemRequiredSubjects !== null &&
+          systemElectiveSubjects !== null
+        ? systemRequiredSubjects +
+          systemElectiveSubjects
+        : null;
+
+    const makeNumberOverride = (
+      formValue: string,
+      systemValue:
+        | number
+        | null
+        | undefined
+    ) => {
+      const parsed =
+        parseOverrideNumber(
+          formValue
+        );
+
+      if (parsed === null) {
+        return null;
+      }
+
+      const normalizedSystemValue =
+        systemValue !== null &&
+        systemValue !== undefined &&
+        Number.isFinite(
+          Number(systemValue)
+        )
+          ? Number(systemValue)
+          : null;
+
+      if (
+        normalizedSystemValue !== null &&
+        parsed ===
+          normalizedSystemValue
+      ) {
+        return null;
+      }
+
+      return parsed;
+    };
+
     await saveQualificationOverrideMut.mutateAsync({
       studentId,
 
       requirementProfileKey:
-        qualificationOverrideForm
-          .requirementProfileKey ===
-        "auto"
-          ? null
-          : qualificationOverrideForm
-              .requirementProfileKey,
+        null,
 
       requiredMajorRequiredSubjects:
-        parseOverrideNumber(
+        makeNumberOverride(
           qualificationOverrideForm
-            .requiredMajorRequiredSubjects
+            .requiredMajorRequiredSubjects,
+          systemRequiredSubjects
         ),
 
       requiredMajorElectiveSubjects:
-        parseOverrideNumber(
+        makeNumberOverride(
           qualificationOverrideForm
-            .requiredMajorElectiveSubjects
+            .requiredMajorElectiveSubjects,
+          systemElectiveSubjects
+        ),
+
+      requiredTotalSubjects:
+        makeNumberOverride(
+          qualificationOverrideForm
+            .requiredTotalSubjects,
+          systemTotalSubjects
         ),
 
       requiredLiberalSubjects:
@@ -1313,10 +1723,69 @@ const saveQualificationOverride =
         ),
 
       requiredTotalCredits:
-        parseOverrideNumber(
-          qualificationOverrideForm
-            .requiredTotalCredits
-        ),
+  makeNumberOverride(
+    qualificationOverrideForm
+      .requiredTotalCredits,
+
+    degreeRequirementPreview &&
+    degreeRequirementPreview
+      .degreeTrackType ===
+      qualificationOverrideForm
+        .degreeTrackType
+      ? degreeRequirementPreview
+          .requiredTotalCredits
+      : systemDegree
+          ?.requiredTotalCredits
+  ),
+
+requiredMajorCredits:
+  makeNumberOverride(
+    qualificationOverrideForm
+      .requiredMajorCredits,
+
+    degreeRequirementPreview &&
+    degreeRequirementPreview
+      .degreeTrackType ===
+      qualificationOverrideForm
+        .degreeTrackType
+      ? degreeRequirementPreview
+          .requiredMajorCredits
+      : systemDegree
+          ?.requiredMajorCredits
+  ),
+
+requiredLiberalCredits:
+  makeNumberOverride(
+    qualificationOverrideForm
+      .requiredLiberalCredits,
+
+    degreeRequirementPreview &&
+    degreeRequirementPreview
+      .degreeTrackType ===
+      qualificationOverrideForm
+        .degreeTrackType
+      ? degreeRequirementPreview
+          .requiredLiberalCredits
+      : systemDegree
+          ?.requiredLiberalCredits
+  ),
+
+      degreeTrackType:
+        qualificationOverrideForm
+          .degreeTrackType ===
+        "auto"
+          ? null
+          : qualificationOverrideForm
+              .degreeTrackType as
+              | "none"
+              | "associate"
+              | "bachelor"
+              | "second_major_associate"
+              | "second_major_bachelor",
+
+      additionalQualificationKeys:
+        qualificationOverrideForm
+          .additionalQualificationKeys,
 
       degreeApplicationOverride:
         qualificationOverrideForm
@@ -1335,6 +1804,10 @@ const saveQualificationOverride =
     });
 
     setQualificationOverrideEditing(
+      false
+    );
+
+    setQualificationOverrideDialogOpen(
       false
     );
   };
@@ -1364,6 +1837,10 @@ const resetQualificationOverride =
     setQualificationOverrideEditing(
       false
     );
+
+setQualificationOverrideDialogOpen(
+  false
+);
   };
 
 const qualificationDetails =
@@ -2857,6 +3334,19 @@ const getCountStatusClass = (current: number, target: number) => {
         </div>
 
         <div className="flex items-center gap-2">
+<Button
+  variant="outline"
+  size="sm"
+  disabled={
+    isReadOnly ||
+    qualificationOverrideLoading
+  }
+  onClick={
+    openQualificationOverrideEditor
+  }
+>
+  취득요건 설정
+</Button>
 <Button
   variant="outline"
   size="sm"
@@ -6680,6 +7170,477 @@ toast.success("환불 요청 등록 완료");
       </Button>
       <Button onClick={saveRegisteredCourses} disabled={isReadOnly}>
   저장
+</Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+<Dialog
+  open={qualificationOverrideDialogOpen}
+  onOpenChange={(open) => {
+    setQualificationOverrideDialogOpen(open);
+
+    if (!open) {
+      setQualificationOverrideEditing(false);
+    }
+  }}
+>
+  <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+    <DialogHeader>
+      <DialogTitle>
+        취득요건 설정
+      </DialogTitle>
+
+      <DialogDescription>
+        등록자포탈에 적용할 자격증 및 학위 취득요건을 설정합니다.
+        비워둔 값은 공통엔진 자동계산 기준을 사용합니다.
+      </DialogDescription>
+    </DialogHeader>
+
+    <div className="space-y-6">
+
+      {/* 자격증 취득요건 */}
+      <div className="rounded-lg border p-4">
+        <div className="mb-3">
+          <div className="font-semibold">
+            자격증 취득요건
+          </div>
+
+          <p className="text-xs text-muted-foreground mt-1">
+            등록자포탈의 자격증 취득현황 계산 기준입니다.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div>
+            <Label>
+              필수과목
+            </Label>
+
+            <Input
+              type="number"
+              min={0}
+              className="mt-1"
+              placeholder="예: 10"
+              value={
+                qualificationOverrideForm
+                  .requiredMajorRequiredSubjects
+              }
+              onChange={(e) =>
+                setQualificationOverrideForm(
+                  (prev) => ({
+                    ...prev,
+                    requiredMajorRequiredSubjects:
+                      e.target.value,
+                  })
+                )
+              }
+            />
+          </div>
+
+          <div>
+            <Label>
+              선택과목
+            </Label>
+
+            <Input
+              type="number"
+              min={0}
+              className="mt-1"
+              placeholder="예: 7"
+              value={
+                qualificationOverrideForm
+                  .requiredMajorElectiveSubjects
+              }
+              onChange={(e) =>
+                setQualificationOverrideForm(
+                  (prev) => ({
+                    ...prev,
+                    requiredMajorElectiveSubjects:
+                      e.target.value,
+                  })
+                )
+              }
+            />
+          </div>
+
+          <div>
+            <Label>
+              총 자격과목
+            </Label>
+
+            <Input
+              type="number"
+              min={0}
+              className="mt-1"
+              placeholder="예: 17"
+              value={
+                qualificationOverrideForm
+                  .requiredTotalSubjects
+              }
+              onChange={(e) =>
+                setQualificationOverrideForm(
+                  (prev) => ({
+                    ...prev,
+                    requiredTotalSubjects:
+                      e.target.value,
+                  })
+                )
+              }
+            />
+          </div>
+        </div>
+      </div>
+
+<div className="rounded-lg border p-4">
+  <div className="mb-3">
+    <div className="font-semibold">
+      추가 학위
+    </div>
+
+    <p className="mt-1 text-xs text-muted-foreground">
+      고졸은 시스템에서 전문학사 과정을 자동 적용합니다.
+      그 외 추가 학위가 필요한 경우 선택해주세요.
+    </p>
+  </div>
+
+  <Select
+  value={
+    qualificationOverrideForm
+      .degreeTrackType
+  }
+  disabled={
+    degreeRequirementPreviewLoading
+  }
+  onValueChange={(value) => {
+    degreeTrackUserChangedRef.current =
+      true;
+
+    setQualificationOverrideForm(
+      (prev) => ({
+        ...prev,
+
+        degreeTrackType:
+          value,
+      })
+    );
+  }}
+>
+    <SelectTrigger>
+      <SelectValue />
+    </SelectTrigger>
+
+    <SelectContent>
+      <SelectItem value="auto">
+        시스템 자동
+      </SelectItem>
+
+      <SelectItem value="none">
+        추가 학위 없음
+      </SelectItem>
+
+      <SelectItem value="associate">
+        전문학사
+      </SelectItem>
+
+      <SelectItem value="bachelor">
+        학사
+      </SelectItem>
+
+      <SelectItem value="second_major_associate">
+        타전공 전문학사
+      </SelectItem>
+
+      <SelectItem value="second_major_bachelor">
+        타전공 학사
+      </SelectItem>
+    </SelectContent>
+  </Select>
+</div>
+
+
+      {/* 학위 취득요건 */}
+     {shouldShowDegreeCalculator && (
+  <div className="rounded-lg border p-4">
+        <div className="mb-3">
+          <div className="font-semibold">
+            학위 취득요건
+          </div>
+
+          <p className="text-xs text-muted-foreground mt-1">
+            학위가 필요한 회원의 포탈 학점 진행률 계산 기준입니다.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div>
+            <Label>
+              총 필요학점
+            </Label>
+
+            <Input
+              type="number"
+              min={0}
+              className="mt-1"
+              placeholder="예: 80"
+              value={
+                qualificationOverrideForm
+                  .requiredTotalCredits
+              }
+              onChange={(e) =>
+                setQualificationOverrideForm(
+                  (prev) => ({
+                    ...prev,
+                    requiredTotalCredits:
+                      e.target.value,
+                  })
+                )
+              }
+            />
+          </div>
+
+          <div>
+            <Label>
+              전공 필요학점
+            </Label>
+
+            <Input
+              type="number"
+              min={0}
+              className="mt-1"
+              placeholder="예: 45"
+              value={
+                qualificationOverrideForm
+                  .requiredMajorCredits
+              }
+              onChange={(e) =>
+                setQualificationOverrideForm(
+                  (prev) => ({
+                    ...prev,
+                    requiredMajorCredits:
+                      e.target.value,
+                  })
+                )
+              }
+            />
+          </div>
+
+          <div>
+            <Label>
+              교양 필요학점
+            </Label>
+
+            <Input
+              type="number"
+              min={0}
+              className="mt-1"
+              placeholder="예: 15"
+              value={
+                qualificationOverrideForm
+                  .requiredLiberalCredits
+              }
+              onChange={(e) =>
+                setQualificationOverrideForm(
+                  (prev) => ({
+                    ...prev,
+                    requiredLiberalCredits:
+                      e.target.value,
+                  })
+                )
+              }
+            />
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <Label>
+            학위신청
+          </Label>
+
+          <Select
+            value={
+              qualificationOverrideForm
+                .degreeApplicationOverride
+            }
+            onValueChange={(value) =>
+              setQualificationOverrideForm(
+                (prev) => ({
+                  ...prev,
+                  degreeApplicationOverride:
+                    value,
+                })
+              )
+            }
+          >
+            <SelectTrigger className="mt-1">
+              <SelectValue />
+            </SelectTrigger>
+
+            <SelectContent>
+              <SelectItem value="auto">
+                공통엔진 자동
+              </SelectItem>
+
+              <SelectItem value="required">
+                필요
+              </SelectItem>
+
+              <SelectItem value="not_required">
+                해당 없음
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+    </div>
+)}
+
+<div className="rounded-lg border p-4">
+  <div className="mb-3">
+    <div className="font-semibold">
+      추가 자격증
+    </div>
+
+    <p className="mt-1 text-xs text-muted-foreground">
+      주 과정 외에 함께 관리할 자격증을 선택합니다.
+    </p>
+  </div>
+
+  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+    {[
+      {
+        key: "healthy_family",
+        label: "건강가정사",
+      },
+      {
+        key: "lifelong_educator",
+        label: "평생교육사",
+      },
+      {
+        key: "childcare_teacher",
+        label: "보육교사",
+      },
+      {
+        key: "korean_language_teacher",
+        label: "한국어교원",
+      },
+    ].map((item) => {
+      const checked =
+        qualificationOverrideForm
+          .additionalQualificationKeys
+          .includes(item.key);
+
+      return (
+        <label
+          key={item.key}
+          className="flex cursor-pointer items-center gap-2 rounded-md border p-3"
+        >
+          <Checkbox
+            checked={checked}
+            onCheckedChange={(nextChecked) => {
+              setQualificationOverrideForm(
+                (prev) => ({
+                  ...prev,
+
+                  additionalQualificationKeys:
+                    nextChecked
+                      ? Array.from(
+                          new Set([
+                            ...prev.additionalQualificationKeys,
+                            item.key,
+                          ])
+                        )
+                      : prev.additionalQualificationKeys.filter(
+                          (key) =>
+                            key !== item.key
+                        ),
+                })
+              );
+            }}
+          />
+
+          <span className="text-sm font-medium">
+            {item.label}
+          </span>
+        </label>
+      );
+    })}
+  </div>
+</div>
+
+{/* 메모 */}
+      <div>
+        <Label>
+          메모
+        </Label>
+
+        <Textarea
+          className="mt-1"
+          placeholder="설정 사유 또는 특이사항"
+          value={
+            qualificationOverrideForm.memo
+          }
+          onChange={(e) =>
+            setQualificationOverrideForm(
+              (prev) => ({
+                ...prev,
+                memo:
+                  e.target.value,
+              })
+            )
+          }
+        />
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        비워둔 항목은 공통엔진의 자동 계산값을 사용합니다.
+      </p>
+
+
+    <DialogFooter className="gap-2">
+      {!usingQualificationEngine && (
+        <Button
+          type="button"
+          variant="outline"
+          disabled={
+            isReadOnly ||
+            resetQualificationOverrideMut.isPending
+          }
+          onClick={
+            resetQualificationOverride
+          }
+        >
+          자동계산으로 되돌리기
+        </Button>
+      )}
+
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() =>
+          setQualificationOverrideDialogOpen(
+            false
+          )
+        }
+      >
+        취소
+      </Button>
+
+      <Button
+  type="button"
+  disabled={
+    isReadOnly ||
+    saveQualificationOverrideMut.isPending ||
+    degreeRequirementPreviewLoading
+  }
+  onClick={
+    saveQualificationOverride
+  }
+>
+  {degreeRequirementPreviewLoading
+    ? "학위요건 계산 중..."
+    : saveQualificationOverrideMut.isPending
+    ? "저장 중..."
+    : "취득요건 저장"}
 </Button>
     </DialogFooter>
   </DialogContent>

@@ -1422,6 +1422,253 @@ const paymentStatus:
       extraItems as any[],
   });
 
+/**
+ * -------------------------------------------------
+ * 학점은행제 학기 / 연간 수강제한 검사
+ * -------------------------------------------------
+ *
+ * Portal / CRM / AI 위험도검사가
+ * 모두 동일한 공통엔진 결과를 사용하도록
+ * 여기서 한 번만 계산한다.
+ *
+ * 전적대 / 추가인정은 수강계획 제한 대상이 아니므로
+ * 우리플랜(source === "plan")만 계산한다.
+ */
+
+/**
+ * 학기별 최대 8과목 검사.
+ */
+const semesterSubjectCountMap =
+  new Map<
+    number,
+    number
+  >();
+
+for (
+  const subject of
+  subjects
+) {
+  if (
+    subject.source !==
+    "plan"
+  ) {
+    continue;
+  }
+
+  const semesterNo =
+    Number(
+      subject.semesterNo ||
+      0
+    );
+
+  if (
+    !Number.isFinite(
+      semesterNo
+    ) ||
+    semesterNo <=
+      0
+  ) {
+    continue;
+  }
+
+  semesterSubjectCountMap.set(
+    semesterNo,
+    (
+      semesterSubjectCountMap.get(
+        semesterNo
+      ) ||
+      0
+    ) +
+      1
+  );
+}
+
+for (
+  const [
+    semesterNo,
+    count,
+  ] of
+  semesterSubjectCountMap
+) {
+  if (
+    count <=
+    8
+  ) {
+    continue;
+  }
+
+  pushIssue(
+    issues,
+    {
+      code:
+        "SEMESTER_SUBJECT_LIMIT",
+
+      severity:
+        "danger",
+
+      category:
+        "plan",
+
+      title:
+        "학기 최대 수강과목 초과",
+
+      message:
+        `${semesterNo}학기에 8과목을 초과한 과목이 확인되었습니다.`,
+
+      details: {
+        semesterNo,
+        subjectCount:
+          count,
+        limit:
+          8,
+      },
+    }
+  );
+}
+
+/**
+ * 연간 최대 14과목 검사.
+ *
+ * 실제 학생 학기의 semesterLabel에
+ * 연도가 명시되어 있는 경우만 계산한다.
+ *
+ * 연도를 임의로 추측하지 않는다.
+ */
+const semesterYearMap =
+  new Map<
+    number,
+    string
+  >();
+
+for (
+  const semester of
+  (
+    studentSemesters ||
+    []
+  )
+) {
+  const semesterOrder =
+    Number(
+      semester
+        ?.semesterOrder ||
+      0
+    );
+
+  const label =
+    String(
+      semester
+        ?.semesterLabel ||
+      ""
+    ).trim();
+
+  const yearMatch =
+    label.match(
+      /^(20\d{2})년/
+    );
+
+  if (
+    !Number.isFinite(
+      semesterOrder
+    ) ||
+    semesterOrder <=
+      0 ||
+    !yearMatch
+  ) {
+    continue;
+  }
+
+  semesterYearMap.set(
+    semesterOrder,
+    yearMatch[1]
+  );
+}
+
+const annualSubjectCountMap =
+  new Map<
+    string,
+    number
+  >();
+
+for (
+  const subject of
+  subjects
+) {
+  if (
+    subject.source !==
+    "plan"
+  ) {
+    continue;
+  }
+
+  const year =
+    semesterYearMap.get(
+      Number(
+        subject.semesterNo ||
+        0
+      )
+    );
+
+  if (
+    !year
+  ) {
+    continue;
+  }
+
+  annualSubjectCountMap.set(
+    year,
+    (
+      annualSubjectCountMap.get(
+        year
+      ) ||
+      0
+    ) +
+      1
+  );
+}
+
+for (
+  const [
+    year,
+    count,
+  ] of
+  annualSubjectCountMap
+) {
+  if (
+    count <=
+    14
+  ) {
+    continue;
+  }
+
+  pushIssue(
+    issues,
+    {
+      code:
+        "ANNUAL_SUBJECT_LIMIT",
+
+      severity:
+        "danger",
+
+      category:
+        "plan",
+
+      title:
+        "연간 최대 수강과목 초과",
+
+      message:
+        `${year}년 연간 14과목을 초과한 과목이 확인되었습니다.`,
+
+      details: {
+        year,
+        subjectCount:
+          count,
+        limit:
+          14,
+      },
+    }
+  );
+}
+
 for (
   const subject of subjects
 ) {
@@ -1773,10 +2020,20 @@ if (isRefundWithoutPayment) {
   for (const subject of subjects) {
 
 /**
- * 임시 "새 과목" 슬롯은 아직 실제 과목명이 확정되지 않았다.
+ * 임시 "새 과목" 슬롯 검사.
  *
- * 학기 배치와 진행현황에는 사용하지만
- * 과목명/학점/전공구분 등의 설계오류 검사에서는 제외한다.
+ * 예정:
+ * 아직 실제 과목명을 배정하기 전일 수 있으므로 정상.
+ *
+ * 진행중:
+ * 이미 개강한 과목이므로 실제 과목명이 반드시 확정되어야 한다.
+ *
+ * 완료:
+ * 이미 이수가 끝났는데 placeholder가 남아 있으면
+ * 실제 취득과목 판정 자체가 불가능하므로 위험.
+ *
+ * 확인필요 / 재수강:
+ * 운영자가 실제 과목명과 상태를 확인해야 한다.
  */
 if (
   subject.source === "plan" &&
@@ -1784,6 +2041,116 @@ if (
     subject.subjectName
   )
 ) {
+  const progressStatus =
+    (
+      subject as
+        StudentRiskSubjectItem & {
+          progressStatus?:
+            AcademicSubjectProgressStatus;
+        }
+    ).progressStatus;
+
+  /**
+   * 개강 전 예정과목은 정상적인 placeholder 사용이다.
+   */
+  if (
+    progressStatus ===
+    "scheduled"
+  ) {
+    continue;
+  }
+
+  const placeholderCode =
+    `PLACEHOLDER_SUBJECT_${progressStatus || "unknown"}_${subject.id ?? "unknown"}`;
+
+  const isCompletedPlaceholder =
+    progressStatus ===
+    "completed";
+
+  const placeholderTitle =
+    isCompletedPlaceholder
+      ? "이수완료 과목명 확인 필요"
+      : progressStatus ===
+          "in_progress"
+        ? "진행중 과목명 확인 필요"
+        : "과목명 확인 필요";
+
+  const placeholderMessage =
+    isCompletedPlaceholder
+      ? `${subject.semesterNo ?? ""}학기의 '${subject.subjectName}' 항목이 이수완료 상태이지만 실제 과목명이 입력되지 않았습니다. 취득과목 및 학점 계산을 위해 실제 이수 과목명을 입력해주세요.`
+      : progressStatus ===
+          "in_progress"
+        ? `${subject.semesterNo ?? ""}학기의 '${subject.subjectName}' 항목이 이미 진행중이지만 실제 과목명이 입력되지 않았습니다. 현재 수강 중인 과목명으로 변경해주세요.`
+        : progressStatus ===
+            "retake_required"
+          ? `${subject.semesterNo ?? ""}학기의 '${subject.subjectName}' 항목이 재수강 대상으로 표시되어 있습니다. 실제 재수강 과목명을 확인해주세요.`
+          : `${subject.semesterNo ?? ""}학기의 '${subject.subjectName}' 항목은 실제 과목명과 진행상태 확인이 필요합니다.`;
+
+  pushIssue(issues, {
+    code:
+      placeholderCode,
+
+    severity:
+      isCompletedPlaceholder
+        ? "danger"
+        : "warning",
+
+    category:
+      "subject",
+
+    title:
+      placeholderTitle,
+
+    message:
+      placeholderMessage,
+
+    details: {
+      subjectId:
+        subject.id ??
+        null,
+
+      subjectName:
+        subject.subjectName,
+
+      semesterNo:
+        subject.semesterNo ??
+        null,
+
+      progressStatus:
+        progressStatus ??
+        null,
+    },
+  });
+
+  subject.validation = {
+    status:
+      isCompletedPlaceholder
+        ? "danger"
+        : "warning",
+
+    codes: [
+      ...(
+        subject.validation
+          ?.codes ??
+        []
+      ),
+      placeholderCode,
+    ],
+
+    messages: [
+      ...(
+        subject.validation
+          ?.messages ??
+        []
+      ),
+      placeholderMessage,
+    ],
+  };
+
+  /**
+   * placeholder 자체는
+   * 실제 자격/학위 과목검사에는 계속 넣지 않는다.
+   */
   continue;
 }
 
@@ -2453,6 +2820,11 @@ const degreeRequirement =
         .finalEducation ??
       (plan as any)
         ?.finalEducation ??
+      null,
+
+    degreeTrackType:
+      qualificationOverride
+        ?.degreeTrackType ??
       null,
   });
 
@@ -3179,6 +3551,14 @@ socialWorkerElectiveSubjectsOverride:
         ?.requiredMajorElectiveSubjects ??
       null
     : null,
+
+socialWorkerTotalSubjectsOverride:
+  qualificationAnalysisCourseKey ===
+    "social_worker_2"
+    ? qualificationOverride
+        ?.requiredTotalSubjects ??
+      null
+    : null,
 });
 
 /**
@@ -3239,6 +3619,14 @@ socialWorkerElectiveSubjectsOverride:
     "social_worker_2"
     ? qualificationOverride
         ?.requiredMajorElectiveSubjects ??
+      null
+    : null,
+
+socialWorkerTotalSubjectsOverride:
+  qualificationAnalysisCourseKey ===
+    "social_worker_2"
+    ? qualificationOverride
+        ?.requiredTotalSubjects ??
       null
     : null,
 });
@@ -3433,36 +3821,113 @@ const applyQualificationOverride = (
           ),
         0
       );
+  }
 
-    next.combined
-      .hasRemainingDegreeRequirement =
-      next.degree
-        .remainingTotalCredits >
-        0 ||
-      (
-        next.degree
-          .remainingMajorCredits !==
-          null &&
-        next.degree
-          .remainingMajorCredits >
-          0
-      ) ||
-      (
-        next.degree
-          .remainingLiberalCredits !==
-          null &&
-        next.degree
-          .remainingLiberalCredits >
-          0
+  /**
+   * 전공 필요학점 override.
+   */
+  if (
+    next.degree
+      .requiresNewDegreeTrack &&
+    qualificationOverride
+      .requiredMajorCredits !==
+      null &&
+    qualificationOverride
+      .requiredMajorCredits !==
+      undefined
+  ) {
+    const requiredMajorCredits =
+      Number(
+        qualificationOverride
+          .requiredMajorCredits
       );
 
-    next.combined
-      .requiresSubjectOptimization =
-      next.combined
-        .hasRemainingDegreeRequirement ||
-      next.combined
-        .hasRemainingQualificationRequirement;
+    next.degree.requiredMajorCredits =
+      requiredMajorCredits;
+
+    next.degree.remainingMajorCredits =
+      Math.max(
+        requiredMajorCredits -
+          Number(
+            next.degree
+              .currentMajorCredits ??
+            0
+          ),
+        0
+      );
   }
+
+  /**
+   * 교양 필요학점 override.
+   */
+  if (
+    next.degree
+      .requiresNewDegreeTrack &&
+    qualificationOverride
+      .requiredLiberalCredits !==
+      null &&
+    qualificationOverride
+      .requiredLiberalCredits !==
+      undefined
+  ) {
+    const requiredLiberalCredits =
+      Number(
+        qualificationOverride
+          .requiredLiberalCredits
+      );
+
+    next.degree.requiredLiberalCredits =
+      requiredLiberalCredits;
+
+    next.degree.remainingLiberalCredits =
+      Math.max(
+        requiredLiberalCredits -
+          Number(
+            next.degree
+              .currentLiberalCredits ??
+            0
+          ),
+        0
+      );
+  }
+
+  /**
+   * 총/전공/교양 override 반영 후
+   * 학위 부족 여부를 다시 계산한다.
+   */
+  next.combined
+    .hasRemainingDegreeRequirement =
+    (
+      next.degree
+        .remainingTotalCredits !==
+        null &&
+      next.degree
+        .remainingTotalCredits >
+        0
+    ) ||
+    (
+      next.degree
+        .remainingMajorCredits !==
+        null &&
+      next.degree
+        .remainingMajorCredits >
+        0
+    ) ||
+    (
+      next.degree
+        .remainingLiberalCredits !==
+        null &&
+      next.degree
+        .remainingLiberalCredits >
+        0
+    );
+
+  next.combined
+    .requiresSubjectOptimization =
+    next.combined
+      .hasRemainingDegreeRequirement ||
+    next.combined
+      .hasRemainingQualificationRequirement;
 
   /**
    * degreeApplicationOverride는 여기서 처리하지 않는다.
@@ -5227,6 +5692,20 @@ payment: {
 requirements:
   effectiveRequirements,
 
+/**
+ * 현재 등록된 예정/진행 과목까지
+ * 모두 정상 완료되었을 때의
+ * 예상 취득요건.
+ *
+ * requirements:
+ * 실제 취득 기준
+ *
+ * projectedRequirements:
+ * 전체 설계 완료 기준
+ */
+projectedRequirements:
+  effectiveProjectedRequirements,
+
 subjectPlan:
   academicSummarySubjectPlan,
 
@@ -5238,7 +5717,29 @@ administrativeTimeline,
 academicSummary,
 
 issues,
+
+/**
+ * 검증상태를 포함한 원본 전체 과목.
+ */
 subjects,
+
+/**
+ * 현재 실제 취득/인정된 과목.
+ *
+ * 전적대 + 추가입력 +
+ * completed 우리플랜을 기준으로 하며,
+ * 동일교과목 중복 / placeholder /
+ * 재수강 대상은 공통엔진에서 제거된 결과다.
+ */
+recognizedSubjects:
+  validRecognizedSubjects,
+
+/**
+ * 실제 인정과목 +
+ * 예정 / 진행중 / 확인필요 과목까지 포함한
+ * 전체 설계 완료 기준 인정과목.
+ */
+projectedRecognizedSubjects,
 
     sourceStatus: {
       hasPlan:

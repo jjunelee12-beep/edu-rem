@@ -326,89 +326,134 @@ function buildQualificationCommonValues(
    * ─────────────────────────────
    */
   if (
-    analysis.courseKey ===
-    "social_worker_2"
-  ) {
-    const requiredSubjects =
-      toNullableNumber(
-        summary.totalSubjects
-      );
+  analysis.courseKey ===
+  "social_worker_2"
+) {
+  const requiredSubjects =
+    toNullableNumber(
+      summary.totalSubjects
+    );
 
-    const completedRequired =
-      toNullableNumber(
-        summary
-          .completedRequiredSubjects
-      ) ?? 0;
+  const completedRequired =
+    toNullableNumber(
+      summary
+        .completedRequiredSubjects
+    ) ?? 0;
 
-    const completedElective =
-      toNullableNumber(
-        summary
-          .completedElectiveSubjects
-      ) ?? 0;
+  const completedElective =
+    toNullableNumber(
+      summary
+        .completedElectiveSubjects
+    ) ?? 0;
 
-    const remainingRequired =
-      toNullableNumber(
-        summary
-          .remainingRequiredSubjects
-      ) ?? 0;
+  const remainingRequired =
+    toNullableNumber(
+      summary
+        .remainingRequiredSubjects
+    ) ?? 0;
 
-    const remainingElective =
-      toNullableNumber(
-        summary
-          .remainingElectiveSubjects
-      ) ?? 0;
+  const remainingElective =
+    toNullableNumber(
+      summary
+        .remainingElectiveSubjects
+    ) ?? 0;
 
-    return {
-      requiredSubjects,
+  const completedSubjects =
+    completedRequired +
+    completedElective;
 
-      completedSubjects:
-        analysis.canAnalyze
-          ? completedRequired +
-            completedElective
-          : null,
+  /**
+   * 필수/선택 개별 부족분.
+   *
+   * 예:
+   * 필수 10 중 9
+   * 선택 7 중 7
+   * → 최소 1과목 부족
+   */
+  const remainingByBreakdown =
+    remainingRequired +
+    remainingElective;
 
-      remainingSubjects:
-        analysis.canAnalyze
-          ? remainingRequired +
-            remainingElective
-          : null,
+  /**
+   * 담당자가 설정한 총 자격과목 기준 부족분.
+   *
+   * 예:
+   * 필수 10
+   * 선택 7
+   * 총 자격과목 18
+   *
+   * 현재 17과목을 모두 충족했더라도
+   * 총 기준에서는 1과목이 추가로 필요하다.
+   */
+  const remainingByTotal =
+    requiredSubjects ===
+    null
+      ? null
+      : Math.max(
+          requiredSubjects -
+            completedSubjects,
+          0
+        );
 
-      requiredCredits:
-        requiredSubjects ===
+  /**
+   * 총 과목수와 필수/선택 세부조건을
+   * 둘 다 만족해야 최종 충족이다.
+   *
+   * 따라서 더 큰 부족값을 사용한다.
+   */
+  const remainingSubjects =
+    analysis.canAnalyze
+      ? remainingByTotal ===
           null
-          ? null
-          : requiredSubjects *
-            3,
+        ? remainingByBreakdown
+        : Math.max(
+            remainingByBreakdown,
+            remainingByTotal
+          )
+      : null;
 
-      completedCredits:
-        analysis.canAnalyze
-          ? (
-              completedRequired +
-              completedElective
-            ) *
-            3
-          : null,
+  return {
+    requiredSubjects,
 
-      remainingCredits:
-        analysis.canAnalyze
-          ? (
-              remainingRequired +
-              remainingElective
-            ) *
-            3
-          : null,
+    completedSubjects:
+      analysis.canAnalyze
+        ? completedSubjects
+        : null,
 
-      practiceHours:
-        toNullableNumber(
-          summary.practiceHours
-        ),
+    remainingSubjects,
 
-      lawVersion:
-        toNullableString(
-          summary.lawVersion
-        ),
-    };
-  }
+    requiredCredits:
+      requiredSubjects ===
+      null
+        ? null
+        : requiredSubjects *
+          3,
+
+    completedCredits:
+      analysis.canAnalyze
+        ? completedSubjects *
+          3
+        : null,
+
+    remainingCredits:
+      analysis.canAnalyze &&
+      remainingSubjects !==
+        null
+        ? remainingSubjects *
+          3
+        : null,
+
+    practiceHours:
+      toNullableNumber(
+        summary.practiceHours
+      ),
+
+    lawVersion:
+      toNullableString(
+        summary.lawVersion
+      ),
+  };
+}
 
   /**
    * ─────────────────────────────

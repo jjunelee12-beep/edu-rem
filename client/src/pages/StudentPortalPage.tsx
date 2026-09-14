@@ -626,271 +626,304 @@ const qualificationApplicationInfo =
 
 const practicePrerequisite =
   (() => {
-    const semesters =
-      Array.isArray(
-        myWork?.semesters
-      )
-        ? myWork.semesters
-        : [];
-
+    /**
+     * 공통엔진이 이미:
+     *
+     * - 전적대
+     * - 추가 인정과목
+     * - 우리플랜
+     * - 공식 동일교과목
+     * - 중복과목
+     * - placeholder
+     * - 재수강
+     *
+     * 처리를 끝낸 전체 설계 인정과목을 사용한다.
+     *
+     * Portal에서는 과목 중복 여부를
+     * 다시 계산하지 않는다.
+     */
     const subjects =
       Array.isArray(
-        myWork?.subjects
+        myWork
+          ?.projectedRecognizedSubjects
       )
-        ? myWork.subjects
+        ? myWork
+            .projectedRecognizedSubjects
         : [];
 
-    /**
-     * MY 학적부에서 사용하는 학기 원본을
-     * 학기번호 기준으로 연결한다.
-     */
-    const semesterByOrder =
-      new Map<
-        number,
-        any
-      >();
+    type PrerequisiteSubjectRow = {
+      subjectName:
+        string;
 
-    semesters.forEach(
-      (
-        semester:
-          any
-      ) => {
-        const semesterOrder =
-          Number(
-            semester
-              ?.semesterOrder ||
-            0
-          );
+      requirementType:
+        "전공필수" |
+        "전공선택";
 
-        if (
-          !Number.isFinite(
-            semesterOrder
-          ) ||
-          semesterOrder <=
-            0
-        ) {
-          return;
-        }
+      statusKey:
+        "completed" |
+        "in_progress";
 
-        semesterByOrder.set(
-          semesterOrder,
-          semester
-        );
-      }
-    );
+      statusLabel:
+        "전적대 인정" |
+        "추가 인정" |
+        "이수완료" |
+        "진행중";
 
-    /**
-     * 실습 선이수 화면에는
-     * 현재 실제 수강 중이거나
-     * 이미 이수한 과목만 표시한다.
-     *
-     * 예정 / 확인필요 / 재수강은
-     * 목록과 계산에서 완전히 제외한다.
-     */
-    const prerequisiteSubjectMap =
-      new Map<
-        string,
-        {
-          subjectName:
-            string;
+      semesterNo:
+        number |
+        null;
 
-          requirementType:
-            "전공필수" |
-            "전공선택";
+      source:
+        "transfer" |
+        "extra" |
+        "plan";
+    };
 
-          statusKey:
-            "completed" |
-            "in_progress";
-
-          statusLabel:
-            "이수완료" |
-            "진행중";
-
-          semesterNo:
-            number;
-        }
-      >();
-
-    subjects.forEach(
-      (
-        subject:
-          any
-      ) => {
-        const subjectName =
-          String(
-            subject
-              ?.subjectName ||
-            ""
-          )
-            .trim()
-            .replace(
-              /\s+/g,
-              " "
-            );
-
-        if (
-          !subjectName
-        ) {
-          return;
-        }
-
-        const requirementType =
-          String(
-            subject
-              ?.requirementType ||
-            ""
-          ).trim();
-
-        if (
-          requirementType !==
-            "전공필수" &&
-          requirementType !==
-            "전공선택"
-        ) {
-          return;
-        }
-
-        const semesterNo =
-          Number(
-            subject
-              ?.semesterNo ||
-            0
-          );
-
-        const semester =
-          semesterByOrder.get(
-            semesterNo
-          );
-
-        if (
-          !semester
-        ) {
-          return;
-        }
-
-        /**
-         * MY 학적부 화면과
-         * 완전히 동일한 과목 상태 판정.
-         */
-        const status =
-          resolvePortalSubjectStatus(
-            subject,
-            semester
-          );
-
-        /**
-         * 예정 과목은 절대 넣지 않는다.
-         *
-         * scheduled = 예정
-         * retake = 재수강
-         * review_required = 확인필요
-         *
-         * 실습 화면에서는
-         * completed / in_progress만 허용.
-         */
-        if (
-          status.key !==
-            "completed" &&
-          status.key !==
-            "in_progress"
-        ) {
-          return;
-        }
-
-        const normalizedSubjectKey =
-          subjectName
-            .replace(
-              /\s+/g,
-              ""
-            )
-            .toLowerCase();
-
-        const mapKey =
-          `${requirementType}:${normalizedSubjectKey}`;
-
-        const nextRow = {
-          subjectName,
-
-          requirementType:
-            requirementType as
-              | "전공필수"
-              | "전공선택",
-
-          statusKey:
-            status.key as
-              | "completed"
-              | "in_progress",
-
-          statusLabel:
-            status.label as
-              | "이수완료"
-              | "진행중",
-
-          semesterNo,
-        };
-
-        const existing =
-          prerequisiteSubjectMap.get(
-            mapKey
-          );
-
-        /**
-         * 같은 과목이 여러 Row에 존재하면
-         * 이수완료를 진행중보다 우선한다.
-         */
-        if (
-          !existing ||
+    const visibleSubjects:
+      PrerequisiteSubjectRow[] =
+      subjects
+        .map(
           (
-            existing.statusKey ===
-              "in_progress" &&
-            nextRow.statusKey ===
-              "completed"
-          )
-        ) {
-          prerequisiteSubjectMap.set(
-            mapKey,
-            nextRow
-          );
-        }
-      }
-    );
+            subject:
+              any
+          ):
+            PrerequisiteSubjectRow |
+            null => {
+            const subjectName =
+              String(
+                subject
+                  ?.subjectName ||
+                ""
+              )
+                .trim()
+                .replace(
+                  /\s+/g,
+                  " "
+                );
 
-    const visibleSubjects =
-      Array.from(
-        prerequisiteSubjectMap.values()
-      );
+            if (
+              !subjectName
+            ) {
+              return null;
+            }
+
+            const requirementType =
+              String(
+                subject
+                  ?.requirementType ||
+                ""
+              ).trim();
+
+            if (
+              requirementType !==
+                "전공필수" &&
+              requirementType !==
+                "전공선택"
+            ) {
+              return null;
+            }
+
+            const source =
+              String(
+                subject
+                  ?.source ||
+                ""
+              ).trim();
+
+            /**
+             * 전적대 / 추가인정은
+             * 이미 취득 완료된 과목이다.
+             */
+            if (
+              source ===
+                "transfer"
+            ) {
+              return {
+                subjectName,
+
+                requirementType:
+                  requirementType as
+                    | "전공필수"
+                    | "전공선택",
+
+                statusKey:
+                  "completed",
+
+                statusLabel:
+                  "전적대 인정",
+
+                semesterNo:
+                  null,
+
+                source:
+                  "transfer",
+              };
+            }
+
+            if (
+              source ===
+                "extra"
+            ) {
+              return {
+                subjectName,
+
+                requirementType:
+                  requirementType as
+                    | "전공필수"
+                    | "전공선택",
+
+                statusKey:
+                  "completed",
+
+                statusLabel:
+                  "추가 인정",
+
+                semesterNo:
+                  null,
+
+                source:
+                  "extra",
+              };
+            }
+
+            if (
+              source !==
+                "plan"
+            ) {
+              return null;
+            }
+
+            const progressStatus =
+              String(
+                subject
+                  ?.progressStatus ||
+                ""
+              ).trim();
+
+            /**
+             * 실습 선이수 목록에는
+             *
+             * completed:
+             * 실제 충족
+             *
+             * in_progress:
+             * 진행중 표시만
+             *
+             * scheduled /
+             * review_required /
+             * retake_required:
+             * 제외
+             */
+            if (
+              progressStatus ===
+                "completed"
+            ) {
+              return {
+                subjectName,
+
+                requirementType:
+                  requirementType as
+                    | "전공필수"
+                    | "전공선택",
+
+                statusKey:
+                  "completed",
+
+                statusLabel:
+                  "이수완료",
+
+                semesterNo:
+                  Number(
+                    subject
+                      ?.semesterNo ||
+                    0
+                  ) ||
+                  null,
+
+                source:
+                  "plan",
+              };
+            }
+
+            if (
+              progressStatus ===
+                "in_progress"
+            ) {
+              return {
+                subjectName,
+
+                requirementType:
+                  requirementType as
+                    | "전공필수"
+                    | "전공선택",
+
+                statusKey:
+                  "in_progress",
+
+                statusLabel:
+                  "진행중",
+
+                semesterNo:
+                  Number(
+                    subject
+                      ?.semesterNo ||
+                    0
+                  ) ||
+                  null,
+
+                source:
+                  "plan",
+              };
+            }
+
+            return null;
+          }
+        )
+        .filter(
+          (
+            subject
+          ): subject is
+            PrerequisiteSubjectRow =>
+            subject !==
+            null
+        );
 
     const requiredSubjects =
       visibleSubjects.filter(
         subject =>
-          subject.requirementType ===
+          subject
+            .requirementType ===
           "전공필수"
       );
 
     const electiveSubjects =
       visibleSubjects.filter(
         subject =>
-          subject.requirementType ===
+          subject
+            .requirementType ===
           "전공선택"
       );
 
     /**
-     * 분자는 반드시 "이수완료"만 계산한다.
+     * 실습 선이수 충족 숫자는
+     * 실제 completed만 계산한다.
      *
-     * 진행중 과목은 목록에는 보이지만
-     * 4 / 2 충족 숫자에는 포함하지 않는다.
+     * 진행중 과목은 화면에는 보이지만
+     * 선이수 완료로 계산하지 않는다.
      */
     const requiredCompleted =
       requiredSubjects.filter(
         subject =>
-          subject.statusKey ===
+          subject
+            .statusKey ===
           "completed"
       ).length;
 
     const electiveCompleted =
       electiveSubjects.filter(
         subject =>
-          subject.statusKey ===
+          subject
+            .statusKey ===
           "completed"
       ).length;
 
@@ -2785,73 +2818,282 @@ function PortalRequirementsView({
         />
       </section>
 
-      {myWork.transfer
-        ?.hasData ? (
-        <section className="mt-4 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
-          <div className="flex items-center justify-between">
-            <div className="font-extrabold text-slate-900">
-              전적대
-            </div>
+     {myWork.transfer
+  ?.hasData ? (
+  <PortalTransferSummary
+    transfer={
+      myWork.transfer
+    }
+  />
+) : null}
+    </>
+  );
+}
 
-            <span className="rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-600">
-              확인됨
-            </span>
+function PortalTransferSummary({
+  transfer,
+}: {
+  transfer:
+    any;
+}) {
+  const subjects =
+    Array.isArray(
+      transfer?.subjects
+    )
+      ? transfer.subjects
+      : [];
+
+  /**
+   * 전적대는 requirementType 우선.
+   *
+   * 전공필수 / 전공선택은
+   * 자격요건 분류값을 그대로 사용한다.
+   *
+   * 그 외에는 학위영역 category를 사용한다.
+   */
+  const resolveTransferGroup =
+    (
+      subject:
+        any
+    ) => {
+      const requirementType =
+        String(
+          subject
+            ?.requirementType ||
+          ""
+        ).trim();
+
+      const category =
+        String(
+          subject
+            ?.category ||
+          ""
+        ).trim();
+
+      if (
+        requirementType ===
+        "전공필수"
+      ) {
+        return "전공필수";
+      }
+
+      if (
+        requirementType ===
+        "전공선택"
+      ) {
+        return "전공선택";
+      }
+
+      if (
+        requirementType ===
+          "교양" ||
+        category ===
+          "교양"
+      ) {
+        return "교양";
+      }
+
+      if (
+        requirementType ===
+          "일반" ||
+        category ===
+          "일반"
+      ) {
+        return "일반";
+      }
+
+      if (
+        category ===
+        "전공"
+      ) {
+        return "전공";
+      }
+
+      return "구분 확인";
+    };
+
+  const groupOrder = [
+    "전공필수",
+    "전공선택",
+    "전공",
+    "교양",
+    "일반",
+    "구분 확인",
+  ];
+
+  const groupedSubjects =
+    subjects.reduce(
+      (
+        groups:
+          Record<
+            string,
+            any[]
+          >,
+        subject:
+          any
+      ) => {
+        const group =
+          resolveTransferGroup(
+            subject
+          );
+
+        if (
+          !groups[group]
+        ) {
+          groups[group] =
+            [];
+        }
+
+        groups[group].push(
+          subject
+        );
+
+        return groups;
+      },
+      {}
+    );
+
+  const visibleGroups =
+    groupOrder
+      .map(
+        group => ({
+          group,
+
+          subjects:
+            groupedSubjects[
+              group
+            ] ||
+            [],
+        })
+      )
+      .filter(
+        item =>
+          item.subjects
+            .length >
+          0
+      );
+
+  return (
+    <section className="mt-4 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="font-extrabold text-slate-900">
+            전적대
           </div>
 
           <div className="mt-2 text-2xl font-extrabold text-slate-950">
-            {
-              myWork
-                .transfer
-                .totalCredits
-            }
+            {Number(
+              transfer
+                ?.totalCredits ||
+                0
+            )}
             학점
           </div>
+        </div>
 
-          <div className="mt-4 divide-y divide-slate-100">
-            {myWork
-              .transfer
-              .subjects
-              .map(
+        <span className="rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-600">
+          확인됨
+        </span>
+      </div>
+
+      <div className="mt-5 space-y-6">
+        {visibleGroups.map(
+          ({
+            group,
+            subjects:
+              groupSubjects,
+          }) => {
+            const groupCredits =
+              groupSubjects.reduce(
                 (
+                  sum:
+                    number,
                   subject:
-                    any,
-                  index:
-                    number
-                ) => (
-                  <div
-                    key={
-                      subject.id ||
-                      index
+                    any
+                ) =>
+                  sum +
+                  Number(
+                    subject
+                      ?.credits ||
+                      0
+                  ),
+                0
+              );
+
+            return (
+              <div
+                key={
+                  group
+                }
+              >
+                <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-2">
+                  <div className="text-[14px] font-extrabold text-slate-900">
+                    {
+                      group
                     }
-                    className="flex items-center justify-between gap-3 py-3"
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-bold text-slate-800">
-                        {
-                          subject.subjectName
-                        }
-                      </div>
-
-                      <div className="mt-1 text-xs text-slate-400">
-                        {subject.requirementType ||
-                          subject.category ||
-                          "구분 확인"}
-                      </div>
-                    </div>
-
-                    <div className="text-sm font-bold text-slate-600">
-                      {
-                        subject.credits
-                      }
-                      학점
-                    </div>
                   </div>
-                )
-              )}
-          </div>
-        </section>
-      ) : null}
-    </>
+
+                  <div className="text-xs font-bold text-slate-400">
+                    {
+                      groupSubjects.length
+                    }
+                    과목 ·{" "}
+                    {
+                      groupCredits
+                    }
+                    학점
+                  </div>
+                </div>
+
+                <div className="divide-y divide-slate-100">
+                  {groupSubjects.map(
+                    (
+                      subject:
+                        any,
+                      index:
+                        number
+                    ) => (
+                      <div
+                        key={
+                          subject.id ||
+                          `${group}-${subject.subjectName}-${index}`
+                        }
+                        className="flex items-center justify-between gap-3 py-3"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-bold text-slate-800">
+                            {
+                              subject.subjectName
+                            }
+                          </div>
+
+                          {subject.schoolName ? (
+                            <div className="mt-1 truncate text-xs text-slate-400">
+                              {
+                                subject.schoolName
+                              }
+                            </div>
+                          ) : null}
+                        </div>
+
+                        <div className="shrink-0 text-sm font-bold text-slate-600">
+                          {Number(
+                            subject
+                              ?.credits ||
+                              0
+                          )}
+                          학점
+                        </div>
+                      </div>
+                    )
+                  )}
+                </div>
+              </div>
+            );
+          }
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -2875,6 +3117,11 @@ function PortalRequirementSummary({
       ?.requirementSummary ??
     null;
 
+const projectedRequirementSummary =
+  myWork
+    ?.projectedRequirementSummary ??
+  null;
+
   const courseKey =
     String(
       requirementSummary
@@ -2896,6 +3143,21 @@ function PortalRequirementSummary({
     requirementSummary
       ?.degree ??
     null;
+
+const projectedQualification =
+  projectedRequirementSummary
+    ?.qualification ??
+  null;
+
+const projectedSocialWorker =
+  projectedQualification
+    ?.socialWorker ??
+  null;
+
+const projectedDegree =
+  projectedRequirementSummary
+    ?.degree ??
+  null;
 
   /**
    * null과 실제 0을 구분한다.
@@ -3280,6 +3542,186 @@ function PortalRequirementSummary({
     }
   }
 
+/**
+ * -------------------------------------------------
+ * 전체 설계 기준 자격요건 Row
+ * -------------------------------------------------
+ */
+const projectedQualificationRows:
+  Array<{
+    key: string;
+    label: string;
+    current: number;
+    required: number | null;
+    unit: "과목" | "학점";
+  }> = [];
+
+if (
+  courseKey ===
+    "social_worker_2" &&
+  projectedSocialWorker
+) {
+  const requiredSubjects =
+    toNumberOrNull(
+      projectedSocialWorker
+        .requiredSubjects
+    );
+
+  const electiveSubjects =
+    toNumberOrNull(
+      projectedSocialWorker
+        .electiveSubjects
+    );
+
+  const totalSubjects =
+    toNumberOrNull(
+      projectedSocialWorker
+        .totalSubjects
+    );
+
+  if (
+    requiredSubjects !==
+    null
+  ) {
+    projectedQualificationRows.push({
+      key:
+        "projected-social-worker-required",
+
+      label:
+        "필수과목",
+
+      current:
+        Number(
+          projectedSocialWorker
+            .completedRequiredSubjects ??
+          0
+        ),
+
+      required:
+        requiredSubjects,
+
+      unit:
+        "과목",
+    });
+  }
+
+  if (
+    electiveSubjects !==
+    null
+  ) {
+    projectedQualificationRows.push({
+      key:
+        "projected-social-worker-elective",
+
+      label:
+        "선택과목",
+
+      current:
+        Number(
+          projectedSocialWorker
+            .completedElectiveSubjects ??
+          0
+        ),
+
+      required:
+        electiveSubjects,
+
+      unit:
+        "과목",
+    });
+  }
+
+  if (
+    totalSubjects !==
+    null
+  ) {
+    projectedQualificationRows.push({
+      key:
+        "projected-social-worker-total",
+
+      label:
+        "총 자격과목",
+
+      current:
+        Number(
+          projectedSocialWorker
+            .completedTotalSubjects ??
+          projectedQualification
+            ?.completedSubjects ??
+          0
+        ),
+
+      required:
+        totalSubjects,
+
+      unit:
+        "과목",
+    });
+  }
+} else {
+  const requiredSubjects =
+    toNumberOrNull(
+      projectedQualification
+        ?.requiredSubjects
+    );
+
+  const requiredCredits =
+    toNumberOrNull(
+      projectedQualification
+        ?.requiredCredits
+    );
+
+  if (
+    requiredSubjects !==
+    null
+  ) {
+    projectedQualificationRows.push({
+      key:
+        "projected-qualification-subjects",
+
+      label:
+        "자격요건 과목",
+
+      current:
+        Number(
+          projectedQualification
+            ?.completedSubjects ??
+          0
+        ),
+
+      required:
+        requiredSubjects,
+
+      unit:
+        "과목",
+    });
+  } else if (
+    requiredCredits !==
+    null
+  ) {
+    projectedQualificationRows.push({
+      key:
+        "projected-qualification-credits",
+
+      label:
+        "자격요건 학점",
+
+      current:
+        Number(
+          projectedQualification
+            ?.completedCredits ??
+          0
+        ),
+
+      required:
+        requiredCredits,
+
+      unit:
+        "학점",
+    });
+  }
+}
+
   /**
    * -------------------------------------------------
    * 학위요건 Row
@@ -3412,6 +3854,125 @@ function PortalRequirementSummary({
     }
   }
 
+const projectedDegreeRows:
+  Array<{
+    key: string;
+    label: string;
+    current: number;
+    required: number | null;
+    unit: "학점";
+  }> = [];
+
+if (
+  projectedDegree
+    ?.requiresNewDegreeTrack ===
+  true
+) {
+  const requiredTotalCredits =
+    toNumberOrNull(
+      projectedDegree
+        ?.requiredTotalCredits
+    );
+
+  const requiredMajorCredits =
+    toNumberOrNull(
+      projectedDegree
+        ?.requiredMajorCredits
+    );
+
+  const requiredLiberalCredits =
+    toNumberOrNull(
+      projectedDegree
+        ?.requiredLiberalCredits
+    );
+
+  if (
+    requiredTotalCredits !==
+    null
+  ) {
+    projectedDegreeRows.push({
+      key:
+        "projected-degree-total",
+
+      label:
+        "총 학점",
+
+      current:
+        Number(
+          projectedDegree
+            ?.currentTotalCredits ??
+          0
+        ),
+
+      required:
+        requiredTotalCredits,
+
+      unit:
+        "학점",
+    });
+  }
+
+  if (
+    requiredMajorCredits !==
+    null
+  ) {
+    projectedDegreeRows.push({
+      key:
+        "projected-degree-major",
+
+      label:
+        "전공 학점",
+
+      current:
+        Number(
+          projectedDegree
+            ?.currentMajorCredits ??
+          0
+        ),
+
+      required:
+        requiredMajorCredits,
+
+      unit:
+        "학점",
+    });
+  }
+
+  if (
+    requiredLiberalCredits !==
+    null
+  ) {
+    projectedDegreeRows.push({
+      key:
+        "projected-degree-liberal",
+
+      label:
+        "교양 학점",
+
+      current:
+        Number(
+          projectedDegree
+            ?.currentLiberalCredits ??
+          0
+        ),
+
+      required:
+        requiredLiberalCredits,
+
+      unit:
+        "학점",
+    });
+  }
+}
+
+const hasProjectedQualificationData =
+  projectedQualificationRows.length >
+  0;
+
+const hasProjectedDegreeData =
+  projectedDegreeRows.length >
+  0;
+
   const hasQualificationData =
     qualificationRows.length >
     0;
@@ -3489,6 +4050,67 @@ function PortalRequirementSummary({
           </div>
         </section>
       ) : null}
+
+{hasProjectedQualificationData ||
+hasProjectedDegreeData ? (
+  <section className="border-t border-slate-100 pt-5">
+    <div className="flex items-center justify-between gap-3">
+      <div>
+        <div className="text-sm font-extrabold text-slate-900">
+          전체 설계현황
+        </div>
+
+        <div className="mt-1 text-xs leading-5 text-slate-400">
+          진행중·예정 과목까지 정상 이수했을 때의 예상 결과입니다.
+        </div>
+      </div>
+
+      <span className="shrink-0 rounded-lg bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-600">
+        설계 기준
+      </span>
+    </div>
+
+    {hasProjectedQualificationData ? (
+      <div className="mt-4 space-y-4">
+        {projectedQualificationRows.map(
+          row =>
+            renderRequirementRow(
+              row
+            )
+        )}
+      </div>
+    ) : null}
+
+    {hasProjectedDegreeData ? (
+      <div
+        className={
+          hasProjectedQualificationData
+            ? "mt-5 border-t border-slate-100 pt-5"
+            : "mt-4"
+        }
+      >
+        <div className="mb-4">
+          <div className="text-xs font-extrabold text-slate-700">
+            학위 설계
+          </div>
+
+          <div className="mt-1 text-[11px] leading-5 text-slate-400">
+            현재 등록된 전체 과목을 정상 이수했을 때의 예상 학점입니다.
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          {projectedDegreeRows.map(
+            row =>
+              renderRequirementRow(
+                row
+              )
+          )}
+        </div>
+      </div>
+    ) : null}
+  </section>
+) : null}
 
       {hasDegreeData ? (
         <section className="border-t border-slate-100 pt-5">
@@ -5211,6 +5833,82 @@ function PortalCreditRecognitionGuide({
         )
       : [];
 
+    /**
+   * 우리플랜 과목 학습구분 정규화.
+   *
+   * requirementType을 우선 사용하고,
+   * 값이 없을 때만 category를 사용한다.
+   *
+   * 같은 의미의 값은 반드시 하나의 그룹으로 합친다.
+   */
+  const resolveAcademicGroup =
+    (
+      row:
+        any
+    ) => {
+      const requirementType =
+        String(
+          row?.requirementType ||
+          ""
+        ).trim();
+
+      const category =
+        String(
+          row?.category ||
+          ""
+        ).trim();
+
+      if (
+        requirementType ===
+        "전공필수"
+      ) {
+        return "전공필수";
+      }
+
+      if (
+        requirementType ===
+        "전공선택"
+      ) {
+        return "전공선택";
+      }
+
+      if (
+        requirementType ===
+          "교양" ||
+        category ===
+          "교양"
+      ) {
+        return "교양";
+      }
+
+      if (
+        requirementType ===
+          "일반" ||
+        category ===
+          "일반"
+      ) {
+        return "일반";
+      }
+
+      if (
+        category ===
+        "전공"
+      ) {
+        return "전공";
+      }
+
+      return "구분 확인";
+    };
+
+  const academicGroupOrder = [
+    "전공필수",
+    "전공선택",
+    "전공",
+    "교양",
+    "일반",
+    "구분 확인",
+  ];
+
   const academicGroups =
     academicSubjects.reduce(
       (
@@ -5223,18 +5921,20 @@ function PortalCreditRecognitionGuide({
           any
       ) => {
         const label =
-          String(
-            row?.requirementType ||
-            row?.category ||
-            "구분 확인"
-          ).trim() ||
-          "구분 확인";
+          resolveAcademicGroup(
+            row
+          );
 
         const subjectName =
           String(
             row?.subjectName ||
             ""
-          ).trim();
+          )
+            .trim()
+            .replace(
+              /\s+/g,
+              " "
+            );
 
         if (
           !subjectName
@@ -5249,9 +5949,39 @@ function PortalCreditRecognitionGuide({
             [];
         }
 
-        groups[label].push(
+        /**
+         * 같은 과목명이 중복으로 들어와도
+         * 동일 그룹에서는 한 번만 표시한다.
+         */
+        const normalizedSubjectName =
           subjectName
-        );
+            .replace(
+              /\s+/g,
+              ""
+            )
+            .toLowerCase();
+
+        const alreadyExists =
+          groups[label].some(
+            existingSubjectName =>
+              String(
+                existingSubjectName
+              )
+                .replace(
+                  /\s+/g,
+                  ""
+                )
+                .toLowerCase() ===
+              normalizedSubjectName
+          );
+
+        if (
+          !alreadyExists
+        ) {
+          groups[label].push(
+            subjectName
+          );
+        }
 
         return groups;
       },
@@ -5262,9 +5992,23 @@ function PortalCreditRecognitionGuide({
     );
 
   const academicGroupEntries =
-    Object.entries(
-      academicGroups
-    );
+    academicGroupOrder
+      .filter(
+        label =>
+          Array.isArray(
+            academicGroups[label]
+          ) &&
+          academicGroups[label]
+            .length >
+            0
+      )
+      .map(
+        label =>
+          [
+            label,
+            academicGroups[label],
+          ] as const
+      );
 
   /**
    * CRM에 입력된 실제 전적대 데이터.
@@ -8477,11 +9221,13 @@ function PracticePrerequisiteSubjectList({
         "in_progress";
 
       statusLabel:
-        "이수완료" |
-        "진행중";
+  "전적대 인정" |
+  "이수완료" |
+  "진행중";
 
-      semesterNo:
-        number;
+semesterNo:
+  number |
+  null;
     }>;
 }) {
   if (

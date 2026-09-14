@@ -384,6 +384,67 @@ function dedupeMasterItemsByEquivalenceKey(
   );
 }
 
+/**
+ * 실제 인정과목을 동일교과목 기준으로 한 번만 계산한다.
+ *
+ * ai-risk-engine에서도 이미 중복 제거를 수행하지만,
+ * qualification-risk-analyzer가 다른 경로에서 직접 호출되어도
+ * 동일 과목이 두 번 계산되지 않도록 한 번 더 방어한다.
+ */
+function dedupeRecognizedSubjects(
+  subjects:
+    QualificationRecognizedSubject[]
+) {
+  const map =
+    new Map<
+      string,
+      QualificationRecognizedSubject
+    >();
+
+  for (
+    const subject of subjects || []
+  ) {
+    const subjectName =
+      String(
+        subject?.subjectName ||
+        ""
+      ).trim();
+
+    if (!subjectName) {
+      continue;
+    }
+
+    const equivalenceKey =
+      getConfirmedSubjectEquivalenceKey(
+        subjectName
+      );
+
+    const fallbackKey =
+      subjectName
+        .replace(/\s+/g, "")
+        .toLowerCase();
+
+    const key =
+      equivalenceKey ||
+      fallbackKey;
+
+    if (!key) {
+      continue;
+    }
+
+    if (!map.has(key)) {
+      map.set(
+        key,
+        subject
+      );
+    }
+  }
+
+  return Array.from(
+    map.values()
+  );
+}
+
 function getCompletedMasterItems(
   params: {
     masterItems:
@@ -489,6 +550,9 @@ function analyzeSocialWorker(
 
     electiveSubjectsOverride?:
       number | null;
+
+totalSubjectsOverride?:
+  number | null;
   }
 ): QualificationRuleAnalysis {
   const issues:
@@ -557,35 +621,56 @@ function analyzeSocialWorker(
     resolution.rule.electiveSubjects;
 
   const totalSubjects =
+  params.totalSubjectsOverride ??
+  (
     requiredSubjects +
-    electiveSubjects;
+    electiveSubjects
+  );
 
-  const completedMasterItems =
-    getCompletedMasterItems({
-      masterItems:
-        params.masterItems,
+  /**
+ * 사회복지 실제 취득과목.
+ *
+ * 중요:
+ *
+ * 여기까지 전달된 recognizedSubjects는
+ * ai-risk-engine에서 이미:
+ *
+ * - 전적대 인정과목
+ * - 추가 인정과목
+ * - 우리플랜 중 실제 이수완료 과목
+ *
+ * 만 실제 취득 인정과목으로 정리된 결과다.
+ *
+ * 따라서 사회복지 취득요약의 완료값은
+ * 다시 과목 마스터와 이름을 대조해서 세지 않고,
+ * 인정된 과목의 확정 requirementType을 기준으로 계산한다.
+ *
+ * 과목 마스터는 부족과목 후보 추천에만 사용한다.
+ */
+const completedRecognizedSubjects =
+  dedupeRecognizedSubjects(
+    params.recognizedSubjects
+  );
 
-      recognizedSubjects:
-        params.recognizedSubjects,
-    });
+const requiredCompleted =
+  completedRecognizedSubjects.filter(
+    subject =>
+      String(
+        subject.requirementType ||
+        ""
+      ).trim() ===
+      "전공필수"
+  );
 
-  const requiredCompleted =
-    completedMasterItems.filter(
-      (
-        item
-      ) =>
-        item.requirementType ===
-        "전공필수"
-    );
-
-  const electiveCompleted =
-    completedMasterItems.filter(
-      (
-        item
-      ) =>
-        item.requirementType ===
-        "전공선택"
-    );
+const electiveCompleted =
+  completedRecognizedSubjects.filter(
+    subject =>
+      String(
+        subject.requirementType ||
+        ""
+      ).trim() ===
+      "전공선택"
+  );
 
     const missingRequired =
     Math.max(
@@ -3171,6 +3256,9 @@ export function analyzeQualificationRisk(
 
     socialWorkerElectiveSubjectsOverride?:
       number | null;
+
+socialWorkerTotalSubjectsOverride?:
+  number | null;
   }
 ): QualificationRuleAnalysis {
   const courseKey =
@@ -3202,6 +3290,9 @@ export function analyzeQualificationRisk(
 
   electiveSubjectsOverride:
     params.socialWorkerElectiveSubjectsOverride,
+
+totalSubjectsOverride:
+  params.socialWorkerTotalSubjectsOverride,
 });
   }
 

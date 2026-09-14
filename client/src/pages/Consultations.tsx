@@ -263,11 +263,11 @@ toast.success(`${finalRows.length}건 미리보기 생성`);
     }
 
     const validRows = bulkPreviewRows.filter(
-      (row) => row.clientName && row.phone
-    );
+  (row) => row.phone
+);
 
-   if (!validRows.length) {
-  toast.error("이름과 연락처가 있는 행이 없습니다");
+if (!validRows.length) {
+  toast.error("연락처가 있는 행이 없습니다");
   return;
 }
 
@@ -303,10 +303,10 @@ bulkCreateMut.mutate({
   };
 
   const handleAdd = () => {
-    if (!newRow.clientName || !newRow.phone) {
-      toast.error("이름과 연락처는 필수입니다");
-      return;
-    }
+  if (!newRow.phone) {
+    toast.error("연락처는 필수입니다");
+    return;
+  }
 
     createMut.mutate({
       ...newRow,
@@ -940,13 +940,21 @@ const isPendingRegister = item.status === "등록예정";
 const isOwnConsultation =
   Number(item.assigneeId) === Number(currentUserId);
 
-// 상담일·문의경로·이름·연락처
+// 상담일·문의경로·연락처
 // HOST만 수정 가능
 const canEditCoreFields = isHost;
 
-// 최종학력
+// 이름
 // HOST는 항상 수정 가능
 // ADMIN / STAFF는 본인 상담이며 값이 비어 있을 때만 최초 입력 가능
+const canEditClientName =
+  isHost ||
+  (
+    isOwnConsultation &&
+    !String(item.clientName || "").trim()
+  );
+
+// 최종학력
 const canEditFinalEducation =
   isHost ||
   (
@@ -955,8 +963,6 @@ const canEditFinalEducation =
   );
 
 // 희망과정
-// HOST는 항상 수정 가능
-// ADMIN / STAFF는 본인 상담이며 값이 비어 있을 때만 최초 입력 가능
 const canEditDesiredCourse =
   isHost ||
   (
@@ -1005,10 +1011,10 @@ const canDelete = canManageAll;
 
       <td className="px-1 py-2">
         <EditableCell
-          value={item.clientName || ""}
-          onBlur={(v) => onBlur(item.id, "clientName", v)}
-          disabled={!canEditCoreFields}
-        />
+  value={item.clientName || ""}
+  onBlur={(v) => onBlur(item.id, "clientName", v)}
+  disabled={!canEditClientName}
+/>
       </td>
 
       <td className="px-1 py-2">

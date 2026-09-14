@@ -17,7 +17,7 @@ import {
 const CreateInput = z.object({
   consultDate: z.string().min(8),
   channel: z.string().optional().default(""),
-  clientName: z.string().min(1),
+  clientName: z.string().optional().default(""),
   phone: z.string().min(8),
   finalEducation: z.string().optional().default(""),
   desiredCourse: z.string().optional().default(""),
@@ -252,17 +252,17 @@ else {
     const assigneeId = toAssigneeId(ctx.user);
 
     const patch = {
-organizationId: Number((ctx.user as any)?.organizationId || 0),
-      consultDate: input.consultDate,
-      channel: input.channel ?? "",
-      clientName: input.clientName,
-      phone: input.phone,
-      finalEducation: input.finalEducation ?? "",
-      desiredCourse: input.desiredCourse ?? "",
-      notes: input.notes ?? "",
-      status: input.status ?? "상담중",
-      assigneeId,
-    };
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  consultDate: input.consultDate,
+  channel: input.channel ?? "",
+  clientName: input.clientName ?? "",
+  phone: input.phone,
+  finalEducation: input.finalEducation ?? "",
+  desiredCourse: input.desiredCourse ?? "",
+  notes: input.notes ?? "",
+  status: input.status ?? "상담중",
+  assigneeId,
+};
 
     const insertId = await createConsultation(patch as any);
     return { id: Number(insertId) };
@@ -276,9 +276,7 @@ const assigneeId = toAssigneeId(ctx.user);
     let updated = 0;
 
     for (const r of input.rows) {
-      if (!r.clientName) continue;
       const phone = normalizePhone(r.phone);
-      if (!phone) continue;
 
       const res = await upsertConsultationByPhone({
   organizationId,
@@ -325,7 +323,7 @@ const assigneeId = toAssigneeId(ctx.user);
       const notes = (cols[6] ?? "").trim();
       const status = (cols[7] ?? "").trim() || "상담중";
 
-      if (!clientName || !phone) continue;
+      if (!phone) continue;
 
       const res = await upsertConsultationByPhone({
   organizationId,
@@ -432,37 +430,85 @@ if (host) {
     patch.assigneeId = input.assigneeId;
   }
 } else {
-  // ADMIN / STAFF는 본인 상담의
-  // 상담내역과 상태만 수정 가능
+  // ADMIN / STAFF
+  // 본인 담당 상담만 접근 가능
+  // 이름 / 최종학력 / 희망과정은
+  // 기존값이 없을 때 최초 1회 입력 가능
 
   const forbiddenFields: string[] = [];
 
+  // 상담일 수정 불가
   if (input.consultDate !== undefined) {
     forbiddenFields.push("상담일");
   }
 
+  // 문의경로 수정 불가
   if (input.channel !== undefined) {
     forbiddenFields.push("문의경로");
   }
 
-  if (input.clientName !== undefined) {
-    forbiddenFields.push("이름");
-  }
-
+  // 연락처 수정 불가
   if (input.phone !== undefined) {
     forbiddenFields.push("연락처");
   }
 
-  if (input.finalEducation !== undefined) {
-    forbiddenFields.push("최종학력");
-  }
-
-  if (input.desiredCourse !== undefined) {
-    forbiddenFields.push("희망과정");
-  }
-
+  // 담당자 수정 불가
   if (input.assigneeId !== undefined) {
     forbiddenFields.push("담당자");
+  }
+
+  // 이름
+  // 기존값이 비어 있을 때만 최초 1회 입력 허용
+  if (input.clientName !== undefined) {
+    const prevClientName =
+      String(prev.clientName || "").trim();
+
+    const nextClientName =
+      String(input.clientName || "").trim();
+
+    if (prevClientName) {
+      // 이미 이름이 있으면 수정 불가
+      forbiddenFields.push("이름");
+    } else if (nextClientName) {
+      // 기존 이름 없음 + 새 값 있음 → 최초 입력 허용
+      patch.clientName = nextClientName;
+    }
+  }
+
+  // 최종학력
+  // 기존값이 비어 있을 때만 최초 1회 입력 허용
+  if (input.finalEducation !== undefined) {
+    const prevFinalEducation =
+      String(prev.finalEducation || "").trim();
+
+    const nextFinalEducation =
+      String(input.finalEducation || "").trim();
+
+    if (prevFinalEducation) {
+      // 이미 값이 있으면 수정 불가
+      forbiddenFields.push("최종학력");
+    } else if (nextFinalEducation) {
+      // 최초 입력
+      patch.finalEducation = nextFinalEducation;
+    }
+  }
+
+  // 희망과정
+  // 기존값이 비어 있을 때만 최초 1회 입력 허용
+  if (input.desiredCourse !== undefined) {
+    const prevDesiredCourse =
+      String(prev.desiredCourse || "").trim();
+
+    const nextDesiredCourse =
+      String(input.desiredCourse || "").trim();
+
+    if (prevDesiredCourse) {
+      // 이미 값이 있으면 수정 불가
+      forbiddenFields.push("희망과정");
+    } else if (nextDesiredCourse) {
+      // 최초 입력
+      patch.desiredCourse = nextDesiredCourse;
+    }
   }
 
   if (forbiddenFields.length > 0) {
@@ -471,10 +517,12 @@ if (host) {
     );
   }
 
+  // 상담내역 수정 가능
   if (input.notes !== undefined) {
     patch.notes = input.notes;
   }
 
+  // 상태 수정 가능
   if (input.status !== undefined) {
     patch.status = input.status;
   }
