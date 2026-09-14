@@ -3862,15 +3862,6 @@ export const appRouter = router({
                 ""
               ).trim() ||
               null;
-
-            await db.touchStudentPortalSession({
-              sessionId:
-                session.id,
-
-              organizationId:
-                session.organizationId,
-            });
-
             /**
              * 개인정보 / 내부 메모 / 비용 등의
              * 불필요한 CRM Row는 브라우저에 노출하지 않는다.
@@ -4017,56 +4008,81 @@ export const appRouter = router({
               );
             }
 
-            const source =
-              await db.getStudentPortalMyWorkSource({
-                organizationId:
-                  session.organizationId,
-
-                studentId:
-                  session.studentId,
-              });
-
-            if (!source) {
-              throwAppError(
-                ERROR_CODES.AUTH_REQUIRED,
-                "등록회원 정보를 확인할 수 없습니다.",
-                401
-              );
-            }
-
-            await db.touchStudentPortalSession({
-              sessionId:
-                session.id,
-
-              organizationId:
-                session.organizationId,
-            });
-
-            const student =
-              source.student;
-
-            const plan =
-              source.plan;
-
             /**
-             * -------------------------------------------------
-             * 등록자 공통 학점 / 자격 / 행정 엔진
-             * -------------------------------------------------
-             *
-             * CRM 직원용 AI Context를 만들지 않는다.
-             *
-             * Portal Session에서 서버가 확정한
-             * organizationId + studentId만 사용하여
-             * verified_student 권한으로 동일 공통엔진을 실행한다.
-             */
-            const portalEngine =
-              await analyzeVerifiedStudentDetailRisk({
-                organizationId:
-                  session.organizationId,
+ * -------------------------------------------------
+ * Portal MY 업무 병렬 조회
+ * -------------------------------------------------
+ *
+ * 세션 검증이 끝난 이후에는
+ *
+ * - Portal 원본 데이터
+ * - 공통 Risk Engine
+ * - 행정절차
+ *
+ * 가 서로의 결과를 필요로 하지 않는다.
+ *
+ * 따라서 순차 await 하지 않고
+ * 동시에 실행한다.
+ */
+const portalWorkStartedAt =
+  Date.now();
 
-                verifiedStudentId:
-                  session.studentId,
-              });
+const [
+  source,
+  portalEngine,
+  portalAdministrativeProcedures,
+] =
+  await Promise.all([
+    db.getStudentPortalMyWorkSource({
+      organizationId:
+        session.organizationId,
+
+      studentId:
+        session.studentId,
+    }),
+
+    analyzeVerifiedStudentDetailRisk({
+      organizationId:
+        session.organizationId,
+
+      verifiedStudentId:
+        session.studentId,
+    }),
+
+    db.getStudentAdministrativeProcedures({
+      organizationId:
+        session.organizationId,
+
+      studentId:
+        session.studentId,
+    }),
+  ]);
+
+console.info(
+  "[StudentPortal.myWork] parallel load completed",
+  {
+    studentId:
+      session.studentId,
+
+    elapsedMs:
+      Date.now() -
+      portalWorkStartedAt,
+  }
+);
+
+if (!source) {
+  throwAppError(
+    ERROR_CODES.AUTH_REQUIRED,
+    "등록회원 정보를 확인할 수 없습니다.",
+    401
+  );
+}
+
+const student =
+  source.student;
+
+const plan =
+  source.plan;
 
 /**
  * -------------------------------------------------
@@ -4180,26 +4196,7 @@ const portalProjectedRecognizedSubjects =
         null,
     })
   );
-
-            /**
-             * -------------------------------------------------
-             * 등록회원 실제 행정절차 상태
-             * -------------------------------------------------
-             *
-             * CRM 상세페이지와 동일한
-             * student_administrative_procedures를 조회한다.
-             *
-             * 별도의 Portal 상태 테이블을 만들지 않는다.
-             */
-            const portalAdministrativeProcedures =
-              await db.getStudentAdministrativeProcedures({
-                organizationId:
-                  session.organizationId,
-
-                studentId:
-                  session.studentId,
-              });
-
+   
             /**
              * YYYY-MM-DD 형태로 사용할 수 있는
              * 실제 날짜만 정규화한다.

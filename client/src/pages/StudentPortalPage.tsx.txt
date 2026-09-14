@@ -238,15 +238,21 @@ const tokenStorageKey =
           portalToken || "",
       },
       {
-        enabled:
-          tokenReady &&
-          Boolean(
-            portalToken
-          ),
+  enabled:
+    tokenReady &&
+    Boolean(
+      portalToken
+    ),
 
-        retry:
-          false,
-      }
+  retry:
+    false,
+
+  staleTime:
+    60_000,
+
+  refetchOnWindowFocus:
+    false,
+}
     );
 
   /**
@@ -262,15 +268,44 @@ const tokenStorageKey =
           portalToken || "",
       },
       {
-        enabled:
-          tokenReady &&
-          Boolean(
-            portalToken
-          ),
+  /**
+   * 포털 최초 진입 속도 최적화.
+   *
+   * 기존:
+   * token만 있으면
+   * me + myWork가 동시에 실행됨.
+   *
+   * 문제:
+   * myWork는 공통 Risk Engine까지 실행하는
+   * 무거운 API이므로 최초 인증 요청과
+   * DB/서버 자원을 경쟁하게 된다.
+   *
+   * 변경:
+   * me 인증이 끝난 뒤에만
+   * myWork를 백그라운드 실행한다.
+   */
+  enabled:
+    tokenReady &&
+    Boolean(
+      portalToken
+    ) &&
+    meQuery.data?.authenticated ===
+      true,
 
-        retry:
-          false,
-      }
+  retry:
+    false,
+
+  /**
+   * 탭 이동할 때마다 불필요하게
+   * 공통엔진을 다시 돌리지 않도록
+   * 잠시 fresh 상태를 유지한다.
+   */
+  staleTime:
+    30_000,
+
+  refetchOnWindowFocus:
+    false,
+}
     );
 
   /**
@@ -286,10 +321,12 @@ const tokenStorageKey =
       },
       {
         enabled:
-          tokenReady &&
-          Boolean(
-            portalToken
-          ),
+  tokenReady &&
+  Boolean(
+    portalToken
+  ) &&
+  meQuery.data?.authenticated === true &&
+  activeTab === "practice",
 
         retry:
           false,
@@ -1120,17 +1157,23 @@ const practicePrerequisite =
           />
         )}
 
-        {activeTab !==
-  "community" &&
+        {(
+  activeTab === "myWork" ||
+  activeTab === "administration" ||
+  activeTab === "practice"
+) &&
 myWorkQuery.isLoading ? (
           <div className="flex min-h-[60vh] items-center justify-center px-6">
             <div className="text-sm text-slate-500">
               학습관리 정보를 확인하고 있습니다.
             </div>
           </div>
-        ) : activeTab !==
-    "community" &&
-  myWorkQuery.isError ? (
+       ) : (
+  activeTab === "myWork" ||
+  activeTab === "administration" ||
+  activeTab === "practice"
+) &&
+myWorkQuery.isError ? (
           <div className="px-5 py-8">
             <div className="rounded-2xl border border-red-100 bg-red-50 p-5 text-center">
               <div className="font-bold text-red-700">
@@ -4222,6 +4265,25 @@ function PortalSafetyCard({
       ?.safe ===
     true;
 
+const issues =
+  Array.isArray(
+    safetyCheck?.issues
+  )
+    ? safetyCheck.issues
+    : [];
+
+const firstIssueMessage =
+  String(
+    issues[0]?.message ||
+    ""
+  ).trim();
+
+const additionalIssueCount =
+  Math.max(
+    issues.length - 1,
+    0
+  );
+
   return (
     <div
       className={
@@ -4264,8 +4326,18 @@ function PortalSafetyCard({
             }
           >
             {safe
-              ? "현재 확인된 관리값에서 설계 이상이 확인되지 않았습니다."
-              : "담당자가 확인해야 할 항목이 있습니다."}
+  ? "현재 확인된 관리값에서 설계 이상이 확인되지 않았습니다."
+  : firstIssueMessage
+  ? (
+      <>
+        {firstIssueMessage}
+
+        {additionalIssueCount > 0
+          ? ` 외 ${additionalIssueCount}건`
+          : ""}
+      </>
+    )
+  : "담당자가 확인해야 할 항목이 있습니다."}
           </div>
         </div>
       </div>
