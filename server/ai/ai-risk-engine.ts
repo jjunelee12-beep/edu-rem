@@ -325,16 +325,19 @@ function addAcademicMonths(
 
 
 function resolveAcademicSubjectProgress(
-  params: {
-    actualStartDate:
-      unknown;
+ params: {
+  actualStartDate:
+    unknown;
 
-    retakeRequired:
-      unknown;
+  plannedMonth?:
+    unknown;
 
-    now?:
-      Date;
-  }
+  retakeRequired:
+    unknown;
+
+  now?:
+    Date;
+}
 ): AcademicSubjectProgressStatus {
   if (
     params.retakeRequired ===
@@ -349,8 +352,26 @@ function resolveAcademicSubjectProgress(
     );
 
   if (!startDate) {
-    return "review_required";
+  const plannedMonth =
+    String(
+      params.plannedMonth ??
+      ""
+    ).trim();
+
+  /**
+   * 실제 개강일은 아직 없지만
+   * 예정월이 등록된 학기는
+   * 정상적인 예정 학기로 본다.
+   *
+   * 따라서 "새 과목" placeholder도
+   * 설계 오류로 처리하지 않는다.
+   */
+  if (plannedMonth) {
+    return "scheduled";
   }
+
+  return "review_required";
+}
 
   const current =
     params.now ??
@@ -758,13 +779,20 @@ function createSubjectRows(params: {
       ?.actualStartDate ??
     null;
 
-  const progressStatus =
-    resolveAcademicSubjectProgress({
-      actualStartDate,
+const plannedMonth =
+  studentSemester
+    ?.plannedMonth ??
+  null;
 
-      retakeRequired:
-        row?.retakeRequired,
-    });
+  const progressStatus =
+  resolveAcademicSubjectProgress({
+    actualStartDate,
+
+    plannedMonth,
+
+    retakeRequired:
+      row?.retakeRequired,
+  });
 
       return {
         source:
