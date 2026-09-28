@@ -1456,12 +1456,19 @@ const handleSubmitEdit =
       return;
     }
 
-    if (!content) {
-      window.alert(
-        "내용을 입력해주세요."
-      );
-      return;
-    }
+    const hasImage =
+  editBlocks.some(
+    block =>
+      block.type === "image"
+  );
+
+if (!content && !hasImage) {
+  window.alert(
+    "내용을 입력하거나 이미지를 추가해주세요."
+  );
+
+  return;
+}
 
     try {
       const finalContentData =
@@ -1584,12 +1591,19 @@ const handleSubmitWriter =
       return;
     }
 
-    if (!content) {
-      window.alert(
-        "내용을 입력해주세요."
-      );
-      return;
-    }
+    const hasImage =
+  writeBlocks.some(
+    block =>
+      block.type === "image"
+  );
+
+if (!content && !hasImage) {
+  window.alert(
+    "내용을 입력하거나 이미지를 추가해주세요."
+  );
+
+  return;
+}
 
     if (
       writeMode ===
@@ -2872,7 +2886,7 @@ const companyLogoUrl =
 
 {writeMode ? (
   <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-6">
-    <div className="w-full max-w-2xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+    <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
       <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
         <div>
           <div className="text-lg font-black text-slate-950">
@@ -2897,7 +2911,7 @@ const companyLogoUrl =
         </button>
       </div>
 
-      <div className="space-y-5 p-6">
+      <div className="flex-1 space-y-5 overflow-y-auto p-6">
         {writeMode === "post" ? (
           <div>
             <label className="text-xs font-black text-slate-500">
@@ -3817,6 +3831,20 @@ function HostBlockEditor({
       );
     };
 
+const hasContent =
+  blocks.some(block => {
+    if (block.type === "image") {
+      return true;
+    }
+
+    return (
+      block.text
+        .replace(/\u200B/g, "")
+        .trim()
+        .length > 0
+    );
+  });
+
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
       <div className="flex min-h-12 flex-wrap items-center gap-1 border-b border-slate-200 px-2 py-2">
@@ -4163,8 +4191,14 @@ function HostBlockEditor({
         </button>
       </div>
 
-      <div className="min-h-[330px] px-3 py-3">
-        {blocks.map(
+      <div className="relative min-h-[330px] px-3 py-3">
+  {!hasContent ? (
+    <div className="pointer-events-none absolute left-4 top-4 text-sm font-medium text-slate-400">
+      내용을 입력하거나 캡처 이미지를 Ctrl+V로 붙여넣어주세요.
+    </div>
+  ) : null}
+
+  {blocks.map(
           block =>
             block.type ===
             "image" ? (
@@ -4286,8 +4320,7 @@ function HostBlockEditor({
                     );
                   }
                 }
-                data-placeholder="내용을 입력하거나 캡처 이미지를 Ctrl+V로 붙여넣어주세요."
-                className="my-1 min-h-[112px] w-full whitespace-pre-wrap bg-transparent px-1 py-2 text-[17px] font-medium leading-7 text-slate-900 outline-none empty:before:pointer-events-none empty:before:text-slate-400 empty:before:content-[attr(data-placeholder)]"
+                className="my-1 min-h-[112px] w-full whitespace-pre-wrap bg-transparent px-1 py-2 text-[17px] font-medium leading-7 text-slate-900 outline-none"
                 style={{
                   textAlign:
                     block.align,

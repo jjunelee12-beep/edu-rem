@@ -2044,6 +2044,14 @@ async function getR2PrefixUsageBytes(prefix: string) {
         },
     });
 
+app.set("trust proxy", 1);
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
+
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
 /**
    * ============================================================
    * Host Portal Community Image Upload
@@ -2551,14 +2559,6 @@ async function getR2PrefixUsageBytes(prefix: string) {
       }
     }
   );
-
-  app.set("trust proxy", 1);
-
-  app.use(cors(corsOptions));
-  app.options("*", cors(corsOptions));
-
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
   /**
    * ============================================================
