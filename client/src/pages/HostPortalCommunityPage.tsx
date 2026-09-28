@@ -1000,19 +1000,14 @@ const uploadHostBlockImages =
         );
 
         const response =
-          await fetch(
-            `${
-              import.meta.env
-                .VITE_API_BASE_URL ||
-              ""
-            }/api/student-portal/host-community/image`,
-            {
-              method: "POST",
-              body: formData,
-              credentials:
-                "include",
-            }
-          );
+  await fetch(
+    "/api/student-portal/host-community/image",
+    {
+      method: "POST",
+      body: formData,
+      credentials: "include",
+    }
+  );
 
         if (!response.ok) {
   const errorText =
@@ -2719,7 +2714,7 @@ const companyLogoUrl =
 
 {isEditOpen && postDetail ? (
   <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-6">
-    <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+    <div className="flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
       <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
         <div>
           <div className="text-lg font-black text-slate-950">
@@ -2742,7 +2737,7 @@ const companyLogoUrl =
         </button>
       </div>
 
-      <div className="flex-1 space-y-5 overflow-y-auto p-6">
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
         {!isDetailNotice ? (
           <div>
             <label className="text-xs font-black text-slate-500">
@@ -2851,7 +2846,7 @@ const companyLogoUrl =
 </div>
 </div>
 
-      <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50 px-6 py-4">
+      <div className="shrink-0 flex justify-end gap-2 border-t border-slate-100 bg-slate-50 px-6 py-4">
         <button
           type="button"
           onClick={
@@ -2892,9 +2887,9 @@ const companyLogoUrl =
 ) : null}
 
 {writeMode ? (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-6">
-    <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
-      <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
+  <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-slate-950/40 p-4">
+    <div className="flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+      <div className="shrink-0 flex items-center justify-between border-b border-slate-100 px-6 py-5">
         <div>
           <div className="text-lg font-black text-slate-950">
             {writeMode === "notice"
@@ -2918,7 +2913,7 @@ const companyLogoUrl =
         </button>
       </div>
 
-      <div className="flex-1 space-y-5 overflow-y-auto p-6">
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
         {writeMode === "post" ? (
           <div>
             <label className="text-xs font-black text-slate-500">
@@ -3022,7 +3017,7 @@ const companyLogoUrl =
 </div>
       </div>
 
-      <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50 px-6 py-4">
+      <div className="shrink-0 flex justify-end gap-2 border-t border-slate-100 bg-slate-50 px-6 py-4">
         <button
           type="button"
           onClick={closeWriter}

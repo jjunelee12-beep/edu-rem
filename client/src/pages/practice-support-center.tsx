@@ -1332,10 +1332,11 @@ if (!String(selectedRow.practiceSemesterLabel || "").trim()) {
     selectedRow.paymentStatus || "미결제",
 
   paidAt:
-    selectedRow.paymentStatus === "결제"
-      ? selectedRow.paidAt ||
-        getTodayDateString()
-      : null,
+  selectedRow.paymentStatus === "결제"
+    ? selectedRow.paidAt
+      ? String(selectedRow.paidAt).slice(0, 10)
+      : getTodayDateString()
+    : null,
 
   note:
     String(
