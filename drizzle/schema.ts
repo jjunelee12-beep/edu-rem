@@ -3243,8 +3243,8 @@ export const consultations = mysqlTable(
     consultDate: date("consultDate").notNull(),
     channel: varchar("channel", { length: 100 }).notNull(),
 
-    clientName: text("clientName").notNull(),
-    clientNameHash: varchar("clientNameHash", { length: 64 }),
+    clientName: text("clientName"),
+clientNameHash: varchar("clientNameHash", { length: 64 }),
 
     phone: text("phone").notNull(),
     phoneHash: varchar("phoneHash", { length: 64 }),

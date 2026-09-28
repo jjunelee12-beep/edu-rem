@@ -30025,7 +30025,413 @@ subjectType: params.subjectType ?? null,
   return { id: insertedId, mode: "insert" as const };
 }
 
+export async function refundSettlementItemBySource(params: {
+  organizationId?: number | null;
 
+  revenueType:
+    | "subject"
+    | "practice_support"
+    | "private_certificate";
+
+  sourceType?:
+    | "student"
+    | "external";
+
+  sourceId: number;
+
+  refundAmount:
+    string |
+    number;
+
+  refundDate:
+    string |
+    Date;
+
+  actorUserId?:
+    number |
+    null;
+
+  note?:
+    string |
+    null;
+
+  payload?: {
+    refundId?: number;
+    studentId?: number;
+    semesterId?: number;
+    refundType?: string | null;
+    [key: string]: any;
+  };
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const sourceType =
+    params.sourceType ??
+    "student";
+
+  const refundAmount =
+    Math.abs(
+      toNumber(
+        params.refundAmount
+      )
+    );
+
+  if (refundAmount <= 0) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "환불금액이 올바르지 않습니다.",
+      400
+    );
+  }
+
+  /**
+   * 원본 정산 항목 조회
+   *
+   * 일반과목의 경우
+   * revenueType = subject
+   * sourceId = semester.id
+   */
+  const originalRows =
+    await db
+      .select()
+      .from(settlementItems)
+      .where(
+        and(
+          eq(
+            settlementItems.organizationId,
+            organizationId
+          ),
+
+          eq(
+            settlementItems.revenueType,
+            params.revenueType
+          ),
+
+          eq(
+            settlementItems.sourceType,
+            sourceType
+          ),
+
+          eq(
+            settlementItems.sourceId,
+            params.sourceId
+          )
+        )
+      )
+      .limit(1);
+
+  const original =
+    originalRows[0];
+
+  if (!original) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "환불할 원본 정산 항목을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  /**
+   * 환불 정산 sourceId는
+   * semester.id가 아니라 refund.id
+   */
+  const refundId =
+    Number(
+      params.payload?.refundId ??
+      0
+    );
+
+  if (
+    !Number.isFinite(refundId) ||
+    refundId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "환불 ID가 없습니다.",
+      400
+    );
+  }
+
+  /**
+   * 환불 금액은 음수로 기록
+   */
+  const negativeRefundAmount =
+    -refundAmount;
+
+  /**
+   * 같은 refund.id로 이미 만들어진
+   * 환불 정산이 있는지 확인
+   *
+   * 승인 버튼 재시도 시
+   * 중복 환불 방지
+   */
+  const existingRefundRows =
+    await db
+      .select()
+      .from(settlementItems)
+      .where(
+        and(
+          eq(
+            settlementItems.organizationId,
+            organizationId
+          ),
+
+          eq(
+            settlementItems.revenueType,
+            "refund"
+          ),
+
+          eq(
+            settlementItems.sourceType,
+            sourceType
+          ),
+
+          eq(
+            settlementItems.sourceId,
+            refundId
+          )
+        )
+      )
+      .limit(1);
+
+  const existingRefund =
+    existingRefundRows[0];
+
+  /**
+   * 환불 정산 항목 데이터
+   *
+   * 담당자/학생/교육원 정보는
+   * 원본 일반과목 정산에서 그대로 승계
+   */
+  const refundValues = {
+    organizationId,
+
+    revenueType:
+      "refund" as const,
+
+    sourceType,
+
+    sourceId:
+      refundId,
+
+    studentId:
+      original.studentId ??
+      params.payload?.studentId ??
+      null,
+
+    assigneeId:
+      original.assigneeId ??
+      null,
+
+    freelancerUserId:
+      original.freelancerUserId ??
+      null,
+
+    freelancerPositionId:
+      original.freelancerPositionId ??
+      null,
+
+    settlementGradeId:
+      original.settlementGradeId ??
+      null,
+
+    educationInstitutionId:
+      original.educationInstitutionId ??
+      null,
+
+    privateCertificateMasterId:
+      original.privateCertificateMasterId ??
+      null,
+
+    institutionName:
+      original.institutionName ??
+      null,
+
+    title:
+      `${original.title || "일반과목"} 환불`,
+
+    quantity:
+      1,
+
+    actualCredits:
+      null,
+
+    settlementCredits:
+      null,
+
+    subjectType:
+      original.subjectType ??
+      null,
+
+    subjectCount:
+      0,
+
+    actualUnitPrice:
+      "0",
+
+    normalUnitPrice:
+      "0",
+
+    institutionUnitCost:
+      "0",
+
+    institutionCost:
+      "0",
+
+    freelancerUnitAmount:
+      "0",
+
+    taxAmount:
+      "0",
+
+    finalPayoutAmount:
+      "0",
+
+    grossAmount:
+      String(
+        negativeRefundAmount
+      ),
+
+    companyAmount:
+      String(
+        negativeRefundAmount
+      ),
+
+    freelancerAmount:
+      "0",
+
+    companyProfit:
+      String(
+        negativeRefundAmount
+      ),
+
+    settlementStatus:
+      "confirmed" as const,
+
+    occurredAt:
+      params.refundDate,
+
+    note:
+      params.note ??
+      "환불 승인",
+  };
+
+  /**
+   * 이미 존재하면 갱신
+   */
+  if (existingRefund) {
+    await db
+      .update(settlementItems)
+      .set(
+        refundValues as any
+      )
+      .where(
+        and(
+          eq(
+            settlementItems.id,
+            existingRefund.id
+          ),
+
+          eq(
+            settlementItems.organizationId,
+            organizationId
+          )
+        )
+      );
+
+    await createSettlementItemLog({
+      settlementItemId:
+        Number(existingRefund.id),
+
+      actionType:
+        "recalculate",
+
+      actorUserId:
+        params.actorUserId ??
+        null,
+
+      note:
+        params.note ??
+        "환불 정산 재계산",
+
+      payload:
+        params.payload
+          ? JSON.stringify(
+              params.payload
+            )
+          : null,
+    });
+
+    return {
+      id:
+        Number(existingRefund.id),
+
+      mode:
+        "update" as const,
+    };
+  }
+
+  /**
+   * 최초 환불이면 신규 정산 생성
+   */
+  const result: any =
+    await db
+      .insert(
+        settlementItems
+      )
+      .values(
+        refundValues as any
+      );
+
+  const insertedId =
+    Number(
+      getInsertId(result)
+    );
+
+  await createSettlementItemLog({
+    settlementItemId:
+      insertedId,
+
+    actionType:
+      "create",
+
+    actorUserId:
+      params.actorUserId ??
+      null,
+
+    note:
+      params.note ??
+      "환불 정산 생성",
+
+    payload:
+      params.payload
+        ? JSON.stringify(
+            params.payload
+          )
+        : null,
+  });
+
+  return {
+    id:
+      insertedId,
+
+    mode:
+      "insert" as const,
+  };
+}
 
 export async function cancelSettlementItemBySource(params: {
   organizationId?: number | null;
