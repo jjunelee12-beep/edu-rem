@@ -91,6 +91,9 @@ deactivateExpiredOverdueOrganizations,
 import { setLiveNotificationIO } from "./live-notifications";
 import { setSocketServer } from "./socket-status";
 import { startAutoBackupScheduler } from "./auto-backup-scheduler";
+import {
+  readUserIdFromCookie,
+} from "./auth/session";
 
 const KAKAO_AI_BUILD_VERSION =
   "20260813-0825-callback-debug-v1";
@@ -2085,52 +2088,43 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
          * CRM Session 인증
          * --------------------------------------------------------
          */
-        const cookieHeader =
-          req.headers.cookie ||
-          "";
-
-        const parsedCookies =
-          cookie.parse(
-            cookieHeader
-          );
-
-        const rawSession =
-          parsedCookies[
-            SESSION_COOKIE
-          ];
-
         const secret =
-          process.env
-            .SESSION_SECRET;
+  process.env.SESSION_SECRET ||
+  "dev-secret";
 
-        if (
-          !rawSession ||
-          !secret
-        ) {
-          return res
-            .status(401)
-            .json({
-              message:
-                "로그인이 필요합니다.",
-            });
-        }
+const userId =
+  readUserIdFromCookie(
+    req,
+    secret
+  );
 
-        const userId =
-          readUserIdFromSessionCookieValue(
-            rawSession,
-            secret
-          );
+console.log(
+  "[HOST COMMUNITY IMAGE AUTH]",
+  {
+    hasCookieHeader:
+      Boolean(
+        req.headers.cookie
+      ),
 
-        if (
-          !userId
-        ) {
-          return res
-            .status(401)
-            .json({
-              message:
-                "로그인 정보가 유효하지 않습니다.",
-            });
-        }
+    hasSessionCookie:
+      String(
+        req.headers.cookie || ""
+      ).includes(
+        `${SESSION_COOKIE}=`
+      ),
+
+    userId,
+  }
+);
+
+if (!userId) {
+  return res
+    .status(401)
+    .json({
+      message:
+        "로그인 세션을 확인할 수 없습니다.",
+    });
+}
 
         /**
          * --------------------------------------------------------

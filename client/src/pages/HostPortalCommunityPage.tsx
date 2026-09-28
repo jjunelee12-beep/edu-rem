@@ -1014,13 +1014,20 @@ const uploadHostBlockImages =
             }
           );
 
-        if (
-          !response.ok
-        ) {
-          throw new Error(
-            "이미지 업로드 실패"
-          );
-        }
+        if (!response.ok) {
+  const errorText =
+    await response.text();
+
+  console.error(
+    "[HOST IMAGE UPLOAD FAILED]",
+    response.status,
+    errorText
+  );
+
+  throw new Error(
+    `이미지 업로드 실패 (${response.status}): ${errorText}`
+  );
+}
 
         const uploaded =
           await response.json();
