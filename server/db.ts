@@ -59630,18 +59630,36 @@ export async function createPublicStaffConsultation(
     ).trim();
 
   const preferredContactTime =
-    String(
-      params.preferredContactTime ||
-      ""
-    ).trim() ||
-    null;
+  String(
+    params.preferredContactTime ||
+    ""
+  ).trim() ||
+  null;
 
-  const notes =
-    String(
-      params.notes ||
-      ""
-    ).trim() ||
-    null;
+const originalNotes =
+  String(
+    params.notes ||
+    ""
+  ).trim() ||
+  null;
+
+/**
+ * 개인 프로필 상담신청 내용을
+ * 상담DB의 상담내역(notes)에도 함께 기록한다.
+ */
+const notes =
+  [
+    preferredContactTime
+      ? `상담 희망시간: ${preferredContactTime}`
+      : null,
+
+    originalNotes
+      ? `문의내용: ${originalNotes}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join("\n") ||
+  null;
 
   if (!clientName) {
     throwAppError(
@@ -59707,33 +59725,31 @@ export async function createPublicStaffConsultation(
    * 반드시 그대로 사용한다.
    */
   const preparedData =
-    prepareConsultationPersonalData({
-      organizationId,
+  prepareConsultationPersonalData({
+    organizationId,
 
-      consultDate,
+    consultDate,
 
-      /**
-       * 회사명이나 특정 담당자명을 박지 않는다.
-       * 시스템 유입경로 식별용 공통 Key.
-       */
-      channel:
-        "public_profile",
+    channel:
+      "public_profile",
 
-      clientName,
-      phone,
+    clientName,
+    phone,
 
-      finalEducation,
-      desiredCourse,
+    finalEducation,
+    desiredCourse,
 
-      preferredContactTime,
+    // 별도 컬럼에도 그대로 보존
+    preferredContactTime,
 
-      notes,
+    // 상담내역에는 시간 + 문의내용 통합
+    notes,
 
-      status:
-        "상담중",
+    status:
+      "상담중",
 
-      assigneeId,
-    });
+    assigneeId,
+  });
 
   const result: any =
     await db

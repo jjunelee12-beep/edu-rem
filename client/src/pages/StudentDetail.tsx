@@ -2432,23 +2432,39 @@ if (isReadOnly) {
   return `${semesterNo}학기${dateText ? ` (${dateText})` : ""}${instText ? ` (${instText})` : ""}${courseText ? ` · ${courseText}` : ""}`;
 };
 
-  const handleSemFieldBlur = async (semId: number, field: string, value: string) => {
-if (isReadOnly) return;
-    const payload: any = { id: semId };
+  const handleSemFieldBlur = async (
+  semId: number,
+  field: string,
+  value: string
+) => {
+  if (isReadOnly) return;
 
-    if (field === "plannedSubjectCount" || field === "actualSubjectCount") {
-      payload[field] = value ? parseInt(value) : undefined;
-    } else {
-      payload[field] = value || undefined;
+  const payload: any = { id: semId };
+
+  if (field === "plannedSubjectCount" || field === "actualSubjectCount") {
+    const subjectCount = value ? parseInt(value, 10) : 0;
+
+    if (
+      !Number.isInteger(subjectCount) ||
+      subjectCount < 0 ||
+      subjectCount > 20
+    ) {
+      toast.error("과목 수는 0~20개까지만 입력할 수 있습니다.");
+      return;
     }
 
-    updateSemMut.mutate(payload, {
-      onSuccess: async () => {
-        await utils.semester.list.invalidate({ studentId });
-        await utils.planSemester.list.invalidate({ studentId });
-      },
-    });
-  };
+    payload[field] = subjectCount;
+  } else {
+    payload[field] = value || undefined;
+  }
+
+  updateSemMut.mutate(payload, {
+    onSuccess: async () => {
+      await utils.semester.list.invalidate({ studentId });
+      await utils.planSemester.list.invalidate({ studentId });
+    },
+  });
+};
 
   const handleSelectedSemesterStatusChange = (nextStatus: "등록" | "등록 종료") => {
 if (isReadOnly) {
@@ -4523,10 +4539,13 @@ disabled={isReadOnly}
 
                       <td className="px-1 py-0.5">
                         <EditableCell
-                          value={sem.plannedSubjectCount?.toString() || ""}
-                          onBlur={(v) => handleSemFieldBlur(sem.id, "plannedSubjectCount", v)}
-	disabled={isReadOnly}
-                        />
+  value={sem.plannedSubjectCount?.toString() || ""}
+  onBlur={(v) =>
+    handleSemFieldBlur(sem.id, "plannedSubjectCount", v)
+  }
+  disabled={isReadOnly}
+  type="number"
+/>
                       </td>
 
                       <td className="px-1 py-0.5">
@@ -4589,11 +4608,14 @@ disabled={isReadOnly}
 
                       <td className="px-1 py-0.5">
                         <EditableCell
-                          value={sem.actualSubjectCount?.toString() || ""}
-                          onBlur={(v) => handleSemFieldBlur(sem.id, "actualSubjectCount", v)}
-		disabled={isReadOnly}
-                          className="text-primary"
-                        />
+  value={sem.actualSubjectCount?.toString() || ""}
+  onBlur={(v) =>
+    handleSemFieldBlur(sem.id, "actualSubjectCount", v)
+  }
+  disabled={isReadOnly}
+  type="number"
+  className="text-primary"
+/>
                       </td>
 
                       <td className="px-1 py-0.5">
@@ -6334,11 +6356,35 @@ disabled={isReadOnly}
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">과목 수</Label>
-                <Input
-                  type="number"
-                  value={semForm.plannedSubjectCount}
-                  onChange={(e) => setSemForm({ ...semForm, plannedSubjectCount: e.target.value })}
-                />
+<Input
+  type="number"
+  min={0}
+  max={20}
+  value={semForm.plannedSubjectCount}
+  onChange={(e) => {
+    const value = e.target.value;
+
+    if (value === "") {
+      setSemForm({
+        ...semForm,
+        plannedSubjectCount: "",
+      });
+      return;
+    }
+
+    const count = parseInt(value, 10);
+
+    if (count > 20) {
+      toast.error("과목 수는 최대 20개까지 입력할 수 있습니다.");
+      return;
+    }
+
+    setSemForm({
+      ...semForm,
+      plannedSubjectCount: value,
+    });
+  }}
+/>
               </div>
             </div>
 
