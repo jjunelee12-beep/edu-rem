@@ -58,12 +58,19 @@ import * as db from "./db";
 import {
   issueTossBillingKey,
   chargeTossBilling,
+  getTossPaymentByOrderId,
 } from "./tossBilling";
 
-function addOneBillingMonth(date: Date) {
-  const result = new Date(date);
+function addOneBillingMonth(date: Date, anchorDay: number) {
+  if (
+    !Number.isInteger(anchorDay) ||
+    anchorDay < 1 ||
+    anchorDay > 31
+  ) {
+    throw new Error("결제 기준일이 올바르지 않습니다.");
+  }
 
-  const originalDay = result.getDate();
+  const result = new Date(date);
 
   result.setDate(1);
   result.setMonth(result.getMonth() + 1);
@@ -74,7 +81,7 @@ function addOneBillingMonth(date: Date) {
     0
   ).getDate();
 
-  result.setDate(Math.min(originalDay, lastDayOfTargetMonth));
+  result.setDate(Math.min(anchorDay, lastDayOfTargetMonth));
 
   return result;
 }
@@ -92,7 +99,6 @@ function createBillingOrderId(
 
 async function processDueSubscriptionPayments() {
   const targets = await listDueSubscriptionOrganizations();
-
   const results: any[] = [];
 
   for (const row of targets as any[]) {
@@ -100,53 +106,185 @@ async function processDueSubscriptionPayments() {
 
     try {
       const billingCycleStart = new Date(row.nextBillingAt);
-
       if (Number.isNaN(billingCycleStart.getTime())) {
         throw new Error("nextBillingAt 값이 올바르지 않습니다.");
       }
 
-      const billingCycleEnd = addOneBillingMonth(billingCycleStart);
+      const anchorDay = Number(row.billingAnchorDay);
 
-      const billingAmount =
-        Number(row.nextBillingAmount || 0) ||
-        Number(row.billingAmount || 0);
+if (
+  !Number.isInteger(anchorDay) ||
+  anchorDay < 1 ||
+  anchorDay > 31
+) {
+  throw new Error(
+    "결제 기준일이 설정되지 않았거나 올바르지 않습니다."
+  );
+}
 
-      if (billingAmount <= 0) {
-        throw new Error("결제 금액이 0원입니다.");
+const billingCycleEnd = addOneBillingMonth(
+  billingCycleStart,
+  anchorDay
+);
+
+
+      // 비정상적인 결제주기로 자동청구되는 것을 방지
+      if (
+        Number.isNaN(billingCycleEnd.getTime()) ||
+        billingCycleEnd.getTime() <= billingCycleStart.getTime()
+      ) {
+        throw new Error(
+          "결제주기 종료일이 시작일보다 늦지 않거나 올바르지 않습니다."
+        );
       }
 
-      const orderId = createBillingOrderId(
+      // 미래 결제 예정일에 대한 조기 청구 방지
+      if (billingCycleStart.getTime() > Date.now()) {
+        throw new Error(
+          "아직 결제 예정일이 도래하지 않았습니다."
+        );
+      }
+
+      const billingAmount =
+  row.nextBillingAmount !== null &&
+  row.nextBillingAmount !== undefined
+    ? Number(row.nextBillingAmount)
+    : Number(row.billingAmount);
+
+      if (
+  !Number.isSafeInteger(billingAmount) ||
+  billingAmount <= 0
+) {
+  throw new Error(
+    "결제 금액이 올바른 양의 정수가 아닙니다."
+  );
+}
+
+      const orderId = createBillingOrderId(organizationId, billingCycleStart);
+      const existing = await findExistingSubscriptionPaymentForCycle({
         organizationId,
-        billingCycleStart
-      );
+        billingCycleStart,
+      });
 
-      const existing =
-        await findExistingSubscriptionPaymentForCycle({
-          organizationId,
-          billingCycleStart,
-        });
-
+      
       if (existing) {
-        results.push({
-          organizationId,
-          status: "skipped",
-          reason: "existing_payment",
-          paymentId: Number((existing as any).id),
-        });
+        const paymentId = Number((existing as any).id);
+        const status = String((existing as any).paymentStatus);
+        const existingOrderId = String(
+          (existing as any).tossOrderId || ""
+        );
+        const recordedAmount = Number(
+          (existing as any).billingAmount
+        );
+
+        // 이미 결제 완료된 거래는 다시 청구하지 않음
+        if (status === "paid") {
+          results.push({
+            organizationId,
+            paymentId,
+            status: "skipped",
+            reason: "already_paid",
+          });
+          continue;
+        }
+
+        // 원장 정보가 불완전하면 자동결제 중단
+        if (
+          status !== "pending" ||
+          !existingOrderId ||
+          !Number.isFinite(recordedAmount) ||
+          recordedAmount <= 0
+        ) {
+          results.push({
+            organizationId,
+            paymentId,
+            status: "review_required",
+            reason: "invalid_existing_ledger",
+          });
+          continue;
+        }
+
+        try {
+          // 토스에 기존 주문번호로 결제 여부 조회
+          const verified = await getTossPaymentByOrderId(
+            existingOrderId
+          );
+
+          // 결제 완료 상태가 아니면 재청구하지 않음
+          if (verified.status !== "DONE") {
+            results.push({
+              organizationId,
+              paymentId,
+              status: "review_required",
+              reason: "toss_status_not_done",
+              tossStatus: verified.status,
+              orderId: existingOrderId,
+            });
+            continue;
+          }
+
+          // 주문번호와 금액 검증
+          if (
+            verified.orderId !== existingOrderId ||
+            verified.totalAmount !== recordedAmount
+          ) {
+            results.push({
+              organizationId,
+              paymentId,
+              status: "review_required",
+              reason: "toss_payment_mismatch",
+              orderId: existingOrderId,
+            });
+            continue;
+          }
+
+          // 실제 결제 완료가 확인된 경우에만 DB 복구
+          await markSubscriptionPaymentPaid({
+            organizationId,
+            paymentId,
+            tossPaymentKey: verified.paymentKey,
+            tossOrderId: verified.orderId,
+          });
+
+          results.push({
+            organizationId,
+            paymentId,
+            status: "recovered",
+            orderId: existingOrderId,
+          });
+        } catch (error: any) {
+          console.error(
+            "[SAAS BILLING] Reconciliation failed",
+            {
+              organizationId,
+              paymentId,
+              orderId: existingOrderId,
+              code: error?.code || null,
+              message: error?.message || null,
+            }
+          );
+
+          results.push({
+            organizationId,
+            paymentId,
+            status: "review_required",
+            reason: "reconciliation_failed",
+            orderId: existingOrderId,
+          });
+        }
 
         continue;
       }
 
-      const ledger =
-        await createAutomaticSubscriptionPayment({
-          organizationId,
-          planCode: String(row.planCode || "basic"),
-          customPlanName: row.customPlanName || null,
-          billingAmount,
-          billingCycleStart,
-          billingCycleEnd,
-          tossOrderId: orderId,
-        });
+      const ledger = await createAutomaticSubscriptionPayment({
+        organizationId,
+        planCode: String(row.planCode || "basic"),
+        customPlanName: row.customPlanName || null,
+        billingAmount,
+        billingCycleStart,
+        billingCycleEnd,
+        tossOrderId: orderId,
+      });
 
       if (!ledger.created) {
         results.push({
@@ -155,31 +293,78 @@ async function processDueSubscriptionPayments() {
           reason: "existing_payment",
           paymentId: ledger.paymentId,
         });
+        continue;
+      }
+
+      // 결제 API 호출 오류는 실제 승인 여부가 불확실할 수 있다.
+      // 기존 pending 원장을 유지하여 동일 주기 재청구를 차단한다.
+      let payment: Awaited<ReturnType<typeof chargeTossBilling>>;
+      try {
+        payment = await chargeTossBilling({
+          billingKey: String(row.billingKey),
+          customerKey: String(row.customerKey),
+          amount: billingAmount,
+          orderId,
+          orderName: `EduCanvas CRM ${String(
+            row.customPlanName || row.planCode || "구독"
+          )}`,
+          idempotencyKey: orderId,
+        });
+      } catch (error: any) {
+        console.error("[SAAS BILLING] Charge requires reconciliation", {
+          organizationId,
+          paymentId: ledger.paymentId,
+          orderId,
+          code: error?.code || null,
+          message: error?.message || null,
+        });
+        results.push({
+          organizationId,
+          paymentId: ledger.paymentId,
+          status: "review_required",
+          reason: "toss_charge_unconfirmed",
+          orderId,
+        });
+        continue;
+      }
+
+
+      // 토스 승인 응답의 주문번호, 상태, 금액 검증
+      if (
+        payment.orderId !== orderId ||
+        payment.status !== "DONE" ||
+        payment.totalAmount !== billingAmount ||
+        !payment.paymentKey
+      ) {
+        console.error(
+          "[SAAS BILLING] Unverified payment response",
+          {
+            organizationId,
+            paymentId: ledger.paymentId,
+            orderId,
+          }
+        );
+
+        results.push({
+          organizationId,
+          paymentId: ledger.paymentId,
+          status: "review_required",
+          reason: "toss_charge_response_unverified",
+          orderId,
+        });
 
         continue;
       }
 
-      try {
-        const payment = await chargeTossBilling({
-  billingKey: String(row.billingKey),
-  customerKey: String(row.customerKey),
-  amount: billingAmount,
-  orderId,
-  orderName: `EduCanvas CRM ${String(
-    row.customPlanName ||
-    row.planCode ||
-    "구독"
-  )}`,
-  idempotencyKey: orderId,
-});
 
+      // 토스 승인 이후 DB 오류는 결제 실패로 기록하면 안 된다.
+      try {
         await markSubscriptionPaymentPaid({
           organizationId,
           paymentId: ledger.paymentId,
           tossPaymentKey: payment.paymentKey,
           tossOrderId: payment.orderId,
         });
-
         results.push({
           organizationId,
           paymentId: ledger.paymentId,
@@ -188,31 +373,26 @@ async function processDueSubscriptionPayments() {
           orderId,
         });
       } catch (error: any) {
-        await markSubscriptionPaymentFailed({
+        console.error("[SAAS BILLING] Paid but DB update failed", {
           organizationId,
           paymentId: ledger.paymentId,
-          failureReason:
-            error?.message || "Toss 자동결제 실패",
-          rawJson: error?.tossResponse || {
-            code: error?.code || null,
-            message: error?.message || null,
-          },
+          orderId,
+          tossPaymentKey: payment.paymentKey,
+          message: error?.message || null,
         });
-
         results.push({
           organizationId,
           paymentId: ledger.paymentId,
-          status: "failed",
-          code: error?.code || null,
-          message: error?.message || "자동결제 실패",
+          status: "review_required",
+          reason: "paid_but_db_update_failed",
+          orderId,
         });
       }
     } catch (error: any) {
       results.push({
         organizationId,
         status: "error",
-        message:
-          error?.message || "자동결제 처리 중 오류",
+        message: error?.message || "자동결제 처리 중 오류",
       });
     }
   }
@@ -1120,6 +1300,7 @@ createSubscriptionPayment: protectedProcedure
     });
   }),
 
+
 markSubscriptionPaymentPaid: protectedProcedure
   .input(
     z.object({
@@ -1129,12 +1310,17 @@ markSubscriptionPaymentPaid: protectedProcedure
       tossOrderId: z.string().optional().nullable(),
     })
   )
-  .mutation(async ({ ctx, input }) => {
+  .mutation(async ({ ctx }) => {
     assertSuperhost(ctx);
     await requireSaasAdminUnlocked(Number(ctx.user.id));
 
-    return markSubscriptionPaymentPaid(input);
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "관리자 수동 결제 성공 처리는 비활성화되었습니다. 실제 토스 결제 승인 여부를 확인한 후 자동결제 복구 절차를 이용해주세요.",
+      400
+    );
   }),
+
 
 markSubscriptionPaymentFailed: protectedProcedure
   .input(
@@ -1145,12 +1331,16 @@ markSubscriptionPaymentFailed: protectedProcedure
       rawJson: z.any().optional(),
     })
   )
-  .mutation(async ({ ctx, input }) => {
-    assertSuperhost(ctx);
-    await requireSaasAdminUnlocked(Number(ctx.user.id));
+  .mutation(async ({ ctx }) => {
+  assertSuperhost(ctx);
+  await requireSaasAdminUnlocked(Number(ctx.user.id));
 
-    return markSubscriptionPaymentFailed(input);
-  }),
+  throwAppError(
+    ERROR_CODES.INVALID_REQUEST,
+    "관리자 수동 결제 실패 처리는 비활성화되었습니다. 토스 결제 상태 확인 후 처리해주세요.",
+    400
+  );
+}),
 
 listSubscriptionPayments: protectedProcedure
   .input(

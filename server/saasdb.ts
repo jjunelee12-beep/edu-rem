@@ -1059,9 +1059,10 @@ nextBillingAmount: getPlanBillingAmount(input.planCode),
   .set({
     subscriptionStatus: "trial",
     trialStartedAt: now,
-    trialEndsAt,
-    nextBillingAt: trialEndsAt,
-    billingKey: input.billingKey,
+trialEndsAt,
+nextBillingAt: trialEndsAt,
+billingAnchorDay: trialEndsAt.getDate(),
+billingKey: input.billingKey,
     customerKey: input.customerKey,
     paymentFailureCount: 0,
     paymentFailedAt: null,
@@ -1290,6 +1291,7 @@ export async function recordSubscriptionPaymentEvent(input: {
   return { ok: true };
 }
 
+
 export async function markSubscriptionPaymentPaid(input: {
   organizationId: number;
   paymentId: number;
@@ -1299,41 +1301,121 @@ export async function markSubscriptionPaymentPaid(input: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const nextBillingAt = new Date();
-  nextBillingAt.setMonth(nextBillingAt.getMonth() + 1);
+  return db.transaction(async (tx) => {
+    // 1. 회사 잠금: 같은 회사의 결제 상태 변경 직렬화
+    const [orgRows] = await tx.execute(sql`
+      SELECT id
+      FROM organizations
+      WHERE id = ${input.organizationId}
+      LIMIT 1
+      FOR UPDATE
+    `);
 
-  await db
-    .update(subscriptionPayments)
-    .set({
-      paymentStatus: "paid",
-      paidAt: new Date(),
-      tossPaymentKey: input.tossPaymentKey ?? null,
-      tossOrderId: input.tossOrderId ?? null,
-    } as any)
-    .where(eq(subscriptionPayments.id, input.paymentId));
+    if (!((orgRows as any[]) || []).length) {
+      throw new Error("결제 대상 회사를 찾을 수 없습니다.");
+    }
 
-  await db
-    .update(organizations)
-    .set({
-      subscriptionStatus: "active",
-      status: "active",
-      lastPaidAt: new Date(),
+    // 2. 결제 원장 조회 및 잠금
+    const [paymentRows] = await tx.execute(sql`
+      SELECT
+        id,
+        organizationId,
+        paymentStatus,
+        billingCycleEnd,
+        tossOrderId,
+        tossPaymentKey
+      FROM subscription_payments
+      WHERE id = ${input.paymentId}
+        AND organizationId = ${input.organizationId}
+      LIMIT 1
+      FOR UPDATE
+    `);
+
+    const payment = ((paymentRows as any[]) || [])[0];
+
+    if (!payment) {
+      throw new Error("결제 원장을 찾을 수 없습니다.");
+    }
+
+    // 이미 성공 처리된 결제는 재처리하지 않음
+    if (payment.paymentStatus === "paid") {
+      if (
+        input.tossPaymentKey &&
+        payment.tossPaymentKey !== input.tossPaymentKey
+      ) {
+        throw new Error("기존 결제키와 일치하지 않습니다.");
+      }
+
+      return { ok: true, alreadyPaid: true };
+    }
+
+    if (payment.paymentStatus !== "pending") {
+      throw new Error("성공 처리할 수 없는 결제 상태입니다.");
+    }
+
+    if (!payment.billingCycleEnd) {
+      throw new Error("결제주기 종료일이 없습니다.");
+    }
+
+    if (!input.tossPaymentKey || !input.tossOrderId) {
+      throw new Error("토스 결제 식별정보가 없습니다.");
+    }
+
+    if (payment.tossOrderId !== input.tossOrderId) {
+      throw new Error("토스 주문번호가 일치하지 않습니다.");
+    }
+
+    const now = new Date();
+    const nextBillingAt = new Date(payment.billingCycleEnd);
+
+    if (Number.isNaN(nextBillingAt.getTime())) {
+      throw new Error("다음 결제일이 올바르지 않습니다.");
+    }
+
+    // 3. 결제 원장 성공 처리
+    await tx
+      .update(subscriptionPayments)
+      .set({
+        paymentStatus: "paid",
+        paidAt: now,
+        tossPaymentKey: input.tossPaymentKey,
+        tossOrderId: input.tossOrderId,
+        failureReason: null,
+      } as any)
+      .where(eq(subscriptionPayments.id, input.paymentId));
+
+    // 4. 회사 구독 상태 갱신
+    // 실제 결제일이 아니라 기존 결제주기 종료일 사용
+    await tx
+      .update(organizations)
+      .set({
+        subscriptionStatus: "active",
+        status: "active",
+        lastPaidAt: now,
+        nextBillingAt,
+        paymentFailureCount: 0,
+        paymentFailedAt: null,
+        graceUntilAt: null,
+      } as any)
+      .where(eq(organizations.id, input.organizationId));
+
+    // 5. 결제 성공 이벤트도 동일 트랜잭션에 기록
+    await tx.insert(subscriptionPaymentEvents).values({
+      organizationId: input.organizationId,
+      paymentId: input.paymentId,
+      eventType: "payment.paid",
+      message: "구독 결제 성공",
+      rawJson: null,
+    } as any);
+
+    return {
+      ok: true,
+      alreadyPaid: false,
       nextBillingAt,
-      paymentFailureCount: 0,
-      paymentFailedAt: null,
-      graceUntilAt: null,
-    } as any)
-    .where(eq(organizations.id, input.organizationId));
-
-  await recordSubscriptionPaymentEvent({
-    organizationId: input.organizationId,
-    paymentId: input.paymentId,
-    eventType: "payment.paid",
-    message: "구독 결제 성공",
+    };
   });
-
-  return { ok: true };
 }
+
 
 export async function markSubscriptionPaymentFailed(input: {
   organizationId: number;
@@ -1792,9 +1874,10 @@ export async function listDueSubscriptionOrganizations() {
       customPlanName,
       subscriptionStatus,
       billingAmount,
-      nextBillingAmount,
-      nextBillingAt,
-      billingKey,
+nextBillingAmount,
+nextBillingAt,
+billingAnchorDay,
+billingKey,
       customerKey,
       paymentFailureCount,
       paymentFailedAt
@@ -1842,14 +1925,15 @@ export async function findExistingSubscriptionPaymentForCycle(input: {
 
   const [rows] = await db.execute(sql`
     SELECT
-      id,
-      paymentStatus,
-      tossOrderId,
-      createdAt
+  id,
+  paymentStatus,
+  billingAmount,
+  tossOrderId,
+  createdAt
     FROM subscription_payments
     WHERE organizationId = ${input.organizationId}
       AND billingCycleStart = ${input.billingCycleStart}
-      AND paymentStatus IN ('pending', 'paid')
+      AND paymentStatus IN ('pending', 'paid', 'failed')
     ORDER BY id DESC
     LIMIT 1
   `);
@@ -1897,7 +1981,7 @@ export async function createAutomaticSubscriptionPayment(input: {
       FROM subscription_payments
       WHERE organizationId = ${input.organizationId}
         AND billingCycleStart = ${input.billingCycleStart}
-        AND paymentStatus IN ('pending', 'paid')
+        AND paymentStatus IN ('pending', 'paid', 'failed')
       ORDER BY id DESC
       LIMIT 1
     `);

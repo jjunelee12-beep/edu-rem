@@ -107,6 +107,7 @@ export const organizations = mysqlTable("organizations", {
   trialStartedAt: datetime("trialStartedAt"),
   trialEndsAt: datetime("trialEndsAt"),
   nextBillingAt: datetime("nextBillingAt"),
+billingAnchorDay: int("billingAnchorDay"),
   lastPaidAt: datetime("lastPaidAt"),
 
 billingAmount: int("billingAmount").notNull().default(0),
@@ -9285,6 +9286,12 @@ export const subscriptionPayments = mysqlTable(
     orgIdx: index("idx_subscription_payments_org").on(table.organizationId),
     statusIdx: index("idx_subscription_payments_status").on(table.paymentStatus),
     createdIdx: index("idx_subscription_payments_created").on(table.createdAt),
+orgCycleUniqueIdx: uniqueIndex(
+  "uq_subscription_payments_org_cycle"
+).on(
+  table.organizationId,
+  table.billingCycleStart
+),
   })
 );
 

@@ -168,3 +168,85 @@ export async function chargeTossBilling(input: {
 
   return data;
 }
+
+
+export type TossPaymentLookupResponse = {
+  paymentKey: string;
+  orderId: string;
+  status: string;
+  totalAmount: number;
+  approvedAt?: string | null;
+  requestedAt?: string;
+  method?: string | null;
+  lastTransactionKey?: string | null;
+};
+
+/**
+ * 기존 토스 주문번호로 결제 상태를 조회한다.
+ * 이 함수는 결제를 새로 실행하지 않는다.
+ */
+export async function getTossPaymentByOrderId(
+  orderId: string
+): Promise<TossPaymentLookupResponse> {
+  const normalizedOrderId = orderId?.trim();
+
+  if (!normalizedOrderId) {
+    throw new Error("조회할 토스 주문번호가 없습니다.");
+  }
+
+  const response = await fetch(
+    `https://api.tosspayments.com/v1/payments/orders/${encodeURIComponent(
+      normalizedOrderId
+    )}`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: getAuthorizationHeader(),
+        "Content-Type": "application/json",
+      },
+      signal: AbortSignal.timeout(10000),
+    }
+  );
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const error = new Error(
+      data?.message || "토스 결제 상태 조회에 실패했습니다."
+    ) as Error & {
+      code?: string;
+      httpStatus?: number;
+      tossResponse?: unknown;
+    };
+
+    error.code = data?.code || "TOSS_PAYMENT_LOOKUP_FAILED";
+    error.httpStatus = response.status;
+    error.tossResponse = data;
+
+    throw error;
+  }
+
+  if (
+    !data?.paymentKey ||
+    !data?.orderId ||
+    !data?.status ||
+    typeof data?.totalAmount !== "number"
+  ) {
+    throw new Error("토스 결제 조회 응답에 필수 정보가 없습니다.");
+  }
+
+  if (data.orderId !== normalizedOrderId) {
+    throw new Error("조회된 토스 주문번호가 일치하지 않습니다.");
+  }
+
+  return {
+    paymentKey: data.paymentKey,
+    orderId: data.orderId,
+    status: data.status,
+    totalAmount: data.totalAmount,
+    approvedAt: data.approvedAt ?? null,
+    requestedAt: data.requestedAt,
+    method: data.method ?? null,
+    lastTransactionKey: data.lastTransactionKey ?? null,
+  };
+}
