@@ -71,12 +71,12 @@ function loadKakao(): Promise<any> {
 }
 
 function markerImage(kakao: any, selected: boolean) {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="46" height="56" viewBox="0 0 46 56"><path d="M23 2C11 2 2 11 2 23c0 15 21 31 21 31s21-16 21-31C44 11 35 2 23 2Z" fill="#0967F6" stroke="${selected ? "#0F172A" : "white"}" stroke-width="${selected ? 3 : 2}"/><rect x="13" y="20" width="20" height="15" rx="3" fill="white"/><path d="M19 20v-3a4 4 0 0 1 8 0v3" fill="none" stroke="white" stroke-width="2.5"/><path d="M13 26h20" stroke="#0967F6" stroke-width="1.5"/></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="37" viewBox="0 0 46 56"><path d="M23 2C11 2 2 11 2 23c0 15 21 31 21 31s21-16 21-31C44 11 35 2 23 2Z" fill="#0967F6" stroke="${selected ? "#0F172A" : "white"}" stroke-width="${selected ? 3 : 2}"/><rect x="13" y="20" width="20" height="15" rx="3" fill="white"/><path d="M19 20v-3a4 4 0 0 1 8 0v3" fill="none" stroke="white" stroke-width="2.5"/><path d="M13 26h20" stroke="#0967F6" stroke-width="1.5"/></svg>`;
   return new kakao.maps.MarkerImage(
-    `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
-    new kakao.maps.Size(46, 56),
-    { offset: new kakao.maps.Point(23, 56) }
-  );
+  `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+  new kakao.maps.Size(30, 37),
+  { offset: new kakao.maps.Point(15, 37) }
+);
 }
 
 export default function EmploymentKakaoMap({

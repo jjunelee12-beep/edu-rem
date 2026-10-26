@@ -354,7 +354,23 @@ const nearbyCount = jobs.length;
     <div className="relative mx-auto flex min-h-screen max-w-[560px] flex-col bg-white shadow-[0_0_40px_rgba(18,48,88,.09)]">
       <header className="z-20 bg-white px-5 pb-4 pt-5 shadow-sm">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5"><span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#0967f6] text-white"><BriefcaseBusiness size={22}/></span><div><p className="text-[11px] font-extrabold tracking-wide text-blue-600">WITHONE EDUCATION</p><h1 className="text-[19px] font-black tracking-tight">취업정보센터</h1></div></div>
+          <div className="flex min-w-0 items-center gap-3">
+  <img
+    src="/images/logo.png"
+    alt="위드원교육 로고"
+    className="h-12 w-12 shrink-0 object-contain"
+  />
+
+  <div className="min-w-0">
+    <p className="text-[12px] font-bold text-slate-500">
+      위드원교육
+    </p>
+
+    <h1 className="text-[21px] font-black tracking-tight text-[#10223f]">
+      취업정보센터
+    </h1>
+  </div>
+</div>
           <div className="flex items-center gap-2">
   <a
     href={STUDENT_PORTAL_URL}
