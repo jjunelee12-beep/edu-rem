@@ -27,7 +27,9 @@ import Tesseract from "tesseract.js";
 import OpenAI from "openai";
 import {
   createHash,
+  createHmac,
   randomBytes,
+  timingSafeEqual,
 } from "node:crypto";
 import { attendanceRouter } from "./attendance.router";
 import { noticeRouter } from "./routes/notice.router";
@@ -47,6 +49,11 @@ import { maskPersonalData, maskPersonalDataList } from "./_core/privacy";
 import { sendVerificationEmail } from "./_core/mail";
 import { throwAppError } from "./_core/appError";
 import { ERROR_CODES } from "./_core/errorCodes";
+import {
+  getWork24Jobs,
+  getWork24JobDetail,
+  getWork24Regions,
+} from "./work24.service";
 
 import {
   updateAdministrativeProcedure,
@@ -655,6 +662,149 @@ function assertExternalRequestEditable(params: {
 
 const WITHONE_ORGANIZATION_ID = 1;
 const WITHONE_ASSIGNEE_ID = 7;
+
+
+/**
+ * 취업정보센터 전용 접근 토큰
+ * 학생일정포털 토큰과 완전히 분리한다.
+ */
+const EMPLOYMENT_TOKEN_TTL_MS = 30 * 60 * 1000;
+
+const employmentLoginAttempts = new Map<
+  string,
+  { count: number; resetAt: number }
+>();
+
+function getEmploymentTokenSecret(): string {
+  const secret = process.env.EMPLOYMENT_CENTER_TOKEN_SECRET;
+
+  if (!secret || secret.length < 32) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "취업정보센터 토큰 암호화 설정이 필요합니다.",
+      500
+    );
+  }
+
+  return secret;
+}
+
+function createEmploymentToken(): string {
+  const payload = Buffer.from(
+    JSON.stringify({
+      scope: "employment_jobs",
+      exp: Date.now() + EMPLOYMENT_TOKEN_TTL_MS,
+      nonce: randomBytes(16).toString("hex"),
+    })
+  ).toString("base64url");
+
+  const signature = createHmac(
+    "sha256",
+    getEmploymentTokenSecret()
+  )
+    .update(payload)
+    .digest("base64url");
+
+  return `${payload}.${signature}`;
+}
+
+function verifyEmploymentToken(token: string): void {
+  const parts = token.split(".");
+
+  if (parts.length !== 2) {
+    throwAppError(
+      ERROR_CODES.AUTH_REQUIRED,
+      "취업정보센터 이용 확인이 필요합니다.",
+      401
+    );
+  }
+
+  const [payload, signature] = parts;
+
+  const expected = createHmac(
+    "sha256",
+    getEmploymentTokenSecret()
+  )
+    .update(payload)
+    .digest();
+
+  let provided: Buffer;
+
+  try {
+    provided = Buffer.from(signature, "base64url");
+  } catch {
+    throwAppError(
+      ERROR_CODES.AUTH_REQUIRED,
+      "유효하지 않은 접근 정보입니다.",
+      401
+    );
+  }
+
+  if (
+    provided.length !== expected.length ||
+    !timingSafeEqual(provided, expected)
+  ) {
+    throwAppError(
+      ERROR_CODES.AUTH_REQUIRED,
+      "유효하지 않은 접근 정보입니다.",
+      401
+    );
+  }
+
+  try {
+    const data = JSON.parse(
+      Buffer.from(payload, "base64url").toString("utf8")
+    );
+
+    if (
+      data.scope !== "employment_jobs" ||
+      !Number.isFinite(data.exp) ||
+      data.exp <= Date.now()
+    ) {
+      throw new Error("Expired");
+    }
+  } catch {
+    throwAppError(
+      ERROR_CODES.AUTH_REQUIRED,
+      "이용 시간이 만료되었습니다. 다시 확인해주세요.",
+      401
+    );
+  }
+}
+
+function checkEmploymentLoginLimit(ip: string): void {
+  const now = Date.now();
+  const windowMs = 15 * 60 * 1000;
+
+  if (employmentLoginAttempts.size > 5000) {
+    for (const [key, value] of employmentLoginAttempts) {
+      if (value.resetAt <= now) {
+        employmentLoginAttempts.delete(key);
+      }
+    }
+  }
+
+  const current = employmentLoginAttempts.get(ip);
+
+  if (!current || current.resetAt <= now) {
+    employmentLoginAttempts.set(ip, {
+      count: 1,
+      resetAt: now + windowMs,
+    });
+    return;
+  }
+
+  if (current.count >= 10) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "확인 요청이 많습니다. 15분 후 다시 시도해주세요.",
+      429
+    );
+  }
+
+  current.count += 1;
+}
+
 
 const WITHONE_LANDING_CHANNEL = "위드원교육 랜딩페이지";
 const WITHONE_LANDING_COURSE = "사회복지사 2급";
@@ -3299,6 +3449,104 @@ async function completeStudentPortalAdministrativeProcedure(
 }
 
 export const appRouter = router({
+
+  // ─── 위드원교육 취업정보센터 ─────────────────────
+  employmentCenter: router({
+    /**
+     * 이름 + 휴대폰 번호로 등록회원 확인
+     */
+    verifyMember: publicProcedure
+      .input(
+        z.object({
+          clientName: z.string().trim().min(2).max(50),
+          phone: z.string().trim().min(10).max(20),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const ip = String(ctx.req?.ip || "unknown");
+
+        checkEmploymentLoginLimit(ip);
+
+        const matched =
+          await db.verifyEmploymentCenterMember({
+            organizationId: WITHONE_ORGANIZATION_ID,
+            clientName: input.clientName,
+            phone: input.phone,
+          });
+
+        if (!matched) {
+          return {
+            success: false as const,
+            token: null,
+            expiresInSeconds: 0,
+            message: "등록회원 정보를 확인할 수 없습니다.",
+          };
+        }
+
+        return {
+          success: true as const,
+          token: createEmploymentToken(),
+          expiresInSeconds: 1800,
+          message: "등록회원 확인이 완료되었습니다.",
+        };
+      }),
+
+
+    /**
+     * 고용24 공식 지역코드 조회
+     * 등록회원 확인 토큰 필수
+     */
+    regions: publicProcedure
+      .input(
+        z.object({
+          token: z.string().min(1).max(1000),
+        })
+      )
+      .query(async ({ input }) => {
+        verifyEmploymentToken(input.token);
+
+        return getWork24Regions();
+      }),
+
+    /**
+     * 고용24 채용공고 목록
+     */
+    jobs: publicProcedure
+  .input(
+    z.object({
+      token: z.string().min(1).max(1000),
+      page: z.number().int().min(1).max(1000).default(1),
+      size: z.number().int().min(1).max(100).default(20),
+      region: z.string().regex(/^\d{2,10}$/).optional(),
+    })
+  )
+  .query(async ({ input }) => {
+    verifyEmploymentToken(input.token);
+
+    return getWork24Jobs({
+      page: input.page,
+      size: input.size,
+      region: input.region,
+    });
+  }),
+
+    /**
+     * 고용24 채용공고 상세
+     */
+    jobDetail: publicProcedure
+      .input(
+        z.object({
+          token: z.string().min(1).max(1000),
+          wantedAuthNo: z.string().trim().min(5).max(50),
+        })
+      )
+      .query(async ({ input }) => {
+        verifyEmploymentToken(input.token);
+
+        return getWork24JobDetail(input.wantedAuthNo);
+      }),
+  }),
+
   system: systemRouter,
   leadForm: publicLeadRouter,
   sms: smsRouter,
@@ -3703,6 +3951,98 @@ export const appRouter = router({
             };
           }
         ),
+
+
+    /**
+     * ---------------------------------------------------------
+     * 취업정보센터 - 고용24 채용정보
+     * ---------------------------------------------------------
+     * 등록회원 포털 세션으로 접근 권한 확인
+     */
+    jobs:
+      publicProcedure
+        .input(
+          z.object({
+            token: z.string().trim().min(1).max(255),
+            page: z.number().int().min(1).max(1000).default(1),
+            size: z.number().int().min(1).max(100).default(20),
+          })
+        )
+        .query(async ({ input }) => {
+          const session =
+            await db.getStudentPortalSessionByToken({
+              token: input.token,
+            });
+
+          if (!session || session.usable !== true) {
+            throwAppError(
+              ERROR_CODES.AUTH_REQUIRED,
+              "업무포털 인증이 만료되었거나 유효하지 않습니다.",
+              401
+            );
+          }
+
+          // 취업정보센터는 위드원교육 등록회원 전용
+          if (Number(session.organizationId) !== WITHONE_ORGANIZATION_ID) {
+            throwAppError(
+              ERROR_CODES.PERMISSION_DENIED,
+              "위드원교육 등록회원 전용 서비스입니다.",
+              403
+            );
+          }
+
+          await db.touchStudentPortalSession({
+            sessionId: session.id,
+            organizationId: session.organizationId,
+          });
+
+          return getWork24Jobs({
+            page: input.page,
+            size: input.size,
+          });
+        }),
+
+    /**
+     * 취업정보센터 - 채용공고 상세 조회
+     */
+    jobDetail:
+      publicProcedure
+        .input(
+          z.object({
+            token: z.string().trim().min(1).max(255),
+            wantedAuthNo: z.string().trim().min(5).max(50),
+          })
+        )
+        .query(async ({ input }) => {
+          const session =
+            await db.getStudentPortalSessionByToken({
+              token: input.token,
+            });
+
+          if (!session || session.usable !== true) {
+            throwAppError(
+              ERROR_CODES.AUTH_REQUIRED,
+              "업무포털 인증이 만료되었거나 유효하지 않습니다.",
+              401
+            );
+          }
+
+          if (Number(session.organizationId) !== WITHONE_ORGANIZATION_ID) {
+            throwAppError(
+              ERROR_CODES.PERMISSION_DENIED,
+              "위드원교육 등록회원 전용 서비스입니다.",
+              403
+            );
+          }
+
+          await db.touchStudentPortalSession({
+            sessionId: session.id,
+            organizationId: session.organizationId,
+          });
+
+          return getWork24JobDetail(input.wantedAuthNo);
+        }),
+
 
     /**
      * ---------------------------------------------------------
@@ -34347,6 +34687,55 @@ return { success: true };
 }),
   }),
 
+async function assertPlanSemesterWritePermission(
+  ctx: any,
+  planSemesterId: number
+) {
+  const organizationId = getCtxOrganizationId(ctx);
+
+  const planRows = await db.getPlanSemesterById(
+    planSemesterId,
+    { organizationId }
+  );
+
+  if (!planRows) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "과목을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  const student = await db.getStudent(
+    Number(planRows.studentId),
+    { organizationId }
+  );
+
+  if (!student) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "학생을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  const assigneeId = Number(student.assigneeId || 0);
+const userId = Number(ctx.user?.id || 0);
+
+const canEdit =
+  ctx.user?.role === "host" ||
+  ctx.user?.role === "superhost" ||
+  (userId > 0 && assigneeId === userId);
+
+  if (!canEdit) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "해당 학생의 과목을 수정할 권한이 없습니다.",
+      403
+    );
+  }
+}
+
   planSemester: router({
     list: protectedProcedure
       .input(z.object({ studentId: z.number() }))
@@ -34433,6 +34822,61 @@ retakeRequired:
         return { id, success: true };
       }),
 
+applyTemplate: protectedProcedure
+  .input(
+    z.object({
+      studentId: z.number().int().positive(),
+      semesterNo: z.number().int().min(1).max(20),
+      expectedRowIds: z.array(z.number().int().positive()),
+      subjects: z.array(
+        z.object({
+          subjectName: z.string().trim().min(1),
+          category: z.enum(["전공", "교양", "일반"]),
+          requirementType: z.enum([
+            "전공필수",
+            "전공선택",
+            "교양",
+            "일반",
+          ]),
+          settlementIncluded: z.boolean(),
+        })
+      ).min(1).max(8),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    const organizationId = getCtxOrganizationId(ctx);
+
+    const student = await db.getStudent(input.studentId, {
+      organizationId,
+    });
+
+    if (!student) {
+      throwAppError(
+        ERROR_CODES.DATA_NOT_FOUND,
+        "학생을 찾을 수 없습니다.",
+        404
+      );
+    }
+
+    const canEdit =
+      ctx.user.role === "host" ||
+      ctx.user.role === "superhost" ||
+      Number(student.assigneeId) === Number(ctx.user.id);
+
+    if (!canEdit) {
+      throwAppError(
+        ERROR_CODES.PERMISSION_DENIED,
+        "해당 학생의 과목을 수정할 권한이 없습니다.",
+        403
+      );
+    }
+
+    return db.applyPlanSemesterTemplateAtomic({
+      organizationId,
+      ...input,
+    });
+  }),
+
     update: protectedProcedure
       .input(
         z.object({
@@ -34447,7 +34891,9 @@ retakeRequired: z.boolean().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const data: any = {};
+  await assertPlanSemesterWritePermission(ctx, input.id);
+
+  const data: any = {};
 
         if (input.subjectName !== undefined) data.subjectName = input.subjectName.trim();
         if (input.category !== undefined) data.planCategory = input.category;
@@ -34474,12 +34920,63 @@ if (
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        await db.deletePlanSemester(input.id, {
+  await assertPlanSemesterWritePermission(ctx, input.id);
+
+  await db.deletePlanSemester(input.id, {
   organizationId: getCtxOrganizationId(ctx),
 });
         return { success: true };
       }),
   }),
+
+async function assertTransferSubjectWritePermission(
+  ctx: any,
+  transferSubjectId: number
+) {
+  const organizationId = getCtxOrganizationId(ctx);
+
+  const transferRow = await db.getTransferSubjectById(
+    transferSubjectId,
+    { organizationId }
+  );
+
+  if (!transferRow) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "전적대 과목을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  const student = await db.getStudent(
+    Number(transferRow.studentId),
+    { organizationId }
+  );
+
+  if (!student) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "학생을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  const assigneeId = Number(student.assigneeId || 0);
+  const userId = Number(ctx.user?.id || 0);
+
+  const canEdit =
+    ctx.user?.role === "host" ||
+    ctx.user?.role === "superhost" ||
+    (userId > 0 && assigneeId === userId);
+
+  if (!canEdit) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "해당 학생의 전적대 과목을 수정할 권한이 없습니다.",
+      403
+    );
+  }
+}
 
   transferSubject: router({
     list: protectedProcedure
@@ -34632,7 +35129,9 @@ const student = await db.getStudent(input.studentId, {
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const data: any = {};
+  await assertTransferSubjectWritePermission(ctx, input.id);
+
+  const data: any = {};
 
         if (input.schoolName !== undefined) data.schoolName = input.schoolName.trim();
         if (input.subjectName !== undefined) data.subjectName = input.subjectName.trim();
@@ -34651,12 +35150,15 @@ const student = await db.getStudent(input.studentId, {
 
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(async ({ ctx, input }) => {
-        await db.deleteTransferSubject(input.id, {
-  organizationId: getCtxOrganizationId(ctx),
-});
-        return { success: true };
-      }),
+     .mutation(async ({ ctx, input }) => {
+  await assertTransferSubjectWritePermission(ctx, input.id);
+
+  await db.deleteTransferSubject(input.id, {
+    organizationId: getCtxOrganizationId(ctx),
+  });
+
+  return { success: true };
+}),
   }),
 
   transferAttachment: router({

@@ -47,6 +47,7 @@ import StaffProfileSettings from "@/pages/StaffProfileSettings";
 import PublicStaffProfilePage from "@/pages/PublicStaffProfilePage";
 import PublicStaffTeamPage from "@/pages/PublicStaffTeamPage";
 import StudentPortalPage from "@/pages/StudentPortalPage";
+import EmploymentCenterPage from "@/pages/EmploymentCenterPage";
 import PortalManagementPage from "@/pages/PortalManagementPage";
 import HostPortalCommunityPage from "@/pages/HostPortalCommunityPage";
 
@@ -222,6 +223,10 @@ function PublicRouter() {
 <Route
   path="/portal/:slug"
   component={StudentPortalPage}
+/>
+<Route
+  path="/employment-center"
+  component={EmploymentCenterPage}
 />
 
 <Route
@@ -546,6 +551,7 @@ function AppContent() {
   const isPublicPage =
   location === "/login" ||
   location === "/withone" ||
+location === "/employment-center" ||
   location.startsWith("/form/") ||
   location.startsWith("/ad-form/") ||
 location.startsWith("/kakao-ai/staff-auth/") ||

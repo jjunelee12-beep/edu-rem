@@ -987,6 +987,21 @@ function MainView({portal,primaryColor,data,profile,query,boardId,setBoardId,sea
 
     <div className="sticky top-[66px] z-30 border-b border-slate-200 bg-white"><div className="flex overflow-x-auto px-2"><Tab active={boardId===null} color={primaryColor} onClick={()=>setBoardId(null)}>전체</Tab>{boards.map((b:any)=><Tab key={b.id} active={boardId===Number(b.id)} color={primaryColor} onClick={()=>setBoardId(Number(b.id))}>{b.name}</Tab>)}</div></div>
 
+{/* 취업정보센터 바로가기 배너 */}
+<a
+  href="/employment-center"
+  className="block w-full bg-white px-2 py-2"
+  aria-label="취업정보센터 바로가기"
+>
+  <img
+    src="/images/employment-center-banner.png"
+    alt="사회복지사 등록회원 전용 취업정보센터 OPEN"
+    width={749}
+    height={115}
+    className="block h-auto w-full rounded-lg"
+  />
+</a>
+
     {query.isLoading?<Centered text="게시글을 불러오고 있습니다." small/>:query.isError?<InlineError message={errorText(query.error,"게시글을 불러오지 못했습니다.")} onRetry={()=>query.refetch()}/>:visible.length===0?<Empty text={q?"검색 결과가 없습니다.":"아직 등록된 게시글이 없습니다."}/>:<>
       {boardId===null&&notices.length>0?<section className="border-b border-slate-200 bg-slate-50/80 px-4 py-2">{notices.slice(0,2).map((p:any)=><button key={p.id} type="button" onClick={()=>onPost(Number(p.id))} className="flex w-full items-center gap-3 py-2 text-left"><span className="rounded-md bg-red-50 px-2 py-1 text-[11px] font-black text-red-500">공지</span><span className="min-w-0 flex-1"><span className="block truncate text-[14px] font-extrabold text-slate-900">{p.title}</span><span className="mt-0.5 block text-[11px] text-slate-400">{p.authorNickname} · {shortDate(p.createdAt)}</span></span><span className="text-[11px] text-slate-400">조회 {Number(p.viewCount||0)}</span></button>)}</section>:null}
       <div className="divide-y divide-slate-200">{(boardId===null?normals:visible).map((p:any)=><PostRow key={p.id} post={p} board={boardMap.get(Number(p.boardId))} onClick={()=>onPost(Number(p.id))}/>)}</div>

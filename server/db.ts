@@ -1221,6 +1221,29 @@ primaryColor:
 
 
 /**
+ * 취업정보센터 등록회원 확인
+ *
+ * 이름 + 휴대폰 번호로 승인된 등록회원 여부만 확인한다.
+ * 학생 개인정보는 외부에 반환하지 않는다.
+ */
+export async function verifyEmploymentCenterMember(
+  params: {
+    organizationId: number;
+    clientName: string;
+    phone: string;
+  }
+): Promise<boolean> {
+  const result = await findStudentForKakaoVerification({
+    organizationId: params.organizationId,
+    clientName: params.clientName,
+    phone: params.phone,
+  });
+
+  return result.matched === true;
+}
+
+
+/**
  * 학생 이름 + 전화번호 인증.
  *
  * 반드시 slug로 organizationId를 먼저 확정한 뒤
@@ -36011,39 +36034,47 @@ export async function findDuplicatePlanSubject(params: {
 }) {
   const organizationId = requireOrganizationId(params.organizationId);
 
-  const rows = await listPlanSemesters(params.studentId, {
-    organizationId,
-  });
-
   const target = normalizeSubjectName(params.subjectName);
-
   if (!target) return null;
 
-  return (
-    rows.find((row: any) => {
-      if (params.excludeId && Number(row.id) === Number(params.excludeId)) {
-        return false;
-      }
+  const [planRows, transferRows] = await Promise.all([
+    listPlanSemesters(params.studentId, { organizationId }),
+    listTransferSubjects(params.studentId, { organizationId }),
+  ]);
 
-      if (
-        params.excludeSemesterNo !== undefined &&
-        Number(row.semesterNo) === Number(params.excludeSemesterNo)
-      ) {
-        return false;
-      }
-if (
-  row.retakeRequired ===
-    true
-) {
-  return false;
-}
+  const duplicatePlan = planRows.find((row: any) => {
+    if (params.excludeId && Number(row.id) === Number(params.excludeId)) {
+      return false;
+    }
 
-return normalizeSubjectName(
-  row.subjectName
-) ===
-  target;
-    }) || null
+    if (
+      params.excludeSemesterNo !== undefined &&
+      Number(row.semesterNo) === Number(params.excludeSemesterNo)
+    ) {
+      return false;
+    }
+
+    if (row.retakeRequired === true) return false;
+
+    return normalizeSubjectName(row.subjectName) === target;
+  });
+
+  if (duplicatePlan) {
+    return duplicatePlan;
+  }
+
+  const duplicateTransfer = transferRows.find(
+    (row: any) => normalizeSubjectName(row.subjectName) === target
   );
+
+  if (duplicateTransfer) {
+    return {
+      ...duplicateTransfer,
+      semesterNo: "전적대",
+    };
+  }
+
+  return null;
 }
 
 async function validatePlanRequirementLimit(params: {
@@ -37175,6 +37206,223 @@ if (
   );
 }
 
+export async function applyPlanSemesterTemplateAtomic(params: {
+  organizationId: number;
+  studentId: number;
+  semesterNo: number;
+  expectedRowIds: number[];
+  subjects: Array<{
+    subjectName: string;
+    category: "전공" | "교양" | "일반";
+    requirementType: "전공필수" | "전공선택" | "교양" | "일반";
+    settlementIncluded: boolean;
+  }>;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const studentId = Number(params.studentId);
+  const semesterNo = Number(params.semesterNo);
+  const subjects = params.subjects;
+
+  if (!Number.isInteger(studentId) || studentId <= 0 ||
+      !Number.isInteger(semesterNo) || semesterNo < 1 || semesterNo > 20) {
+    throwAppError(
+      ERROR_CODES.INVALID_INPUT,
+      "학생 또는 학기 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  if (!subjects.length || subjects.length > 8) {
+    throwAppError(
+      ERROR_CODES.INVALID_INPUT,
+      "한 번에 선택할 수 있는 과목은 1~8개입니다.",
+      400
+    );
+  }
+
+  return db.transaction(async (tx) => {
+    // 동일 학생에 대한 동시 템플릿 적용 방지
+    const lockedStudents = await tx
+      .select({ id: students.id })
+      .from(students)
+      .where(
+        and(
+          eq(students.id, studentId),
+          eq(students.organizationId, organizationId),
+          sql`${students.deletedAt} IS NULL`
+        )
+      )
+      .for("update");
+
+    if (!lockedStudents.length) {
+      throwAppError(
+        ERROR_CODES.DATA_NOT_FOUND,
+        "학생을 찾을 수 없습니다.",
+        404
+      );
+    }
+
+    const allPlanRows = await tx
+      .select()
+      .from(planSemesters)
+      .where(
+        and(
+          eq(planSemesters.studentId, studentId),
+          eq(planSemesters.organizationId, organizationId)
+        )
+      )
+      .orderBy(
+        planSemesters.semesterNo,
+        planSemesters.sortOrder,
+        planSemesters.id
+      );
+
+    const transferRows = await tx
+      .select()
+      .from(transferSubjects)
+      .where(
+        and(
+          eq(transferSubjects.studentId, studentId),
+          eq(transferSubjects.organizationId, organizationId)
+        )
+      );
+
+    const currentRows = allPlanRows.filter(
+      row => Number(row.semesterNo) === semesterNo
+    );
+
+    // 화면 조회 이후 다른 직원이 변경했는지 확인
+    const actualIds = currentRows
+      .map(row => Number(row.id))
+      .sort((a, b) => a - b);
+
+    const expectedIds = [...params.expectedRowIds]
+      .sort((a, b) => a - b);
+
+    if (JSON.stringify(actualIds) !== JSON.stringify(expectedIds)) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "과목 목록이 변경되었습니다. 새로고침 후 다시 시도해주세요.",
+        409
+      );
+    }
+
+    const sharedCount = Math.min(currentRows.length, subjects.length);
+
+    // 선택한 개수보다 많은 기존 과목은 유지
+    const preservedRows = currentRows.slice(sharedCount);
+
+    const finalCount =
+      preservedRows.length + subjects.length;
+
+    if (finalCount > 8) {
+      throwAppError(
+        ERROR_CODES.INVALID_INPUT,
+        `학기당 최대 8과목입니다. 적용 후 ${finalCount}과목이 됩니다.`,
+        400
+      );
+    }
+
+    const otherPlanRows = allPlanRows.filter(
+      row => Number(row.semesterNo) !== semesterNo
+    );
+
+    const existingNames = new Set(
+      [
+        ...otherPlanRows
+          .filter(row => row.retakeRequired !== true)
+          .map(row => normalizeSubjectName(row.subjectName)),
+        ...preservedRows
+          .filter(row => row.retakeRequired !== true)
+          .map(row => normalizeSubjectName(row.subjectName)),
+        ...transferRows
+          .map(row => normalizeSubjectName(row.subjectName)),
+      ].filter(Boolean)
+    );
+
+    const selectedNames = new Set<string>();
+
+    for (const subject of subjects) {
+      const name = normalizeSubjectName(subject.subjectName);
+
+      if (!name) {
+        throwAppError(
+          ERROR_CODES.INVALID_INPUT,
+          "과목명이 비어 있습니다.",
+          400
+        );
+      }
+
+      if (existingNames.has(name) || selectedNames.has(name)) {
+        throwAppError(
+          ERROR_CODES.DUPLICATE_RESOURCE,
+          `중복과목이 발견되었습니다: ${name}`,
+          409
+        );
+      }
+
+      selectedNames.add(name);
+    }
+
+    // 최종 결과에 대한 검사 완료 후 저장 시작
+    for (let i = 0; i < sharedCount; i++) {
+      const current = currentRows[i];
+      const next = subjects[i];
+
+      await tx
+        .update(planSemesters)
+        .set({
+          subjectName: normalizeSubjectName(next.subjectName),
+          planCategory: next.category,
+          planRequirementType: next.requirementType,
+          settlementIncluded: next.settlementIncluded,
+          sortOrder: i,
+          retakeRequired: false,
+        } as any)
+        .where(
+          and(
+            eq(planSemesters.id, Number(current.id)),
+            eq(planSemesters.studentId, studentId),
+            eq(planSemesters.organizationId, organizationId)
+          )
+        );
+    }
+
+    for (let i = sharedCount; i < subjects.length; i++) {
+      const next = subjects[i];
+
+      await tx.insert(planSemesters).values({
+        organizationId,
+        studentId,
+        semesterNo,
+        subjectName: normalizeSubjectName(next.subjectName),
+        planCategory: next.category,
+        planRequirementType: next.requirementType,
+        credits: 3,
+        sortOrder: i,
+        settlementIncluded: next.settlementIncluded,
+        retakeRequired: false,
+      } as any);
+    }
+
+    return {
+      success: true,
+      appliedCount: subjects.length,
+      preservedCount: preservedRows.length,
+    };
+  });
+}
+
 export async function updatePlanSemester(
   id: number,
   data: Partial<InsertPlanSemester>,
@@ -37255,6 +37503,36 @@ if (
         eq(planSemesters.organizationId, organizationId)
       )
     );
+}
+
+export async function getPlanSemesterById(
+  id: number,
+  params?: { organizationId?: number | null }
+) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(params?.organizationId);
+
+  const rows = await db
+    .select()
+    .from(planSemesters)
+    .where(
+      and(
+        eq(planSemesters.id, id),
+        eq(planSemesters.organizationId, organizationId)
+      )
+    )
+    .limit(1);
+
+  return rows[0] ?? null;
 }
 
 export async function deletePlanSemester(
@@ -37374,12 +37652,69 @@ export async function createTransferSubject(data: InsertTransferSubject) {
 
   const organizationId = requireOrganizationId((data as any).organizationId);
 
+const subjectName = normalizeSubjectName(String(data.subjectName || ""));
+
+const [planRows, transferRows] = await Promise.all([
+  listPlanSemesters(Number(data.studentId), { organizationId }),
+  listTransferSubjects(Number(data.studentId), { organizationId }),
+]);
+
+const duplicatePlan = planRows.find(
+  (row: any) =>
+    normalizeSubjectName(row.subjectName) === subjectName &&
+    row.retakeRequired !== true
+);
+
+const duplicateTransfer = transferRows.find(
+  (row: any) => normalizeSubjectName(row.subjectName) === subjectName
+);
+
+if (duplicatePlan || duplicateTransfer) {
+  throwAppError(
+    ERROR_CODES.DUPLICATE_RESOURCE,
+    `이미 등록된 중복과목입니다: ${subjectName}`,
+    409
+  );
+}
+
   const result: any = await db.insert(transferSubjects).values({
     ...data,
     organizationId,
   } as any);
 
   return getInsertId(result);
+}
+
+export async function getTransferSubjectById(
+  id: number,
+  params?: { organizationId?: number | null }
+) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(
+    params?.organizationId
+  );
+
+  const rows = await db
+    .select()
+    .from(transferSubjects)
+    .where(
+      and(
+        eq(transferSubjects.id, id),
+        eq(transferSubjects.organizationId, organizationId)
+      )
+    )
+    .limit(1);
+
+  return rows[0] ?? null;
 }
 
 export async function updateTransferSubject(
@@ -37395,6 +37730,56 @@ export async function updateTransferSubject(
 );
 
 const organizationId = requireOrganizationId(params?.organizationId);
+
+if (data.subjectName !== undefined) {
+  const currentRows = await db
+    .select()
+    .from(transferSubjects)
+    .where(
+      and(
+        eq(transferSubjects.id, id),
+        eq(transferSubjects.organizationId, organizationId)
+      )
+    )
+    .limit(1);
+
+  const current = currentRows[0];
+
+  if (!current) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "전적대 과목을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  const subjectName = normalizeSubjectName(data.subjectName);
+
+  const [planRows, transferRows] = await Promise.all([
+    listPlanSemesters(Number(current.studentId), { organizationId }),
+    listTransferSubjects(Number(current.studentId), { organizationId }),
+  ]);
+
+  const duplicatePlan = planRows.find(
+    (row: any) =>
+      normalizeSubjectName(row.subjectName) === subjectName &&
+      row.retakeRequired !== true
+  );
+
+  const duplicateTransfer = transferRows.find(
+    (row: any) =>
+      Number(row.id) !== Number(id) &&
+      normalizeSubjectName(row.subjectName) === subjectName
+  );
+
+  if (duplicatePlan || duplicateTransfer) {
+    throwAppError(
+      ERROR_CODES.DUPLICATE_RESOURCE,
+      `이미 등록된 중복과목입니다: ${subjectName}`,
+      409
+    );
+  }
+}
 
   await db
     .update(transferSubjects)
@@ -37430,22 +37815,87 @@ const organizationId = requireOrganizationId(params?.organizationId);
     );
 }
 
-export async function bulkCreateTransferSubjects(dataList: InsertTransferSubject[]) {
+export async function bulkCreateTransferSubjects(
+  dataList: InsertTransferSubject[]
+) {
   const db = await getDb();
-  if (!db) throwAppError(
-  ERROR_CODES.INTERNAL_SERVER_ERROR,
-  "DB not available",
-  500
-);
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
   if (!dataList.length) return [];
 
   const normalized = dataList.map((row: any) => ({
     ...row,
     organizationId: requireOrganizationId(row.organizationId),
+    subjectName: normalizeSubjectName(row.subjectName),
   }));
 
-  const result = await db.insert(transferSubjects).values(normalized as any);
-  return result;
+  const studentIds = new Set(
+    normalized.map((row: any) =>
+      `${row.organizationId}:${row.studentId}`
+    )
+  );
+
+  if (studentIds.size !== 1) {
+    throwAppError(
+      ERROR_CODES.INVALID_INPUT,
+      "서로 다른 학생의 과목을 한 번에 등록할 수 없습니다.",
+      400
+    );
+  }
+
+  const { organizationId, studentId } = normalized[0];
+
+  const [planRows, transferRows] = await Promise.all([
+    listPlanSemesters(Number(studentId), { organizationId }),
+    listTransferSubjects(Number(studentId), { organizationId }),
+  ]);
+
+  const existingNames = new Set(
+    [
+      ...planRows
+        .filter((row: any) => row.retakeRequired !== true)
+        .map((row: any) => normalizeSubjectName(row.subjectName)),
+      ...transferRows.map((row: any) =>
+        normalizeSubjectName(row.subjectName)
+      ),
+    ].filter(Boolean)
+  );
+
+  const batchNames = new Set<string>();
+
+  for (const row of normalized) {
+    const subjectName = row.subjectName;
+
+    if (!subjectName) {
+      throwAppError(
+        ERROR_CODES.INVALID_INPUT,
+        "과목명을 입력해주세요.",
+        400
+      );
+    }
+
+    if (
+      existingNames.has(subjectName) ||
+      batchNames.has(subjectName)
+    ) {
+      throwAppError(
+        ERROR_CODES.DUPLICATE_RESOURCE,
+        `이미 등록된 중복과목입니다: ${subjectName}`,
+        409
+      );
+    }
+
+    batchNames.add(subjectName);
+  }
+
+  return db.insert(transferSubjects).values(normalized as any);
 }
 
 // ==============================

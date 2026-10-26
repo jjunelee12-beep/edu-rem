@@ -1623,6 +1623,16 @@ onQualificationApplication={() =>
     </button>
   </div>
 
+<div className="absolute right-4 top-4 z-20">
+  <a
+    href="/employment-center"
+    className="flex h-10 items-center rounded-xl border border-blue-200 bg-white/95 px-4 text-[12px] font-extrabold text-blue-700 shadow-sm"
+  >
+    취업정보센터 이동하기
+    <ChevronRight className="ml-1 h-4 w-4" />
+  </a>
+</div>
+
   <div className="relative z-10 flex min-h-screen flex-col px-5 pb-8 pt-12">
           <section className="mx-auto w-full max-w-[390px] text-center">
             {portal.companyLogoUrl ? (

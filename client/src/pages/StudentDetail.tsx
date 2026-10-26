@@ -774,26 +774,39 @@ const { data: subjectCatalogItemList } =
   const createPlanSemesterMut = trpc.planSemester.create.useMutation({
   onSuccess: async () => {
     if (isApplyingTemplate) return;
-    await utils.planSemester.list.invalidate({ studentId });
+    await Promise.all([
+      utils.planSemester.list.invalidate({ studentId }),
+      utils.creditSummary.student.getSummary.invalidate({ studentId }),
+    ]);
   },
   onError: (e) => toast.error(e.message),
 });
 
 const updatePlanSemesterMut = trpc.planSemester.update.useMutation({
   onSuccess: async () => {
-    if (isApplyingTemplate) return;
-    await utils.planSemester.list.invalidate({ studentId });
-  },
+  if (isApplyingTemplate) return;
+
+  await Promise.all([
+    utils.planSemester.list.invalidate({ studentId }),
+    utils.creditSummary.student.getSummary.invalidate({ studentId }),
+  ]);
+},
   onError: (e) => toast.error(e.message),
 });
 
 const deletePlanSemesterMut = trpc.planSemester.delete.useMutation({
   onSuccess: async () => {
     if (isApplyingTemplate) return;
-    await utils.planSemester.list.invalidate({ studentId });
+    await Promise.all([
+      utils.planSemester.list.invalidate({ studentId }),
+      utils.creditSummary.student.getSummary.invalidate({ studentId }),
+    ]);
   },
   onError: (e) => toast.error(e.message),
 });
+
+const applyPlanTemplateMut =
+  trpc.planSemester.applyTemplate.useMutation();
 
 const applySubjectCatalogItemsToSemester = async () => {
 if (isReadOnly) {
@@ -859,8 +872,15 @@ if (isReadOnly) {
   setIsApplyingTemplate(true);
 
   const currentRows = (planSemesterList || [])
-    .filter((row: any) => Number(row.semesterNo) === Number(templateDialogSemesterNo))
-    .sort((a: any, b: any) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
+  .filter(
+    (row: any) =>
+      Number(row.semesterNo) === Number(templateDialogSemesterNo)
+  )
+  .sort(
+    (a: any, b: any) =>
+      Number(a.sortOrder || 0) - Number(b.sortOrder || 0) ||
+      Number(a.id) - Number(b.id)
+  );
 
   for (const row of normalizedRows) {
     if (!row.subjectName) {
@@ -880,123 +900,78 @@ if (isReadOnly) {
     }
   }
 
-  const sharedCount = Math.min(currentRows.length, normalizedRows.length);
-
- // 1) 화면 먼저 즉시 덮어쓰기
-// 선택한 과목 수만 앞에서부터 덮어쓰고, 기존 나머지 과목은 삭제하지 않고 유지
-const overwrittenRows = currentRows.slice(0, sharedCount).map((current: any, i: number) => {
-  const next = normalizedRows[i];
-
-  return {
-    ...current,
-    subjectName: String(next.subjectName).trim(),
-    planCategory: next.normalizedCategory,
-    category: next.normalizedCategory,
-    planRequirementType: next.normalizedRequirementType,
-    requirementType: next.normalizedRequirementType,
-    semesterNo: Number(templateDialogSemesterNo),
-    sortOrder: i,
-settlementIncluded: !/실습|무료/.test(String(next.subjectName || "")),
-  };
-});
-
-const preservedRows = currentRows.slice(sharedCount);
-
-const createdRows = normalizedRows.slice(sharedCount).map((next: any, i: number) => ({
-  id: `temp-${templateDialogSemesterNo}-${i}-${Date.now()}`,
+  const result = await applyPlanTemplateMut.mutateAsync({
   studentId,
   semesterNo: Number(templateDialogSemesterNo),
-  subjectName: String(next.subjectName).trim(),
-  planCategory: next.normalizedCategory,
-  category: next.normalizedCategory,
-  planRequirementType: next.normalizedRequirementType,
-  requirementType: next.normalizedRequirementType,
-  sortOrder: sharedCount + i,
-  credits: 3,
-settlementIncluded: !/실습|무료/.test(String(next.subjectName || "")),
-}));
 
-const optimisticRows = [
-  ...overwrittenRows,
-  ...preservedRows,
-  ...createdRows,
-];
+  expectedRowIds: currentRows.map((row: any) => Number(row.id)),
 
-  const preservedOtherRows = (planSemesterList || []).filter(
-    (row: any) => Number(row.semesterNo) !== Number(templateDialogSemesterNo)
-  );
+  subjects: normalizedRows.map((row: any) => ({
+    subjectName: String(row.subjectName).trim(),
+    category: row.normalizedCategory,
+    requirementType: row.normalizedRequirementType,
+    settlementIncluded: !/실습|무료/.test(
+      String(row.subjectName || "")
+    ),
+  })),
+});
 
-  utils.planSemester.list.setData({ studentId }, [
-    ...preservedOtherRows,
-    ...optimisticRows,
+await Promise.all([
+  utils.planSemester.list.invalidate({ studentId }),
+  utils.creditSummary.student.getSummary.invalidate({ studentId }),
+]);
+
+toast.success(
+  `과목 ${result.appliedCount}개 적용 완료`
+);
+
+setTemplateDialogOpen(false);
+setSelectedTemplateIds([]);
+} catch (e: any) {
+  await Promise.all([
+    utils.planSemester.list.invalidate({ studentId }),
+    utils.creditSummary.student.getSummary.invalidate({ studentId }),
   ]);
 
-  // 2) 서버 작업은 병렬 처리
-  const updateJobs = Array.from({ length: sharedCount }).map((_, i) => {
-    const current = currentRows[i];
-    const next = normalizedRows[i];
-
-    return updatePlanSemesterMut.mutateAsync({
-      id: Number(current.id),
-      subjectName: String(next.subjectName).trim(),
-      category: next.normalizedCategory,
-      requirementType: next.normalizedRequirementType,
-      semesterNo: Number(templateDialogSemesterNo),
-      sortOrder: i,
-settlementIncluded: !/실습|무료/.test(String(next.subjectName || "")),
-    } as any);
-  });
-
-  const createJobs = normalizedRows.slice(sharedCount).map((next: any, i: number) =>
-    createPlanSemesterMut.mutateAsync({
-      studentId,
-      semesterNo: Number(templateDialogSemesterNo),
-      subjectName: String(next.subjectName).trim(),
-      category: next.normalizedCategory,
-      requirementType: next.normalizedRequirementType,
-      sortOrder: sharedCount + i,
-settlementIncluded: !/실습|무료/.test(String(next.subjectName || "")),
-    } as any)
+  toast.error(
+    e.message || "템플릿 적용 중 오류가 발생했습니다."
   );
-
-  await Promise.all([...updateJobs, ...createJobs]);
-
-  // 3) 마지막에 한 번만 동기화
-  await utils.planSemester.list.invalidate({ studentId });
-
-  toast.success(`과목 ${normalizedRows.length}개 덮어쓰기 완료`);
-  setTemplateDialogOpen(false);
-  setSelectedTemplateIds([]);
-} catch (e: any) {
-  await utils.planSemester.list.invalidate({ studentId });
-  toast.error(e.message || "일괄 등록 중 오류가 발생했습니다.");
 } finally {
   setIsApplyingTemplate(false);
 }
 };
 
   const updateTransferSubjectMut = trpc.transferSubject.update.useMutation({
-    onSuccess: async () => {
-      await utils.transferSubject.list.invalidate({ studentId });
-    },
-    onError: (e) => toast.error(e.message),
-  });
+  onSuccess: async () => {
+    await Promise.all([
+      utils.transferSubject.list.invalidate({ studentId }),
+      utils.creditSummary.student.getSummary.invalidate({ studentId }),
+    ]);
+  },
+  onError: (e) => toast.error(e.message),
+});
 
   const deleteTransferSubjectMut = trpc.transferSubject.delete.useMutation({
-    onSuccess: async () => {
-      await utils.transferSubject.list.invalidate({ studentId });
-      toast.success("전적대 과목 삭제 완료");
-    },
-    onError: (e) => toast.error(e.message),
-  });
+  onSuccess: async () => {
+    await Promise.all([
+      utils.transferSubject.list.invalidate({ studentId }),
+      utils.creditSummary.student.getSummary.invalidate({ studentId }),
+    ]);
+    toast.success("전적대 과목 삭제 완료");
+  },
+  onError: (e) => toast.error(e.message),
+});
 
   const bulkCreateTransferSubjectMut = trpc.transferSubject.bulkCreate.useMutation({
-    onSuccess: async (res) => {
-      await utils.transferSubject.list.invalidate({ studentId });
-      toast.success(`전적대 과목 ${res.count}개 추가 완료`);
-    },
-    onError: (e) => toast.error(e.message),
-  });
+  onSuccess: async (res) => {
+    await Promise.all([
+      utils.transferSubject.list.invalidate({ studentId }),
+      utils.creditSummary.student.getSummary.invalidate({ studentId }),
+    ]);
+    toast.success(`전적대 과목 ${res.count}개 추가 완료`);
+  },
+  onError: (e) => toast.error(e.message),
+});
 
   const createTransferAttachmentMut = trpc.transferAttachment.create.useMutation({
     onSuccess: async () => {
