@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 /** 고용24 공고의 실제 근무지 주소를 지도에 표시하는 취업정보센터 전용 지도 */
 export type EmploymentMapJob = {
@@ -19,9 +19,8 @@ export type LocatedEmploymentJob = EmploymentMapJob & {
 type Props = {
   jobs: EmploymentMapJob[];
   selectedId?: string | null;
-  searchAddress?: string;
+  referencePoint?: { lat: number; lng: number } | null;
   onSelectJob?: (job: EmploymentMapJob) => void;
-  onLocatedJobsChange?: (jobs: LocatedEmploymentJob[]) => void;
   className?: string;
 };
 
@@ -32,7 +31,6 @@ declare global {
 }
 
 const KEY = import.meta.env.VITE_KAKAO_MAP_JS_KEY;
-const addressCache = new Map<string, { lat: number; lng: number } | null>();
 let sdkPromise: Promise<any> | null = null;
 
 function loadKakao(): Promise<any> {
@@ -72,65 +70,6 @@ function loadKakao(): Promise<any> {
   return sdkPromise;
 }
 
-function findAddress(
-  kakao: any,
-  address: string,
-  allowKeywordFallback = false
-): Promise<{ lat: number; lng: number } | null> {
-  const key = `${allowKeywordFallback ? "search" : "address"}:${address.trim()}`;
-const query = address.trim();
-  if (!query) return Promise.resolve(null);
-
-  if (addressCache.has(key)) {
-    return Promise.resolve(addressCache.get(key)!);
-  }
-
-  return new Promise((resolve) => {
-    const geocoder = new kakao.maps.services.Geocoder();
-
-    geocoder.addressSearch(query, (results: any[], status: string) => {
-      if (status === kakao.maps.services.Status.OK && results?.length) {
-        const lat = Number(results[0].y);
-        const lng = Number(results[0].x);
-
-        const coord =
-          Number.isFinite(lat) && Number.isFinite(lng)
-            ? { lat, lng }
-            : null;
-
-        addressCache.set(key, coord);
-        resolve(coord);
-        return;
-      }
-
-if (!allowKeywordFallback) {
-  addressCache.set(key, null);
-  resolve(null);
-  return;
-}
-
-      // 정확한 주소가 아니면 장소명 검색으로 재시도
-      const places = new kakao.maps.services.Places();
-
-      places.keywordSearch(query, (items: any[], placeStatus: string) => {
-        const coord =
-          placeStatus === kakao.maps.services.Status.OK &&
-          items?.length &&
-          Number.isFinite(Number(items[0].y)) &&
-          Number.isFinite(Number(items[0].x))
-            ? {
-                lat: Number(items[0].y),
-                lng: Number(items[0].x),
-              }
-            : null;
-
-        addressCache.set(key, coord);
-        resolve(coord);
-      });
-    });
-  });
-}
-
 function markerImage(kakao: any, selected: boolean) {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="46" height="56" viewBox="0 0 46 56"><path d="M23 2C11 2 2 11 2 23c0 15 21 31 21 31s21-16 21-31C44 11 35 2 23 2Z" fill="#0967F6" stroke="${selected ? "#0F172A" : "white"}" stroke-width="${selected ? 3 : 2}"/><rect x="13" y="20" width="20" height="15" rx="3" fill="white"/><path d="M19 20v-3a4 4 0 0 1 8 0v3" fill="none" stroke="white" stroke-width="2.5"/><path d="M13 26h20" stroke="#0967F6" stroke-width="1.5"/></svg>`;
   return new kakao.maps.MarkerImage(
@@ -142,25 +81,27 @@ function markerImage(kakao: any, selected: boolean) {
 
 export default function EmploymentKakaoMap({
   jobs,
-  selectedId,
-  searchAddress,
+    selectedId,
+  referencePoint,
   onSelectJob,
-  onLocatedJobsChange,
   className = "h-full w-full",
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
-  const markersRef = useRef<any[]>([]);
-  const selectedIdRef = useRef(selectedId);
+    const markersRef = useRef<Map<string, any>>(new Map());
+  const referenceMarkerRef = useRef<any>(null);
   const selectRef = useRef(onSelectJob);
-  const locatedRef = useRef(onLocatedJobsChange);
+const latestJobsRef = useRef(
+  new Map<string, EmploymentMapJob>()
+);
+
+latestJobsRef.current = new Map(
+  jobs.map((job) => [String(job.id), job])
+);
   const [kakao, setKakao] = useState<any>(null);
   const [error, setError] = useState("");
-  const [located, setLocated] = useState<LocatedEmploymentJob[]>([]);
 
-  useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
   useEffect(() => { selectRef.current = onSelectJob; }, [onSelectJob]);
-  useEffect(() => { locatedRef.current = onLocatedJobsChange; }, [onLocatedJobsChange]);
 
   useEffect(() => {
     let active = true;
@@ -175,91 +116,172 @@ export default function EmploymentKakaoMap({
     }).catch((err) => { if (active) setError(err.message || "지도 로딩 실패"); });
     return () => {
       active = false;
-      markersRef.current.forEach((m) => m.setMap(null));
-      markersRef.current = [];
-      mapRef.current = null;
+      markersRef.current.forEach((marker) => {
+  marker.setMap(null);
+});
+
+markersRef.current.clear();
+
+referenceMarkerRef.current?.setMap(null);
+referenceMarkerRef.current = null;
+
+mapRef.current = null;
     };
   }, []);
 
-  useEffect(() => {
-    if (!kakao) return;
-    let cancelled = false;
-    (async () => {
-      const result: LocatedEmploymentJob[] = [];
-      // 카카오 지오코딩 과도 호출 방지: 순차 처리, 동일 주소는 캐시
-      for (const job of jobs) {
-        if (cancelled) return;
-        let coord: { lat: number; lng: number } | null = null;
-        const lat = job.latitude == null ? NaN : Number(job.latitude);
-const lng = job.longitude == null ? NaN : Number(job.longitude);
+  
+// 서버에서 전달받은 좌표를 그대로 사용
+const located = useMemo<LocatedEmploymentJob[]>(() => {
+  return jobs
+    .map((job) => {
+      const lat = Number(job.latitude);
+      const lng = Number(job.longitude);
 
-if (
-  Number.isFinite(lat) &&
-  Number.isFinite(lng) &&
-  lat >= -90 &&
-  lat <= 90 &&
-  lng >= -180 &&
-  lng <= 180
-) {
-  coord = { lat, lng };
-} else {
-  coord = await findAddress(kakao, job.address || "");
-}
-        result.push({ ...job, latitude: coord?.lat ?? null, longitude: coord?.lng ?? null });
+      if (
+        job.latitude == null ||
+        job.longitude == null ||
+        !Number.isFinite(lat) ||
+        !Number.isFinite(lng) ||
+        lat < -90 ||
+        lat > 90 ||
+        lng < -180 ||
+        lng > 180
+      ) {
+        return null;
       }
-      if (!cancelled) {
-        setLocated(result);
-        locatedRef.current?.(result);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [jobs, kakao]);
 
-  const draw = useCallback(() => {
-    const map = mapRef.current;
-    if (!map || !kakao) return;
-    markersRef.current.forEach((m) => m.setMap(null));
-    markersRef.current = [];
-    for (const job of located) {
-      if (job.latitude === null || job.longitude === null) continue;
-      const position = new kakao.maps.LatLng(job.latitude, job.longitude);
-      const marker = new kakao.maps.Marker({
+      return {
+        ...job,
+        latitude: lat,
+        longitude: lng,
+      };
+    })
+    .filter(
+      (job): job is LocatedEmploymentJob => job !== null
+    );
+}, [jobs]);
+
+// 공고 ID를 기준으로 마커를 추가·갱신·삭제
+useEffect(() => {
+  if (!kakao || !mapRef.current) return;
+
+  const map = mapRef.current;
+  const activeIds = new Set<string>();
+
+  for (const job of located) {
+    const id = String(job.id);
+    activeIds.add(id);
+
+    const position = new kakao.maps.LatLng(
+      job.latitude,
+      job.longitude
+    );
+
+    const selected = id === String(selectedId);
+
+    let marker = markersRef.current.get(id);
+
+    if (!marker) {
+      marker = new kakao.maps.Marker({
         map,
         position,
-        image: markerImage(kakao, String(job.id) === String(selectedIdRef.current)),
-        zIndex: String(job.id) === String(selectedIdRef.current) ? 20 : 5,
+        image: markerImage(kakao, selected),
+        zIndex: selected ? 20 : 5,
       });
-      kakao.maps.event.addListener(marker, "click", () => selectRef.current?.(job));
-      markersRef.current.push(marker);
+
+      kakao.maps.event.addListener(marker, "click", () => {
+        const currentJob = latestJobsRef.current.get(id);
+        if (currentJob) {
+          selectRef.current?.(currentJob);
+        }
+      });
+
+      markersRef.current.set(id, marker);
+    } else {
+      marker.setPosition(position);
+      marker.setImage(markerImage(kakao, selected));
+      marker.setZIndex(selected ? 20 : 5);
     }
-    // 마커 갱신 시 사용자가 선택한 지도 중심을 유지
-  }, [kakao, located]);
+  }
 
-  useEffect(() => { draw(); }, [draw]);
+  for (const [id, marker] of markersRef.current) {
+    if (!activeIds.has(id)) {
+      marker.setMap(null);
+      markersRef.current.delete(id);
+    }
+  }
+}, [kakao, located, selectedId]);
 
   useEffect(() => {
-    if (!kakao || !mapRef.current || !selectedId) return;
-    const job = located.find((item) => String(item.id) === String(selectedId));
-    if (!job || job.latitude === null || job.longitude === null) return;
-    mapRef.current.panTo(new kakao.maps.LatLng(job.latitude, job.longitude));
-    // 선택 마커만 강조하고 지도 전체 범위를 다시 맞추지 않음
-    markersRef.current.forEach((marker, i) => {
-      const mapped = located.filter((j) => j.latitude !== null && j.longitude !== null)[i];
-      if (mapped) marker.setImage(markerImage(kakao, String(mapped.id) === String(selectedId)));
+    if (!kakao || !mapRef.current) return;
+
+    referenceMarkerRef.current?.setMap(null);
+    referenceMarkerRef.current = null;
+
+    if (!referencePoint) return;
+
+    const position = new kakao.maps.LatLng(
+      referencePoint.lat,
+      referencePoint.lng
+    );
+
+    const marker = new kakao.maps.CustomOverlay({
+      position,
+      yAnchor: 0.5,
+      zIndex: 100,
+      content: `
+        <div style="
+          width:20px;
+          height:20px;
+          border:4px solid white;
+          border-radius:50%;
+          background:#0967F6;
+          box-shadow:0 0 0 8px rgba(9,103,246,.15),
+                     0 2px 8px rgba(0,0,0,.2);
+        "></div>
+      `,
     });
-  }, [selectedId, kakao, located]);
 
-  useEffect(() => {
-    if (!kakao || !mapRef.current || !searchAddress?.trim()) return;
-    let cancelled = false;
-    findAddress(kakao, searchAddress, true).then((coord) => {
-      if (!cancelled && coord && mapRef.current) {
-        mapRef.current.setCenter(new kakao.maps.LatLng(coord.lat, coord.lng));
-        mapRef.current.setLevel(5);
+    marker.setMap(mapRef.current);
+    referenceMarkerRef.current = marker;
+
+    return () => {
+      marker.setMap(null);
+      if (referenceMarkerRef.current === marker) {
+        referenceMarkerRef.current = null;
       }
-    });
-    return () => { cancelled = true; };
-  }, [kakao, searchAddress]);
+    };
+  }, [kakao, referencePoint]);
+
+ useEffect(() => {
+  if (!kakao || !mapRef.current || !selectedId) return;
+
+  const job = located.find(
+    (item) => String(item.id) === String(selectedId)
+  );
+
+  if (!job || job.latitude == null || job.longitude == null) {
+    return;
+  }
+
+  mapRef.current.panTo(
+    new kakao.maps.LatLng(job.latitude, job.longitude)
+  );
+}, [selectedId, kakao, located]);
+
+  useEffect(() => {
+  if (!kakao || !mapRef.current || !referencePoint) return;
+
+  const map = mapRef.current;
+
+  const position = new kakao.maps.LatLng(
+    referencePoint.lat,
+    referencePoint.lng
+  );
+
+  map.setCenter(position);
+  map.setLevel(5);
+}, [kakao, referencePoint?.lat, referencePoint?.lng]);
 
   if (error) return <div className="flex h-full items-center justify-center bg-slate-100 p-4 text-center text-sm text-red-600">{error}</div>;
   return <div ref={containerRef} className={className} aria-label="채용공고 근무지 지도" />;

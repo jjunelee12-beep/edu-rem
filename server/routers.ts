@@ -51,6 +51,8 @@ import { throwAppError } from "./_core/appError";
 import { ERROR_CODES } from "./_core/errorCodes";
 import {
   getWork24Jobs,
+  getWork24AllJobs,
+  getWork24NearbyJobs,
   getWork24JobDetail,
   getWork24Regions,
 } from "./work24.service";
@@ -3627,6 +3629,49 @@ export const appRouter = router({
       region: input.region,
     });
   }),
+
+    /**
+     * 거리순 검색 준비용 전체 채용공고 조회
+     * 등록회원 확인 토큰 필수
+     */
+    allJobs: publicProcedure
+      .input(
+        z.object({
+          token: z.string().min(1).max(1000),
+        })
+      )
+      .query(async ({ input }) => {
+        verifyEmploymentToken(input.token);
+
+        const result = await getWork24AllJobs();
+
+        return {
+          total: result.total,
+          jobs: result.jobs,
+          complete: result.complete,
+          fetchedAt: result.fetchedAt,
+        };
+      }),
+
+    /**
+     * 등록회원 전용 가까운 채용공고 30건 조회
+     */
+    nearbyJobs: publicProcedure
+      .input(
+        z.object({
+          token: z.string().min(1).max(1000),
+          lat: z.number().finite().min(-90).max(90),
+          lng: z.number().finite().min(-180).max(180),
+        })
+      )
+      .query(async ({ input }) => {
+        verifyEmploymentToken(input.token);
+
+        return getWork24NearbyJobs({
+          lat: input.lat,
+          lng: input.lng,
+        });
+      }),
 
     /**
      * 고용24 채용공고 상세

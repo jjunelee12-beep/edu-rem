@@ -1,20 +1,35 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
-import EmploymentKakaoMap, { type EmploymentMapJob, type LocatedEmploymentJob } from "@/components/EmploymentKakaoMap";
-import { ArrowLeft, ArrowRight, BriefcaseBusiness, ChevronLeft, ChevronRight, Clock3, ExternalLink, LocateFixed, LockKeyhole, MapPin, Search, ShieldCheck, SlidersHorizontal, X } from "lucide-react";
+import EmploymentKakaoMap, {
+  type EmploymentMapJob,
+} from "@/components/EmploymentKakaoMap";
+import {
+  ArrowLeft,
+  ArrowRight,
+  BriefcaseBusiness,
+  Clock3,
+  ExternalLink,
+  LocateFixed,
+  MapPin,
+  Search,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
 
 const BANNER = "/images/employment/practice-banner.png";
 const PRACTICE_URL = "https://narangedu.liveklass.com/classes/257714";
 const COMPANY_IMAGE = "/images/employment/company-default.png";
 const SESSION_KEY = "withone-employment-session";
 const STUDENT_PORTAL_URL = "https://edu-crm-five.vercel.app/portal/with-one";
-type Job = EmploymentMapJob & { employmentType?: string; registeredAt?: string; closesAt?: string; detailUrl?: string; occupationCode?: string };
+type Job = EmploymentMapJob & {
+  employmentType?: string;
+  registeredAt?: string;
+  closesAt?: string;
+  detailUrl?: string;
+  occupationCode?: string;
+  distanceKm?: number;
+};
 
-function kmBetween(a: {lat:number;lng:number}, b: {lat:number;lng:number}) {
-  const r = Math.PI / 180, dLat = (b.lat-a.lat)*r, dLng=(b.lng-a.lng)*r;
-  const v=Math.sin(dLat/2)**2+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dLng/2)**2;
-  return 6371*2*Math.atan2(Math.sqrt(v),Math.sqrt(1-v));
-}
 function readSession(): {token:string; expiresAt:number}|null {
   try { const data=JSON.parse(sessionStorage.getItem(SESSION_KEY)||"null"); return data?.token && data.expiresAt>Date.now()?data:null; } catch { return null; }
 }
@@ -25,93 +40,57 @@ export default function EmploymentCenterPage() {
   const [name,setName]=useState("");
   const [phone,setPhone]=useState("");
   const [loginError,setLoginError]=useState("");
-  const [page,setPage]=useState(1);
   const [keyword,setKeyword]=useState("");
   const [draftKeyword,setDraftKeyword]=useState("");
-  const [sort,setSort]=useState<"recent"|"distance">("recent");
   const [searchAddress,setSearchAddress]=useState("");
-const [regionFilter, setRegionFilter] = useState("");
-const [work24Region, setWork24Region] = useState("");
-const [selectedProvince, setSelectedProvince] = useState("");
-const [selectedDistrict, setSelectedDistrict] = useState("");
   const [draftAddress,setDraftAddress]=useState("");
   const [referencePoint,setReferencePoint]=useState<{lat:number;lng:number}|null>(null);
-  const [locatedJobs,setLocatedJobs]=useState<LocatedEmploymentJob[]>([]);
+// 주소 검색과 GPS 요청의 순서를 관리
+const locationRequestRef = useRef(0);
   const [selectedId,setSelectedId]=useState<string|null>(null);
   const [showDetail,setShowDetail]=useState(false);
   const [showList,setShowList]=useState(true);
   const [bannerFailed,setBannerFailed]=useState(false);
   const [imageFailed,setImageFailed]=useState(false);
   const verify=trpc.employmentCenter.verifyMember.useMutation();
-const regionsQuery = trpc.employmentCenter.regions.useQuery(
-  { token: session?.token || "" },
-  {
-    enabled: !!session?.token,
-    refetchOnWindowFocus: false,
-    staleTime: 24 * 60 * 60 * 1000,
-    retry: false,
-  }
-);
-
-const provinces = regionsQuery.data || [];
-
-const districts =
-  provinces.find((region) => region.code === selectedProvince)
-    ?.children || [];
-  const jobsQuery = trpc.employmentCenter.jobs.useQuery(
+ const jobsQuery = trpc.employmentCenter.nearbyJobs.useQuery(
   {
     token: session?.token || "",
-    page,
-    size: 30,
-    ...(work24Region ? { region: work24Region } : {}),
+    lat: referencePoint?.lat ?? 37.5665,
+    lng: referencePoint?.lng ?? 126.978,
   },
   {
-    enabled: !!session?.token,
+    enabled: !!session?.token && !!referencePoint,
     refetchOnWindowFocus: false,
     retry: false,
+    refetchInterval: (query) =>
+      query.state.data?.preparing ? 3000 : false,
   }
 );
-  const jobs=useMemo<Job[]>(()=> (jobsQuery.data?.jobs||[]) as Job[],[jobsQuery.data]);
+  const jobs = useMemo<Job[]>(() => {
+  if (!referencePoint || !jobsQuery.data) return [];
+
+  return (jobsQuery.data.jobs || []) as Job[];
+}, [jobsQuery.data, referencePoint]);
   const detailQuery=trpc.employmentCenter.jobDetail.useQuery({token:session?.token||"",wantedAuthNo:selectedId||""},{enabled:!!session?.token && !!selectedId && showDetail,retry:false,refetchOnWindowFocus:false});
   const selected=jobs.find(j=>j.id===selectedId)||null;
-  const positions=useMemo(()=>new Map(locatedJobs.map(j=>[j.id,j])),[locatedJobs]);
-const mapJobs = useMemo(() => {
-  const q = keyword.trim().toLowerCase();
-  const region = regionFilter.trim().toLowerCase();
-
-  return jobs.filter((job) => {
-    const text = `${job.company} ${job.title} ${job.address}`.toLowerCase();
-    const address = (job.address || "").toLowerCase();
-
-    return (
-      (!q || text.includes(q)) &&
-      (!region || address.includes(region))
-    );
-  });
-}, [jobs, keyword, regionFilter]);
-  const filtered=useMemo(()=>{
+const mapJobs = useMemo<Job[]>(
+  () => jobs.filter((job) => {
     const q = keyword.trim().toLowerCase();
-const region = regionFilter.trim().toLowerCase();
+    return (
+      !q ||
+      `${job.company} ${job.title} ${job.address}`
+        .toLowerCase()
+        .includes(q)
+    );
+  }),
+  [jobs, keyword]
+);
 
-const list = jobs.filter((j) => {
-  const text = `${j.company} ${j.title} ${j.address}`.toLowerCase();
-  const address = (j.address || "").toLowerCase();
-
-  const matchesKeyword = !q || text.includes(q);
-  const matchesRegion = !region || address.includes(region);
-
-  return matchesKeyword && matchesRegion;
-});
-    if(sort==="distance"&&referencePoint) list.sort((a,b)=>{
-      const pa=positions.get(a.id),pb=positions.get(b.id);
-      const da=pa?.latitude!=null&&pa.longitude!=null?kmBetween(referencePoint,{lat:pa.latitude,lng:pa.longitude}):Infinity;
-      const db=pb?.latitude!=null&&pb.longitude!=null?kmBetween(referencePoint,{lat:pb.latitude,lng:pb.longitude}):Infinity;
-      return da-db;
-    });
-    return list;
- },[jobs,keyword,regionFilter,sort,referencePoint,positions]);
-  const total=jobsQuery.data?.total||0;
-  const totalPages=Math.max(1,Math.ceil(total/30));
+const filtered = mapJobs;
+  const total = jobsQuery.data?.total ?? 0;
+const displayedCount = filtered.length;
+const nearbyCount = jobs.length;
 
   useEffect(()=>{
     if(!session)return;
@@ -120,40 +99,7 @@ const list = jobs.filter((j) => {
     const t=window.setTimeout(()=>{setSession(null);sessionStorage.removeItem(SESSION_KEY);},ms);
     return ()=>window.clearTimeout(t);
   },[session]);
-  useEffect(() => {
-  setSelectedId(null);
-  setShowDetail(false);
-  setLocatedJobs([]);
-}, [page, work24Region]);
-  useEffect(() => {
-  if (!searchAddress || !window.kakao?.maps?.services) return;
-
-  const kakao = window.kakao;
-  const geocoder = new kakao.maps.services.Geocoder();
-
-  geocoder.addressSearch(searchAddress, (items: any[], status: string) => {
-    if (status === kakao.maps.services.Status.OK && items?.length) {
-      setReferencePoint({
-        lat: Number(items[0].y),
-        lng: Number(items[0].x),
-      });
-      return;
-    }
-
-    const places = new kakao.maps.services.Places();
-
-    places.keywordSearch(searchAddress, (results: any[], placeStatus: string) => {
-      if (placeStatus === kakao.maps.services.Status.OK && results?.length) {
-        setReferencePoint({
-          lat: Number(results[0].y),
-          lng: Number(results[0].x),
-        });
-      } else {
-        setReferencePoint(null);
-      }
-    });
-  });
-}, [searchAddress]);
+  
   async function login(e:React.FormEvent){
     e.preventDefault();setLoginError("");
     const digits=phone.replace(/\D/g,"");
@@ -173,60 +119,236 @@ const list = jobs.filter((j) => {
   const address = draftAddress.trim();
   if (!address) return;
 
-  setSearchAddress(address);
-setPage(1);
+  // 이전 주소 검색 및 GPS 요청 무효화
+  const requestId = ++locationRequestRef.current;
 
-const kakao = window.kakao;
-  if (!kakao?.maps?.services) return;
+  const kakao = window.kakao;
 
-  const places = new kakao.maps.services.Places();
-
-  places.keywordSearch(address, (results: any[], status: string) => {
-    if (status === kakao.maps.services.Status.OK && results?.length) {
-      setReferencePoint({
-        lat: Number(results[0].y),
-        lng: Number(results[0].x),
-      });
-    }
-  });
-}
-  function findCurrentLocation(){
-    if(!navigator.geolocation){alert("위치 서비스를 사용할 수 없습니다.");return;}
-    navigator.geolocation.getCurrentPosition(pos=>{
-      setReferencePoint({lat:pos.coords.latitude,lng:pos.coords.longitude});
-      const kakao=window.kakao;
-      if(kakao?.maps?.services){new kakao.maps.services.Geocoder().coord2Address(pos.coords.longitude,pos.coords.latitude,(result:any[],status:string)=>{
-        if(status===kakao.maps.services.Status.OK&&result?.[0]){const addr=result[0].road_address?.address_name||result[0].address?.address_name||"";setDraftAddress(addr);setSearchAddress(addr);}
-      });}
-    },()=>alert("현재 위치를 확인할 수 없습니다. 주소를 직접 입력해주세요."),{enableHighAccuracy:false,timeout:10000});
+  if (!kakao?.maps?.services) {
+    alert("지도를 준비하고 있습니다. 잠시 후 다시 검색해주세요.");
+    return;
   }
 
-  if(!session)return <div className="min-h-screen bg-[#f3f7fc] text-slate-900">
-    <div className="mx-auto flex min-h-screen max-w-md flex-col px-6 py-8">
-      <a
-  href={STUDENT_PORTAL_URL}
-  className="mb-12 inline-flex items-center gap-2 text-sm font-semibold text-slate-500"
->
-  <ArrowLeft size={17} />
-  학생일정포털로 돌아가기
-</a>
-      <div className="mb-7 flex h-16 w-16 items-center justify-center rounded-[22px] bg-[#0967f6] text-white shadow-lg shadow-blue-200"><BriefcaseBusiness size={31}/></div>
-      <p className="text-sm font-extrabold tracking-wide text-blue-600">WITHONE EDUCATION</p>
-      <h1 className="mt-2 text-[31px] font-black leading-tight tracking-tight">위드원교육<br/>취업정보센터</h1>
-      <p className="mt-4 text-[15px] leading-7 text-slate-500">사회복지 분야 채용정보를 지도에서 한눈에 확인하세요.<br/>등록회원이라면 무료로 이용할 수 있습니다.</p>
-      <form onSubmit={login} className="mt-9 rounded-[28px] bg-white p-6 shadow-[0_15px_50px_rgba(15,49,92,.07)]">
-        <div className="mb-5 flex items-center gap-2 text-lg font-black"><ShieldCheck size={22} className="text-blue-600"/> 등록회원 확인</div>
-        <label className="mb-2 block text-sm font-bold text-slate-700">이름</label>
-        <input value={name} onChange={e=>setName(e.target.value)} autoComplete="name" placeholder="등록하신 이름" className="mb-5 h-13 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none focus:border-blue-500"/>
-        <label className="mb-2 block text-sm font-bold text-slate-700">휴대폰 번호</label>
-        <input value={phone} onChange={e=>setPhone(e.target.value)} inputMode="tel" autoComplete="tel" placeholder="01012345678" className="h-13 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none focus:border-blue-500"/>
-        {loginError&&<p role="alert" className="mt-3 text-sm text-red-600">{loginError}</p>}
-        <button disabled={verify.isPending} className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-[#0967f6] px-5 py-4 text-base font-black text-white disabled:opacity-60">{verify.isPending?"확인 중...":"채용정보 확인하기"}<ArrowRight size={19}/></button>
-        <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-xs text-slate-400"><LockKeyhole size={13}/> 이름과 연락처로 등록 여부만 확인합니다.</p>
-      </form>
-      <p className="mt-auto pt-10 text-center text-xs text-slate-400">채용정보 제공: 고용24 · 채용 여부는 공고에서 확인해주세요.</p>
+  const applyLocation = (lat: number, lng: number) => {
+    // 최신 검색 요청만 반영
+    if (requestId !== locationRequestRef.current) return;
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      alert("검색한 위치의 좌표를 확인할 수 없습니다.");
+      return;
+    }
+    setReferencePoint({ lat, lng });
+    setSelectedId(null);
+    setShowDetail(false);
+  };
+
+  const geocoder = new kakao.maps.services.Geocoder();
+
+  geocoder.addressSearch(
+    address,
+    (results: any[], status: string) => {
+      if (requestId !== locationRequestRef.current) return;
+
+      if (
+        status === kakao.maps.services.Status.OK &&
+        results?.length
+      ) {
+        applyLocation(
+          Number(results[0].y),
+          Number(results[0].x)
+        );
+        return;
+      }
+
+      const places = new kakao.maps.services.Places();
+
+      places.keywordSearch(
+        address,
+        (items: any[], placeStatus: string) => {
+          if (requestId !== locationRequestRef.current) return;
+
+          if (
+            placeStatus === kakao.maps.services.Status.OK &&
+            items?.length
+          ) {
+            applyLocation(
+              Number(items[0].y),
+              Number(items[0].x)
+            );
+          } else {
+            alert("검색한 지역을 찾을 수 없습니다.");
+          }
+        }
+      );
+    }
+  );
+}
+
+  function findCurrentLocation() {
+  const requestId = ++locationRequestRef.current;
+
+  if (!navigator.geolocation) {
+    alert("위치 서비스를 사용할 수 없습니다.");
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      if (requestId !== locationRequestRef.current) return;
+
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        alert("현재 위치의 좌표를 확인할 수 없습니다.");
+        return;
+      }
+
+      setReferencePoint({ lat, lng });
+      setDraftAddress("");
+      setSelectedId(null);
+      setShowDetail(false);
+    },
+    () => {
+      if (requestId !== locationRequestRef.current) return;
+
+      alert(
+        "현재 위치를 확인할 수 없습니다. 주소를 직접 입력해주세요."
+      );
+    },
+    {
+      enableHighAccuracy: false,
+      timeout: 10000,
+    }
+  );
+}
+
+    if (!session) return (
+    <div className="min-h-screen bg-[#f2f7fd] text-slate-900">
+      <div className="mx-auto min-h-screen max-w-[430px] bg-[#f2f7fd]">
+
+        {/* 상단 배너 */}
+        <div className="relative">
+          <img
+            src="/images/withone-employment-hero.png"
+            alt="위드원교육 취업정보센터"
+            className="block h-auto w-full"
+          />
+        </div>
+
+        {/* 등록회원 확인 */}
+        <div className="relative z-10 -mt-5 px-4">
+          <form
+            onSubmit={login}
+            className="rounded-[24px] bg-white px-5 pb-5 pt-6 shadow-[0_8px_30px_rgba(20,50,90,0.08)]"
+          >
+            <div className="mb-5">
+              <div className="mb-3 h-[3px] w-8 rounded-full bg-[#0967f6]" />
+
+              <h2 className="text-[21px] font-extrabold tracking-tight text-[#10223f]">
+                등록회원 확인
+              </h2>
+
+              <p className="mt-2 text-[13px] leading-5 text-slate-500">
+                위드원교육 수강생이라면
+                <br />
+                지금 바로 취업정보센터를 이용하실 수 있습니다.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label
+                  htmlFor="employment-member-name"
+                  className="mb-2 block text-[13px] font-bold text-slate-800"
+                >
+                  이름
+                </label>
+
+                <input
+                  id="employment-member-name"
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  autoComplete="name"
+                  placeholder="등록하신 이름을 입력해주세요"
+                  className="h-[48px] w-full rounded-xl border border-[#dce5f1] bg-[#f8fafc] px-4 text-[14px] outline-none transition-colors focus:border-[#0967f6] focus:bg-white"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="employment-member-phone"
+                  className="mb-2 block text-[13px] font-bold text-slate-800"
+                >
+                  휴대폰 번호
+                </label>
+
+                <input
+                  id="employment-member-phone"
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  inputMode="tel"
+                  autoComplete="tel"
+                  placeholder="01012345678"
+                  className="h-[48px] w-full rounded-xl border border-[#dce5f1] bg-[#f8fafc] px-4 text-[14px] outline-none transition-colors focus:border-[#0967f6] focus:bg-white"
+                />
+              </div>
+            </div>
+
+            {loginError && (
+              <p role="alert" className="mt-3 text-[13px] text-red-600">
+                {loginError}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={verify.isPending}
+              className="mt-5 flex h-[50px] w-full items-center justify-center gap-2 rounded-xl bg-[#0967f6] text-[15px] font-bold text-white shadow-[0_4px_12px_rgba(9,103,246,0.15)] transition-colors active:bg-blue-700 disabled:opacity-60"
+            >
+              {verify.isPending ? "확인 중..." : "채용정보 확인하기"}
+              <ArrowRight size={17} />
+            </button>
+
+            <p className="mt-4 text-center text-[11px] text-slate-400">
+              이름과 휴대폰 번호로 등록 여부만 확인합니다.
+            </p>
+          </form>
+        </div>
+
+        {/* 비수강생 교육과정 안내 */}
+        <div className="px-4 pb-5 pt-4">
+          <div className="rounded-[20px] bg-[#e7f0fc] px-5 py-5">
+            <h3 className="text-[16px] font-extrabold text-[#10223f]">
+              아직 수강생이 아니신가요?
+            </h3>
+
+            <p className="mt-2 text-[12px] leading-5 text-slate-600">
+              위드원교육의 사회복지사 자격증
+              <br />
+              교육과정을 확인해보세요.
+            </p>
+
+            <a
+              href="https://edu-crm-five.vercel.app/team/with-one"
+              className="mt-4 flex h-[42px] w-full items-center justify-center gap-2 rounded-xl border border-[#0967f6] bg-white text-[13px] font-bold text-[#0967f6]"
+            >
+              교육과정 보러가기
+              <ArrowRight size={15} />
+            </a>
+          </div>
+        </div>
+
+        <p className="px-5 pb-8 text-center text-[11px] leading-5 text-slate-400">
+          채용정보 제공: 고용24
+          <br />
+          실제 채용 조건과 마감 여부는 공고에서 확인해주세요.
+        </p>
+      </div>
     </div>
-  </div>;
+  );
 
   return <div className="min-h-screen bg-[#edf3fa] text-slate-900">
     <div className="relative mx-auto flex min-h-screen max-w-[560px] flex-col bg-white shadow-[0_0_40px_rgba(18,48,88,.09)]">
@@ -252,135 +374,95 @@ const kakao = window.kakao;
 </div>
         </div>
         <form onSubmit={searchPlace} className="mt-5 flex gap-2"><div className="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3.5"><MapPin size={19} className="shrink-0 text-blue-600"/><input value={draftAddress} onChange={e=>setDraftAddress(e.target.value)} placeholder="지역·주소 검색 (예: 서울 노원구)" className="min-w-0 flex-1 bg-transparent py-3.5 text-sm outline-none"/></div><button className="rounded-2xl bg-[#0967f6] px-4 text-sm font-bold text-white">검색</button><button type="button" onClick={findCurrentLocation} aria-label="현재 위치" className="rounded-2xl border border-slate-200 px-3 text-blue-600"><LocateFixed size={20}/></button></form>
-              <div className="mt-3 grid grid-cols-2 gap-2">
-          <select
-            aria-label="시·도 선택"
-            value={selectedProvince}
-            disabled={regionsQuery.isLoading || regionsQuery.isError}
-            onChange={(e) => {
-              const code = e.target.value;
-
-              setSelectedProvince(code);
-setSelectedDistrict("");
-setWork24Region(code);
-setRegionFilter("");
-setPage(1);
-
-const province = provinces.find((region) => region.code === code);
-
-if (province) {
-  setSearchAddress(province.name);
-} else {
-  setSearchAddress("");
-}
-            }}
-            className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-700"
-          >
-            <option value="">전국 시·도</option>
-            {provinces.map((region) => (
-              <option key={region.code} value={region.code}>
-                {region.name}
-              </option>
-            ))}
-          </select>
-
-          <select
-            aria-label="시·군·구 선택"
-            value={selectedDistrict}
-            disabled={!selectedProvince || districts.length === 0}
-            onChange={(e) => {
-              const code = e.target.value;
-
-              setSelectedDistrict(code);
-setWork24Region(code || selectedProvince);
-setPage(1);
-
-const province = provinces.find(
-  (region) => region.code === selectedProvince
-);
-
-const district = districts.find(
-  (region) => region.code === code
-);
-
-setSearchAddress(
-  [province?.name, district?.name].filter(Boolean).join(" ")
-);
-            }}
-            className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-700"
-          >
-            <option value="">전체 시·군·구</option>
-            {districts.map((district) => (
-              <option key={district.code} value={district.code}>
-                {district.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {regionsQuery.isError && (
-          <p className="mt-2 text-xs text-red-600">
-            지역 목록을 불러오지 못했습니다.
-            <button
-              type="button"
-              onClick={() => regionsQuery.refetch()}
-              className="ml-2 font-bold underline"
-            >
-              다시 시도
-            </button>
-          </p>
-        )}
       </header>
 
       <div className="relative h-[42vh] min-h-[280px] max-h-[470px] bg-slate-100">
         <EmploymentKakaoMap
   jobs={mapJobs}
   selectedId={selectedId}
-  searchAddress={searchAddress}
+  referencePoint={referencePoint}
   onSelectJob={selectJob}
-  onLocatedJobsChange={setLocatedJobs}
   className="h-full w-full"
 />
-        <div className="pointer-events-none absolute left-4 top-4 rounded-full bg-white/95 px-3 py-2 text-xs font-extrabold text-blue-700 shadow-md">지도에 표시된 공고 {locatedJobs.filter(j=>j.latitude!=null&&j.longitude!=null).length}건</div>
+        <div className="pointer-events-none absolute left-4 top-4 rounded-full bg-white/95 px-3 py-2 text-xs font-extrabold text-blue-700 shadow-md">지도에 표시된 공고 {mapJobs.filter(
+  job => job.latitude != null && job.longitude != null
+).length}건</div>
         <button onClick={()=>setShowList(v=>!v)} className="absolute bottom-4 right-4 flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-xs font-black text-blue-700 shadow-lg"><SlidersHorizontal size={16}/>{showList?"목록 접기":"공고 목록 보기"}</button>
       </div>
       {showList&&<section className="relative z-10 -mt-3 flex-1 rounded-t-[28px] bg-white px-4 pb-12 pt-5 shadow-[0_-8px_30px_rgba(14,41,80,.08)]">
         <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-200"/>
-        <div className="flex items-end justify-between"><div><p className="text-xs font-bold text-blue-600">사회복지 분야 채용정보</p><h2 className="mt-1 text-[21px] font-black">채용공고 <span className="text-blue-600">{total.toLocaleString()}건</span></h2></div><p className="text-[11px] text-slate-400">출처: 고용24</p></div>
-        <form onSubmit={e=>{e.preventDefault();setKeyword(draftKeyword)}} className="mt-4 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3"><Search size={18} className="text-slate-400"/><input value={draftKeyword} onChange={e=>setDraftKeyword(e.target.value)} placeholder="회사명 또는 공고명 검색 (현재 페이지)" className="min-w-0 flex-1 bg-transparent py-3 text-sm outline-none"/><button className="text-xs font-extrabold text-blue-600">검색</button></form>
-        <div className="mt-3 flex items-center justify-between"><div className="flex gap-2"><button onClick={()=>setSort("recent")} className={`rounded-full px-3 py-2 text-xs font-bold ${sort==="recent"?"bg-blue-600 text-white":"bg-slate-100 text-slate-600"}`}>최신순</button><button onClick={()=>setSort("distance")} className={`rounded-full px-3 py-2 text-xs font-bold ${sort==="distance"?"bg-blue-600 text-white":"bg-slate-100 text-slate-600"}`}>거리순</button></div><span className="text-[11px] text-slate-400">{page} / {totalPages} 페이지</span></div>
-{(regionFilter || work24Region) && (
-  <button
-    type="button"
-    onClick={() => {
-      setRegionFilter("");
-setWork24Region("");
-setSelectedProvince("");
-setSelectedDistrict("");
-setSearchAddress("");
-setDraftAddress("");
-setReferencePoint(null);
-setSort("recent");
-setPage(1);
-    }}
-    className="mt-3 rounded-full bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700"
-  >
-    지역 검색 해제 ×
-  </button>
-)}       
- {sort==="distance"&&!referencePoint&&<p className="mt-3 rounded-xl bg-blue-50 px-3 py-2 text-xs text-blue-700">거리순 정렬은 상단에서 기준 주소를 검색하거나 현재 위치를 선택해주세요.</p>}
-        {jobsQuery.isLoading&&<p className="py-12 text-center text-sm text-slate-500">채용공고를 불러오는 중입니다...</p>}
-        {jobsQuery.isError&&<div className="py-8 text-center text-sm text-red-600"><p>{jobsQuery.error.message}</p><button onClick={()=>jobsQuery.refetch()} className="mt-3 rounded-xl bg-blue-600 px-4 py-2 font-bold text-white">다시 시도</button></div>}
-        {!jobsQuery.isLoading&&!jobsQuery.isError&&filtered.length===0&&<p className="py-12 text-center text-sm text-slate-500">검색 조건에 맞는 채용공고가 없습니다.</p>}
+        <div className="flex items-end justify-between"><div><p className="text-xs font-bold text-blue-600">사회복지 분야 채용정보</p><h2 className="mt-1 text-[21px] font-black">
+  가까운 채용공고{" "}
+  <span className="text-blue-600">
+    {nearbyCount}건
+  </span>
+</h2></div><div className="text-right">
+  <p className="text-[11px] text-slate-400">
+    출처: 고용24
+  </p>
+  <p className="mt-1 text-[11px] text-slate-400">
+    전체 공고 {total.toLocaleString()}건
+  </p>
+</div></div>
+        <form onSubmit={e=>{e.preventDefault();setKeyword(draftKeyword)}} className="mt-4 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3"><Search size={18} className="text-slate-400"/><input value={draftKeyword} onChange={e=>setDraftKeyword(e.target.value)} placeholder="회사명 또는 공고명 검색 (가까운 30건)" className="min-w-0 flex-1 bg-transparent py-3 text-sm outline-none"/><button className="text-xs font-extrabold text-blue-600">검색</button></form>
+        <div className="mt-3 flex items-center justify-between">
+  <span className="text-xs font-bold text-blue-600">
+    거리순으로 표시 중
+  </span>
+  <span className="text-[11px] text-slate-400">
+    가까운 공고 {displayedCount}건
+  </span>
+</div>
+        {!referencePoint && (
+  <p className="py-8 text-center text-sm text-slate-500">
+    상단에서 주소를 검색하거나 현재 위치를 선택해주세요.
+  </p>
+)}
+
+{referencePoint && jobsQuery.isLoading && (
+  <p className="py-8 text-center text-sm text-slate-500">
+    채용공고를 조회하고 있습니다...
+  </p>
+)}
+
+{jobsQuery.data?.preparing && (
+  <p>
+    주변 채용공고를 검색하고 있습니다.
+    검색된 공고부터 순서대로 표시됩니다.
+  </p>
+)}
+{jobsQuery.isError && (
+  <div className="py-8 text-center">
+    <p className="text-sm text-red-600">
+      채용공고를 불러오지 못했습니다.
+    </p>
+
+    <p className="mt-2 text-xs text-slate-500">
+      {jobsQuery.error.message}
+    </p>
+
+    <button
+      type="button"
+      onClick={() => jobsQuery.refetch()}
+      className="mt-3 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white"
+    >
+      다시 시도
+    </button>
+  </div>
+)}
+
+        {referencePoint &&
+!jobsQuery.isLoading &&
+!jobsQuery.isError &&
+!jobsQuery.data?.preparing &&
+filtered.length === 0&&<p className="py-12 text-center text-sm text-slate-500">검색 조건에 맞는 채용공고가 없습니다.</p>}
         <div className="mt-4 space-y-3">{filtered.map(job=>{
-          const pos=positions.get(job.id);
-          const distance=referencePoint&&pos?.latitude!=null&&pos.longitude!=null?kmBetween(referencePoint,{lat:pos.latitude,lng:pos.longitude}):null;
+          const distance = job.distanceKm ?? null;
           return <button key={job.id} onClick={()=>selectJob(job)} className={`flex w-full gap-3 rounded-2xl border p-3.5 text-left transition-colors ${selectedId===job.id?"border-blue-400 bg-blue-50":"border-slate-100 bg-white shadow-[0_4px_16px_rgba(18,48,88,.05)]"}`}>
             <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-blue-50">{!imageFailed?<img src={COMPANY_IMAGE} alt="공통 복지시설 이미지" className="h-full w-full object-cover" onError={()=>setImageFailed(true)}/>:<div className="flex h-full w-full items-center justify-center text-blue-500"><BriefcaseBusiness size={26}/></div>}</div>
             <div className="min-w-0 flex-1"><p className="truncate text-xs font-bold text-blue-600">{job.company||"회사명 미표기"}</p><h3 className="mt-1 line-clamp-2 text-[14px] font-extrabold leading-snug">{job.title}</h3><p className="mt-2 flex items-start gap-1 text-xs text-slate-500"><MapPin size={13} className="mt-0.5 shrink-0"/><span className="line-clamp-1">{job.address||"근무지 확인 필요"}{distance!==null?` · ${distance.toFixed(1)}km`:""}</span></p><div className="mt-2 flex items-center justify-between gap-1"><span className="line-clamp-1 text-xs font-extrabold text-slate-800">{job.salary||"급여 정보 확인"}</span><span className="shrink-0 text-[11px] text-slate-400">{shortDate(job.closesAt)} 마감</span></div></div>
           </button>;
         })}</div>
-        {totalPages>1&&<div className="mt-6 flex items-center justify-center gap-4"><button disabled={page<=1} onClick={()=>setPage(v=>v-1)} className="flex items-center gap-1 rounded-xl border px-3 py-2 text-sm font-bold disabled:opacity-30"><ChevronLeft size={17}/> 이전</button><span className="text-sm font-bold">{page} / {totalPages}</span><button disabled={page>=totalPages} onClick={()=>setPage(v=>v+1)} className="flex items-center gap-1 rounded-xl border px-3 py-2 text-sm font-bold disabled:opacity-30">다음 <ChevronRight size={17}/></button></div>}
         <a
   href={PRACTICE_URL}
   target="_blank"
