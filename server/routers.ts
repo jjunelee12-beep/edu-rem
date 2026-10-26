@@ -3448,6 +3448,104 @@ async function completeStudentPortalAdministrativeProcedure(
   };
 }
 
+async function assertPlanSemesterWritePermission(
+  ctx: any,
+  planSemesterId: number
+) {
+  const organizationId = getCtxOrganizationId(ctx);
+
+  const planRows = await db.getPlanSemesterById(
+    planSemesterId,
+    { organizationId }
+  );
+
+  if (!planRows) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "과목을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  const student = await db.getStudent(
+    Number(planRows.studentId),
+    { organizationId }
+  );
+
+  if (!student) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "학생을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  const assigneeId = Number(student.assigneeId || 0);
+const userId = Number(ctx.user?.id || 0);
+
+const canEdit =
+  ctx.user?.role === "host" ||
+  ctx.user?.role === "superhost" ||
+  (userId > 0 && assigneeId === userId);
+
+  if (!canEdit) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "해당 학생의 과목을 수정할 권한이 없습니다.",
+      403
+    );
+  }
+}
+
+async function assertTransferSubjectWritePermission(
+  ctx: any,
+  transferSubjectId: number
+) {
+  const organizationId = getCtxOrganizationId(ctx);
+
+  const transferRow = await db.getTransferSubjectById(
+    transferSubjectId,
+    { organizationId }
+  );
+
+  if (!transferRow) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "전적대 과목을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  const student = await db.getStudent(
+    Number(transferRow.studentId),
+    { organizationId }
+  );
+
+  if (!student) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "학생을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  const assigneeId = Number(student.assigneeId || 0);
+  const userId = Number(ctx.user?.id || 0);
+
+  const canEdit =
+    ctx.user?.role === "host" ||
+    ctx.user?.role === "superhost" ||
+    (userId > 0 && assigneeId === userId);
+
+  if (!canEdit) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "해당 학생의 전적대 과목을 수정할 권한이 없습니다.",
+      403
+    );
+  }
+}
+
 export const appRouter = router({
 
   // ─── 위드원교육 취업정보센터 ─────────────────────
@@ -34687,55 +34785,6 @@ return { success: true };
 }),
   }),
 
-async function assertPlanSemesterWritePermission(
-  ctx: any,
-  planSemesterId: number
-) {
-  const organizationId = getCtxOrganizationId(ctx);
-
-  const planRows = await db.getPlanSemesterById(
-    planSemesterId,
-    { organizationId }
-  );
-
-  if (!planRows) {
-    throwAppError(
-      ERROR_CODES.DATA_NOT_FOUND,
-      "과목을 찾을 수 없습니다.",
-      404
-    );
-  }
-
-  const student = await db.getStudent(
-    Number(planRows.studentId),
-    { organizationId }
-  );
-
-  if (!student) {
-    throwAppError(
-      ERROR_CODES.DATA_NOT_FOUND,
-      "학생을 찾을 수 없습니다.",
-      404
-    );
-  }
-
-  const assigneeId = Number(student.assigneeId || 0);
-const userId = Number(ctx.user?.id || 0);
-
-const canEdit =
-  ctx.user?.role === "host" ||
-  ctx.user?.role === "superhost" ||
-  (userId > 0 && assigneeId === userId);
-
-  if (!canEdit) {
-    throwAppError(
-      ERROR_CODES.PERMISSION_DENIED,
-      "해당 학생의 과목을 수정할 권한이 없습니다.",
-      403
-    );
-  }
-}
-
   planSemester: router({
     list: protectedProcedure
       .input(z.object({ studentId: z.number() }))
@@ -34928,55 +34977,6 @@ if (
         return { success: true };
       }),
   }),
-
-async function assertTransferSubjectWritePermission(
-  ctx: any,
-  transferSubjectId: number
-) {
-  const organizationId = getCtxOrganizationId(ctx);
-
-  const transferRow = await db.getTransferSubjectById(
-    transferSubjectId,
-    { organizationId }
-  );
-
-  if (!transferRow) {
-    throwAppError(
-      ERROR_CODES.DATA_NOT_FOUND,
-      "전적대 과목을 찾을 수 없습니다.",
-      404
-    );
-  }
-
-  const student = await db.getStudent(
-    Number(transferRow.studentId),
-    { organizationId }
-  );
-
-  if (!student) {
-    throwAppError(
-      ERROR_CODES.DATA_NOT_FOUND,
-      "학생을 찾을 수 없습니다.",
-      404
-    );
-  }
-
-  const assigneeId = Number(student.assigneeId || 0);
-  const userId = Number(ctx.user?.id || 0);
-
-  const canEdit =
-    ctx.user?.role === "host" ||
-    ctx.user?.role === "superhost" ||
-    (userId > 0 && assigneeId === userId);
-
-  if (!canEdit) {
-    throwAppError(
-      ERROR_CODES.PERMISSION_DENIED,
-      "해당 학생의 전적대 과목을 수정할 권한이 없습니다.",
-      403
-    );
-  }
-}
 
   transferSubject: router({
     list: protectedProcedure
