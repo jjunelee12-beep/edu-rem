@@ -91,6 +91,10 @@ export async function getWork24Jobs(options: { page?: number; size?: number; occ
 region: options.region || "",
 certLic: "6005946",
   });
+console.log(
+  "[Work24 Regions] GO24 응답 확인:",
+  JSON.stringify(xml?.GO24 ?? {}).slice(0, 3000)
+);
   const root = xml?.wantedRoot;
   if (!root) throw new Error("고용24 응답 형식이 예상과 다릅니다. 원본 XML 구조를 확인하세요.");
   const items = root.wanted == null ? [] : Array.isArray(root.wanted) ? root.wanted : [root.wanted];
