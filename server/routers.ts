@@ -35145,7 +35145,7 @@ const student = await db.getStudent(input.studentId, {
   organizationId,
   studentId: input.studentId,
           schoolName: input.schoolName?.trim() || "전적대",
-          subjectName: `새 과목${existingCount + i + 1}`,
+          subjectName: `전적대 새 과목${existingCount + i + 1}`,
           transferCategory: "전공" as const,
           transferRequirementType: "전공선택" as const,
           credits: 3,

@@ -2860,7 +2860,7 @@ if (ENABLE_PLAN_REQUIREMENT) {
       {
         studentId,
         semesterNo,
-        subjectName: `새 과목${current.length + 1}`,
+        subjectName: `${semesterNo}학기 새 과목${current.length + 1}`,
         category: "전공",
         requirementType: "전공선택",
         sortOrder: current.length,

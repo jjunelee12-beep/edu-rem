@@ -16811,7 +16811,7 @@ export async function executeSemesterCreateTransaction(
                   semesterOrder,
 
                 subjectName:
-                  `새 과목${index + 1}`,
+  `${semesterOrder}학기 새 과목${index + 1}`,
 
                 planCategory:
                   "전공",
@@ -37593,7 +37593,7 @@ const organizationId = requireOrganizationId(params?.organizationId);
         organizationId,
         studentId,
         semesterNo,
-        subjectName: `새 과목${i + 1}`,
+        subjectName: `${semesterNo}학기 새 과목${i + 1}`,
         planCategory: "전공",
         planRequirementType: "전공선택",
         credits: 3,
