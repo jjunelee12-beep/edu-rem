@@ -665,6 +665,18 @@ function assertExternalRequestEditable(params: {
 const WITHONE_ORGANIZATION_ID = 1;
 const WITHONE_ASSIGNEE_ID = 7;
 
+function isWithOneTrialMember(
+  organizationId: number,
+  clientName: string,
+  phone: string
+): boolean {
+  return (
+    organizationId === WITHONE_ORGANIZATION_ID &&
+    clientName.trim() === "테스트" &&
+    phone.replace(/\D/g, "") === "01093117148"
+  );
+}
+
 
 /**
  * 취업정보센터 전용 접근 토큰
@@ -691,11 +703,18 @@ function getEmploymentTokenSecret(): string {
   return secret;
 }
 
-function createEmploymentToken(): string {
+function createEmploymentToken(
+  maxExpiresAt?: Date
+): string {
   const payload = Buffer.from(
     JSON.stringify({
       scope: "employment_jobs",
-      exp: Date.now() + EMPLOYMENT_TOKEN_TTL_MS,
+      exp: Math.min(
+  Date.now() + EMPLOYMENT_TOKEN_TTL_MS,
+  maxExpiresAt
+    ? maxExpiresAt.getTime()
+    : Number.POSITIVE_INFINITY
+),
       nonce: randomBytes(16).toString("hex"),
     })
   ).toString("base64url");
@@ -3015,6 +3034,23 @@ async function requireStudentPortalCommunityContext(
     );
   }
 
+  const student = await db.getStudentById(studentId, {
+    organizationId,
+  });
+
+  if (
+    student &&
+    String(student.clientName ?? "").trim() === "테스트" &&
+    String(student.phone ?? "").replace(/\D/g, "") ===
+      "01093117148"
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "무료 체험 계정은 커뮤니티를 이용할 수 없습니다.",
+      403
+    );
+  }
+
   /**
    * 3. 회사별 커뮤니티 설정
    */
@@ -3559,7 +3595,10 @@ export const appRouter = router({
       .input(
         z.object({
           clientName: z.string().trim().min(2).max(50),
-          phone: z.string().trim().min(10).max(20),
+phone: z.string().trim().min(10).max(20),
+deviceToken: z.string()
+  .regex(/^[a-f0-9]{64}$/i)
+  .optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -3567,28 +3606,75 @@ export const appRouter = router({
 
         checkEmploymentLoginLimit(ip);
 
-        const matched =
-          await db.verifyEmploymentCenterMember({
-            organizationId: WITHONE_ORGANIZATION_ID,
-            clientName: input.clientName,
-            phone: input.phone,
-          });
+       const verification =
+  await db.findStudentForKakaoVerification({
+    organizationId: WITHONE_ORGANIZATION_ID,
+    clientName: input.clientName,
+    phone: input.phone,
+  });
 
-        if (!matched) {
-          return {
-            success: false as const,
-            token: null,
-            expiresInSeconds: 0,
-            message: "등록회원 정보를 확인할 수 없습니다.",
-          };
-        }
+if (!verification.matched || !verification.student) {
+  return {
+    success: false as const,
+    token: null,
+    expiresInSeconds: 0,
+    message: "등록회원 정보를 확인할 수 없습니다.",
+  };
+}
 
-        return {
-          success: true as const,
-          token: createEmploymentToken(),
-          expiresInSeconds: 1800,
-          message: "등록회원 확인이 완료되었습니다.",
-        };
+const isTrial = isWithOneTrialMember(
+  WITHONE_ORGANIZATION_ID,
+  input.clientName,
+  input.phone
+);
+
+let trialExpiresAt: Date | undefined;
+
+if (isTrial) {
+  if (!input.deviceToken) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "체험 기기 정보를 확인할 수 없습니다.",
+      400
+    );
+  }
+
+  const trial = await db.getOrCreateStudentPortalTrial({
+    organizationId: WITHONE_ORGANIZATION_ID,
+    studentId: Number(verification.student.id),
+    deviceToken: input.deviceToken,
+  });
+
+  if (!trial.usable) {
+    return {
+      success: false as const,
+      token: null,
+      expiresInSeconds: 0,
+      message: "24시간 무료 체험 기간이 종료되었습니다.",
+    };
+  }
+
+  trialExpiresAt = new Date(trial.expiresAt);
+}
+
+const expiresInSeconds = trialExpiresAt
+  ? Math.max(
+      1,
+      Math.ceil(
+        Math.min(
+          EMPLOYMENT_TOKEN_TTL_MS,
+          trialExpiresAt.getTime() - Date.now()
+        ) / 1000
+      )
+    )
+  : 1800;
+
+return {
+  success: true as const,
+  token: createEmploymentToken(trialExpiresAt),
+  expiresInSeconds,
+  message: "등록회원 확인이 완료되었습니다.",
+};
       }),
 
 
@@ -3883,6 +3969,16 @@ export const appRouter = router({
                   30,
                   "연락처 형식이 올바르지 않습니다."
                 ),
+
+
+            deviceToken: z
+              .string()
+              .regex(
+                /^[a-f0-9]{64}$/i,
+                "체험 기기 정보가 올바르지 않습니다."
+              )
+              .optional(),
+
           })
         )
         .mutation(
@@ -3919,6 +4015,43 @@ export const appRouter = router({
               );
             }
 
+
+            const isTrialAccount =
+              String(result.student.clientName ?? "").trim() ===
+                "테스트" &&
+              String(result.student.phone ?? "")
+                .replace(/\D/g, "") === "01093117148";
+
+            let trialExpiresAt: Date | undefined;
+
+            if (isTrialAccount) {
+              if (!input.deviceToken) {
+                throwAppError(
+                  ERROR_CODES.INVALID_REQUEST,
+                  "무료 체험을 위한 브라우저 정보가 필요합니다.",
+                  400
+                );
+              }
+
+              const trial =
+                await db.getOrCreateStudentPortalTrial({
+                  organizationId: result.portal.organizationId,
+                  studentId: Number(result.student.id),
+                  deviceToken: input.deviceToken,
+                });
+
+              if (!trial.usable) {
+                throwAppError(
+                  ERROR_CODES.PERMISSION_DENIED,
+                  "24시간 무료 체험이 종료되었습니다.",
+                  403
+                );
+              }
+
+              trialExpiresAt = new Date(trial.expiresAt);
+            }
+
+
             const session =
               await db.createStudentPortalSession({
                 organizationId:
@@ -3932,6 +4065,10 @@ export const appRouter = router({
 
                 expiresInDays:
                   7,
+
+
+                maxExpiresAt: trialExpiresAt,
+
               });
 
             return {
@@ -4059,6 +4196,12 @@ export const appRouter = router({
             return {
               authenticated:
                 true as const,
+
+  isTrialAccount:
+    String(session.student?.clientName ?? "").trim() ===
+      "테스트" &&
+    String(session.student?.phone ?? "")
+      .replace(/\D/g, "") === "01093117148",
 
               student: {
                 clientName:

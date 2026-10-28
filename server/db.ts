@@ -164,8 +164,9 @@ type InsertStudentAiEvent,
 studentPortalSettings,
 type InsertStudentPortalSetting,
 
-studentPortalSessions,
-type InsertStudentPortalSession,
+  studentPortalSessions,
+  type InsertStudentPortalSession,
+  studentPortalTrialDevices,
 
 communitySettings,
 communityBoards,
@@ -1322,6 +1323,111 @@ export async function authenticateStudentPortalMember(
 
 
 /**
+ * 테스트 계정 전용 브라우저별 24시간 체험 기록.
+ *
+ * 최초 접속 시에만 기록을 생성하며,
+ * 재접속하더라도 만료 시간을 연장하지 않는다.
+ */
+export async function getOrCreateStudentPortalTrial(
+  params: {
+    organizationId: number;
+    studentId: number;
+    deviceToken: string;
+  }
+) {
+  const database = await getDb();
+
+  if (!database) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(params.organizationId);
+
+  const studentId = Math.floor(Number(params.studentId));
+
+  if (!Number.isSafeInteger(studentId) || studentId <= 0) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "학생 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const deviceToken = String(params.deviceToken || "").trim();
+
+  if (!/^[a-f0-9]{64}$/i.test(deviceToken)) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "체험 기기 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const deviceTokenHash = createHash("sha256")
+    .update(deviceToken, "utf8")
+    .digest("hex");
+
+  const now = new Date();
+  const expiresAt = new Date(
+    now.getTime() + 24 * 60 * 60 * 1000
+  );
+
+  // 중복 접속 시 최초 기록 유지
+  await database
+    .insert(studentPortalTrialDevices)
+    .values({
+      organizationId,
+      studentId,
+      deviceTokenHash,
+      startedAt: now,
+      expiresAt,
+    })
+    .onDuplicateKeyUpdate({
+      set: {
+        deviceTokenHash:
+          sql`${studentPortalTrialDevices.deviceTokenHash}`,
+      },
+    });
+
+  const rows = await database
+    .select()
+    .from(studentPortalTrialDevices)
+    .where(
+      and(
+        eq(studentPortalTrialDevices.organizationId, organizationId),
+        eq(studentPortalTrialDevices.studentId, studentId),
+        eq(studentPortalTrialDevices.deviceTokenHash, deviceTokenHash)
+      )
+    )
+    .limit(1);
+
+  const trial = rows[0];
+
+  if (!trial) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "체험 기록을 확인하지 못했습니다.",
+      500
+    );
+  }
+
+  const remainingMs =
+    new Date(trial.expiresAt).getTime() - Date.now();
+
+  return {
+    usable: remainingMs > 0,
+    expiresAt: trial.expiresAt,
+    remainingMs: Math.max(0, remainingMs),
+  };
+}
+
+
+/**
  * 인증 성공 후 학생 포탈 세션 생성.
  *
  * 세션 기본 유효기간:
@@ -1330,6 +1436,7 @@ export async function authenticateStudentPortalMember(
  * DB에는 원본 Token이 아닌
  * SHA-256 tokenHash만 저장한다.
  */
+
 export async function createStudentPortalSession(
   params: {
     organizationId?: number | null;
@@ -1337,8 +1444,11 @@ export async function createStudentPortalSession(
     studentId: number;
 
     expiresInDays?: number;
+
+    maxExpiresAt?: Date;
   }
-) {
+)
+ {
   const db =
     await getDb();
 
@@ -1420,15 +1530,32 @@ export async function createStudentPortalSession(
   const now =
     new Date();
 
-  const expiresAt =
-    new Date(
-      now.getTime() +
-      expiresInDays *
-        24 *
-        60 *
-        60 *
-        1000
+  
+  const defaultExpiresAt = new Date(
+    now.getTime() +
+      expiresInDays * 24 * 60 * 60 * 1000
+  );
+
+  const expiresAt = params.maxExpiresAt
+    ? new Date(
+        Math.min(
+          defaultExpiresAt.getTime(),
+          new Date(params.maxExpiresAt).getTime()
+        )
+      )
+    : defaultExpiresAt;
+
+  if (
+    !Number.isFinite(expiresAt.getTime()) ||
+    expiresAt.getTime() <= Date.now()
+  ) {
+    throwAppError(
+      ERROR_CODES.AUTH_REQUIRED,
+      "무료 체험 기간이 종료되었습니다.",
+      403
     );
+  }
+
 
   const result: any =
     await db

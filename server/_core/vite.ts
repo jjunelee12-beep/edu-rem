@@ -411,15 +411,19 @@ if (!portal) {
   return html;
 }
 
-      title =
-        String(
-          portal.portalName ||
-          portal.companyName ||
-          "업무포탈"
-        ).trim();
+            title =
+        slug === "with-one"
+          ? "맘편한케어반 학생일정포털"
+          : String(
+              portal.portalName ||
+              portal.companyName ||
+              "업무포탈"
+            ).trim();
 
       description =
-        "등록회원 전용 업무포탈입니다.";
+        slug === "with-one"
+          ? "맘편한케어반 전용 학생일정포털입니다."
+          : "맘편한케어반 전용 업무포탈입니다.";
 
       siteName =
         String(
@@ -428,11 +432,13 @@ if (!portal) {
           "EduCanvas"
         ).trim();
 
-      shareImageUrl =
-        String(
-          portal.shareImageUrl ||
-          ""
-        ).trim();
+            shareImageUrl =
+        slug === "with-one"
+          ? "/images/mam-care-student-portal.png"
+          : String(
+              portal.shareImageUrl ||
+              ""
+            ).trim();
 
       companyLogoUrl =
         String(

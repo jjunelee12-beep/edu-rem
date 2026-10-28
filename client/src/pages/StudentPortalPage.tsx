@@ -6,6 +6,47 @@ import StudentPortalCommunity from "./StudentPortalCommunity";
 
 const PORTAL_TOKEN_KEY_PREFIX = "student_portal_token:";
 
+
+const PORTAL_TRIAL_DEVICE_KEY_PREFIX = "student_portal_trial_device:";
+
+
+const PORTAL_TRIAL_EXPIRES_KEY_PREFIX =
+  "student_portal_trial_expires:";
+
+function formatTrialRemaining(ms: number): string {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  return [hours, minutes, seconds]
+    .map(value => String(value).padStart(2, "0"))
+    .join(":");
+}
+
+
+function getPortalTrialDeviceToken(slug: string): string {
+  const storageKey = `${PORTAL_TRIAL_DEVICE_KEY_PREFIX}${slug}`;
+
+  const saved = window.localStorage.getItem(storageKey);
+
+  if (saved && /^[a-f0-9]{64}$/i.test(saved)) {
+    return saved;
+  }
+
+  const bytes = new Uint8Array(32);
+  window.crypto.getRandomValues(bytes);
+
+  const token = Array.from(bytes)
+    .map(byte => byte.toString(16).padStart(2, "0"))
+    .join("");
+
+  window.localStorage.setItem(storageKey, token);
+
+  return token;
+}
+
+
 const PORTAL_IMAGES = {
   login: "/images/portal/portal-login.png",
   home: "/images/portal/portal-home.png",
@@ -106,6 +147,74 @@ const tokenStorageKey =
     useState<string | null>(
       null
     );
+
+
+  const trialExpiresStorageKey =
+    `${PORTAL_TRIAL_EXPIRES_KEY_PREFIX}${slug}`;
+
+  const [trialExpiresAt, setTrialExpiresAt] =
+    useState<string | null>(null);
+
+  const [trialNow, setTrialNow] =
+    useState(() => Date.now());
+
+  useEffect(() => {
+    try {
+      setTrialExpiresAt(
+        window.localStorage.getItem(trialExpiresStorageKey)
+      );
+    } catch {
+      setTrialExpiresAt(null);
+    }
+  }, [trialExpiresStorageKey]);
+
+  useEffect(() => {
+    if (!trialExpiresAt) return;
+
+    const interval = window.setInterval(() => {
+      setTrialNow(Date.now());
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [trialExpiresAt]);
+
+  const trialRemainingMs = trialExpiresAt
+    ? Math.max(
+        0,
+        new Date(trialExpiresAt).getTime() - trialNow
+      )
+    : null;
+
+
+  useEffect(() => {
+    if (
+      !portalToken ||
+      !trialExpiresAt ||
+      trialRemainingMs === null ||
+      trialRemainingMs > 0
+    ) {
+      return;
+    }
+
+    try {
+      window.localStorage.removeItem(tokenStorageKey);
+    } catch {
+      // ignore
+    }
+
+    setPortalToken(null);
+    setLoginError(
+      "24시간 무료 체험 기간이 종료되었습니다."
+    );
+    setActiveTab("home");
+  }, [
+    portalToken,
+    trialExpiresAt,
+    trialRemainingMs,
+    tokenStorageKey,
+  ]);
+
+
 
   /**
    * 업무포털 현재 화면.
@@ -361,28 +470,54 @@ const completeQualificationApplicationMutation =
   /**
    * 이름 + 전화번호 인증.
    */
+  
   const loginMutation =
     trpc.studentPortal.login.useMutation({
-      onSuccess:
-        result => {
+      onSuccess: result => {
+        const isTrialLogin =
+          clientName.trim() === "테스트" &&
+          normalizePhone(phone) === "01093117148";
+
+        if (isTrialLogin) {
+          const expiresAt = new Date(
+            result.expiresAt
+          ).toISOString();
+
+          setTrialExpiresAt(expiresAt);
+          setTrialNow(Date.now());
+
           try {
             window.localStorage.setItem(
-              tokenStorageKey,
-              result.token
+              trialExpiresStorageKey,
+              expiresAt
             );
           } catch {
-            // localStorage 저장 실패 시에도
-            // 현재 세션에서는 계속 사용 가능
+            // 저장소 접근 실패 시 현재 화면에서만 유지
           }
+        } else {
+          setTrialExpiresAt(null);
 
-          setPortalToken(
+          try {
+            window.localStorage.removeItem(
+              trialExpiresStorageKey
+            );
+          } catch {
+            // ignore
+          }
+        }
+
+        try {
+          window.localStorage.setItem(
+            tokenStorageKey,
             result.token
           );
+        } catch {
+          // 저장소 접근 실패 시 현재 세션에서만 유지
+        }
 
-          setLoginError(
-            null
-          );
-        },
+        setPortalToken(result.token);
+        setLoginError(null);
+      },
 
       onError:
         error => {
@@ -407,6 +542,16 @@ const completeQualificationApplicationMutation =
           } catch {
             // ignore
           }
+
+try {
+  window.localStorage.removeItem(
+    trialExpiresStorageKey
+  );
+} catch {
+  // ignore
+}
+
+setTrialExpiresAt(null);
 
           setPortalToken(
             null
@@ -1157,6 +1302,14 @@ const practicePrerequisite =
           />
         )}
 
+
+        {trialRemainingMs !== null && (
+          <PortalTrialBanner
+            remainingMs={trialRemainingMs}
+          />
+        )}
+
+
         {(
   activeTab === "myWork" ||
   activeTab === "administration" ||
@@ -1548,9 +1701,32 @@ onQualificationApplication={() =>
               setPracticeSection
             }
           />
-               ) : activeTab ===
-            "community" ? (
-          <StudentPortalCommunity
+              ) : activeTab ===
+    "community" ? (
+  meQuery.data?.isTrialAccount ? (
+    <div className="px-5 py-16 text-center">
+      <div className="mx-auto max-w-sm rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
+        <h2 className="text-lg font-bold text-slate-900">
+          커뮤니티 이용 제한
+        </h2>
+
+        <p className="mt-3 text-sm leading-6 text-slate-500">
+          커뮤니티는 실제 등록회원 전용 서비스입니다.
+          <br />
+          무료 체험 계정에서는 이용할 수 없습니다.
+        </p>
+
+        <button
+          type="button"
+          onClick={() => handleBottomTab("home")}
+          className="mt-6 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white"
+        >
+          홈으로 돌아가기
+        </button>
+      </div>
+    </div>
+  ) : (
+    <StudentPortalCommunity
             token={
               portalToken
             }
@@ -1563,8 +1739,9 @@ onQualificationApplication={() =>
             onNavigateTab={
               handleBottomTab
             }
-          />
-        ) : (
+                    />
+  )
+) : (
           <PortalComingSoon
             title={
               pageTitle ||
@@ -1663,13 +1840,12 @@ onQualificationApplication={() =>
             )}
 
             <div className="mt-5 text-sm font-bold text-slate-600">
-              {portal.companyName ||
-                "등록 교육기관"}
-            </div>
+  학생일정포털
+</div>
 
             <h1 className="mt-1 text-[28px] font-extrabold tracking-[-0.03em] text-slate-950">
-              {portal.portalName}
-            </h1>
+  맘편한케어반 전용 학생일정포털
+</h1>
 
             <p className="mx-auto mt-3 max-w-[330px] text-[15px] font-medium leading-6 text-slate-600">
               {portal.welcomeMessage ||
@@ -1715,6 +1891,18 @@ onQualificationApplication={() =>
                 return;
               }
 
+             
+              let deviceToken: string;
+
+              try {
+                deviceToken = getPortalTrialDeviceToken(slug);
+              } catch {
+                setLoginError(
+                  "브라우저 저장소를 사용할 수 없습니다. 브라우저 설정을 확인해주세요."
+                );
+                return;
+              }
+
               loginMutation.mutate({
                 slug,
 
@@ -1723,7 +1911,10 @@ onQualificationApplication={() =>
 
                 phone:
                   normalizedPhone,
+
+                deviceToken,
               });
+
             }}
           >
             <div className="mb-5 text-center">
@@ -1809,7 +2000,7 @@ onQualificationApplication={() =>
             >
               {loginMutation.isPending
                 ? "확인 중..."
-                : "업무포털 접속"}
+                : "학생일정포털 접속"}
             </button>
           </form>
 
@@ -1836,6 +2027,55 @@ onQualificationApplication={() =>
     </PortalScreen>
   );
 }
+
+
+function PortalTrialBanner({
+  remainingMs,
+}: {
+  remainingMs: number;
+}) {
+  const expired = remainingMs <= 0;
+  const progress = Math.min(
+    100,
+    Math.max(0, (remainingMs / 86_400_000) * 100)
+  );
+
+  return (
+    <div className="border-b border-blue-100 bg-blue-50 px-4 py-3">
+      <div className="mx-auto max-w-[440px]">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-[12px] font-extrabold text-blue-700">
+              무료 체험판 · 24시간
+            </div>
+            <div className="mt-1 text-[11px] font-medium text-slate-500">
+              {expired
+                ? "무료 체험 기간이 종료되었습니다."
+                : "학생일정포털 무료 체험 이용 중"}
+            </div>
+          </div>
+
+          <div className="text-right">
+            <div className="text-[11px] font-semibold text-slate-500">
+              남은 시간
+            </div>
+            <div className="font-mono text-[21px] font-extrabold tabular-nums text-blue-700">
+              {formatTrialRemaining(remainingMs)}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-blue-100">
+          <div
+            className="h-full rounded-full bg-blue-600 transition-[width] duration-1000"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 function PortalHomeView({
   student,
@@ -9624,9 +9864,8 @@ function PortalHeader({
 
         <div className="min-w-0 flex-1">
           <div className="truncate text-[15px] font-extrabold tracking-[-0.01em] text-slate-950">
-            {portalName ||
-              "업무포털"}
-          </div>
+  맘편한케어반 학생일정포털
+</div>
           <div className="mt-0.5 text-[12px] font-medium text-slate-400">
             등록회원 전용
           </div>

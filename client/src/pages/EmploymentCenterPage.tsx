@@ -20,6 +20,34 @@ const BANNER = "/images/employment/practice-banner.png";
 const PRACTICE_URL = "https://narangedu.liveklass.com/classes/257714";
 const COMPANY_IMAGE = "/images/employment/company-default.png";
 const SESSION_KEY = "withone-employment-session";
+
+const TRIAL_DEVICE_STORAGE_KEY =
+  "student_portal_trial_device:with-one";
+
+function getEmploymentTrialDeviceToken(): string {
+  const saved = window.localStorage.getItem(
+    TRIAL_DEVICE_STORAGE_KEY
+  );
+
+  if (saved && /^[a-f0-9]{64}$/i.test(saved)) {
+    return saved;
+  }
+
+  const bytes = new Uint8Array(32);
+  window.crypto.getRandomValues(bytes);
+
+  const token = Array.from(bytes)
+    .map(byte => byte.toString(16).padStart(2, "0"))
+    .join("");
+
+  window.localStorage.setItem(
+    TRIAL_DEVICE_STORAGE_KEY,
+    token
+  );
+
+  return token;
+}
+
 const STUDENT_PORTAL_URL = "https://edu-crm-five.vercel.app/portal/with-one";
 type Job = EmploymentMapJob & {
   employmentType?: string;
@@ -105,7 +133,15 @@ const nearbyCount = jobs.length;
     const digits=phone.replace(/\D/g,"");
     if(name.trim().length<2||digits.length<10||digits.length>11){setLoginError("이름과 휴대폰 번호를 정확히 입력해주세요.");return;}
     try{
-      const res=await verify.mutateAsync({clientName:name.trim(),phone:digits});
+      
+const deviceToken = getEmploymentTrialDeviceToken();
+
+const res = await verify.mutateAsync({
+  clientName: name.trim(),
+  phone: digits,
+  deviceToken,
+});
+
       if(!res.success||!res.token){setLoginError(res.message||"등록회원 정보를 확인하지 못했습니다.");return;}
       const next={token:res.token,expiresAt:Date.now()+res.expiresInSeconds*1000};
       sessionStorage.setItem(SESSION_KEY,JSON.stringify(next));setSession(next);
@@ -231,7 +267,7 @@ const nearbyCount = jobs.length;
         <div className="relative">
           <img
             src="/images/withone-employment-hero.png"
-            alt="위드원교육 취업정보센터"
+            alt="맘편한케어반 취업정보센터"
             className="block h-auto w-full"
           />
         </div>
@@ -326,7 +362,7 @@ const nearbyCount = jobs.length;
             </h3>
 
             <p className="mt-2 text-[12px] leading-5 text-slate-600">
-              위드원교육의 사회복지사 자격증
+              맘편한케어반의 사회복지사 자격증
               <br />
               교육과정을 확인해보세요.
             </p>

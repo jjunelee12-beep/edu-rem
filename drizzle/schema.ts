@@ -1744,6 +1744,40 @@ export type StudentPortalSession =
 export type InsertStudentPortalSession =
   typeof studentPortalSessions.$inferInsert;
 
+
+export const studentPortalTrialDevices = mysqlTable(
+  "student_portal_trial_devices",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId").notNull(),
+
+    studentId: int("studentId").notNull(),
+
+    deviceTokenHash: varchar("deviceTokenHash", {
+      length: 64,
+    }).notNull(),
+
+    startedAt: datetime("startedAt").notNull(),
+
+    expiresAt: datetime("expiresAt").notNull(),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    deviceUniqueIdx: uniqueIndex(
+      "uq_portal_trial_device"
+    ).on(
+      table.organizationId,
+      table.studentId,
+      table.deviceTokenHash
+    ),
+  })
+);
+
+
 // ─── Student Portal Community Settings (등록자 커뮤니티 회사별 설정) ────
 export const communitySettings = mysqlTable(
   "community_settings",
