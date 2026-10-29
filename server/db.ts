@@ -27866,7 +27866,7 @@ export async function listPendingScheduleNotifications() {
     ORDER BY organizationId ASC, startAt ASC
   `);
 
-  return (rows as any[]) ?? [];
+     return (rows as any[]) ?? [];
 }
 
 export async function markScheduleNotified(
@@ -47956,8 +47956,8 @@ const organizationId = requireOrganizationId(data.organizationId);
   organizationId,
   roomId: data.roomId,
   senderId: data.senderId,
-  messageType: data.messageType ?? "text",
-  content: normalizeNullableString(data.content),
+    messageType: data.messageType ?? "text",
+    content: normalizeNullableString(data.content),
   isDeleted: false,
 } as InsertChatMessage);
 
@@ -48135,7 +48135,18 @@ INNER JOIN users u ON u.id = m.senderId
     ORDER BY m.id ASC
   `);
 
-  return (rows as any[]) ?? [];
+    return ((rows as any[]) ?? []).map((row) => ({
+    ...row,
+    senderName:
+      typeof row.senderName === "string"
+        ? decryptPersonalData(row.senderName)
+        : row.senderName,
+    content:
+      typeof row.content === "string" &&
+      row.content.startsWith("enc:v1:")
+        ? decryptPersonalData(row.content)
+        : row.content,
+  }));
 }
 
 export async function markChatRoomRead(params: {
@@ -48261,7 +48272,24 @@ const organizationId = requireOrganizationId(params?.organizationId);
       r.id DESC
   `);
 
-  return (rows as any[]) ?? [];
+     return ((rows as any[]) ?? []).map((row) => ({
+    ...row,
+
+    title:
+      typeof row.title === "string"
+        ? decryptPersonalData(row.title)
+        : row.title,
+
+    otherUserName:
+      typeof row.otherUserName === "string"
+        ? decryptPersonalData(row.otherUserName)
+        : row.otherUserName,
+    lastMessageContent:
+      typeof row.lastMessageContent === "string" &&
+      row.lastMessageContent.startsWith("enc:v1:")
+        ? decryptPersonalData(row.lastMessageContent)
+        : row.lastMessageContent,
+  }));
 }
 
 export async function listChatRoomMembers(
@@ -48316,7 +48344,18 @@ INNER JOIN users u ON u.id = m.userId
     ORDER BY u.id ASC
   `);
 
-  return (rows as any[]) ?? [];
+    return ((rows as any[]) ?? []).map((row) => ({
+    ...row,
+    name: typeof row.name === "string"
+      ? decryptPersonalData(row.name)
+      : row.name,
+    phone: typeof row.phone === "string"
+      ? decryptPersonalData(row.phone)
+      : row.phone,
+    email: typeof row.email === "string"
+      ? decryptPersonalData(row.email)
+      : row.email,
+  }));
 }
 
 export async function getChatMessageById(messageId: number) {
@@ -48347,7 +48386,22 @@ export async function getChatMessageById(messageId: number) {
     LIMIT 1
   `);
 
-  return ((rows as any[]) ?? [])[0] ?? null;
+    const message = ((rows as any[]) ?? [])[0] ?? null;
+
+  if (!message) return null;
+
+  return {
+    ...message,
+        senderName:
+      typeof message.senderName === "string"
+        ? decryptPersonalData(message.senderName)
+        : message.senderName,
+    content:
+      typeof message.content === "string" &&
+      message.content.startsWith("enc:v1:")
+        ? decryptPersonalData(message.content)
+        : message.content,
+  };
 }
 
 export async function setChatRoomMuted(params: {

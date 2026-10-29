@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { getDb } from "../db";
 import { throwAppError } from "./appError";
 import { ERROR_CODES } from "./errorCodes";
+import { decryptPersonalData } from "../security/crypto";
 
 function safeSheetName(name: string) {
   return String(name || "Sheet").slice(0, 31);
@@ -22,6 +23,45 @@ function formatDateTime(value: any) {
   return `${y}-${m}-${d} ${hh}:${mm}`;
 }
 
+const PERSONAL_EXPORT_COLUMNS = new Set([
+  "이름",
+  "학생명",
+  "연락처",
+  "담당자",
+  "담당자명",
+  "관리담당자",
+  "이메일",
+  "입력주소",
+  "상세주소",
+]);
+
+function decryptExportValue(key: string, value: any) {
+  if (
+    !PERSONAL_EXPORT_COLUMNS.has(key) ||
+    typeof value !== "string" ||
+    !value.startsWith("enc:v1:")
+  ) {
+    return value;
+  }
+
+  try {
+    const decrypted = decryptPersonalData(value);
+
+    if (
+      typeof decrypted !== "string" ||
+      decrypted.startsWith("enc:v1:")
+    ) {
+      throw new Error("개인정보 복호화 실패");
+    }
+
+    return decrypted;
+  } catch {
+    throw new Error(
+      `엑셀 내보내기 중 '${key}' 필드 복호화에 실패했습니다.`
+    );
+  }
+}
+
 function normalizeRows(rows: any[]) {
   return (rows || []).map((row) => {
     const next: Record<string, any> = {};
@@ -31,8 +71,8 @@ function normalizeRows(rows: any[]) {
         next[key] = formatDateTime(value);
       } else if (value === null || value === undefined) {
         next[key] = "";
-      } else {
-        next[key] = value;
+            } else {
+        next[key] = decryptExportValue(key, value);
       }
     }
 
