@@ -47,6 +47,7 @@ import StaffProfileSettings from "@/pages/StaffProfileSettings";
 import PublicStaffProfilePage from "@/pages/PublicStaffProfilePage";
 import PublicStaffTeamPage from "@/pages/PublicStaffTeamPage";
 import StudentPortalPage from "@/pages/StudentPortalPage";
+import PracticeApplication from "@/pages/PracticeApplication";
 import EmploymentCenterPage from "@/pages/EmploymentCenterPage";
 import PortalManagementPage from "@/pages/PortalManagementPage";
 import HostPortalCommunityPage from "@/pages/HostPortalCommunityPage";
@@ -218,6 +219,16 @@ function PublicRouter() {
 <Route
   path="/staff/:token"
   component={PublicStaffProfilePage}
+/>
+
+<Route
+  path="/portal/:slug/practice-apply"
+  component={PracticeApplication}
+/>
+
+<Route
+  path="/practice-apply/:slug"
+  component={PracticeApplication}
 />
 
 <Route
@@ -557,6 +568,7 @@ location === "/employment-center" ||
 location.startsWith("/kakao-ai/staff-auth/") ||
   location.startsWith("/staff/") ||
 location.startsWith("/portal/") ||
+location.startsWith("/practice-apply/") ||
 location.startsWith("/team/") ||
   location.startsWith("/billing/register/");
 

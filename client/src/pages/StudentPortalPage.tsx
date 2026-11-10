@@ -1697,10 +1697,13 @@ onQualificationApplication={() =>
             isError={
               practiceQuery.isError
             }
+            
             onSectionChange={
               setPracticeSection
             }
+            slug={slug}
           />
+
               ) : activeTab ===
     "community" ? (
   meQuery.data?.isTrialAccount ? (
@@ -8189,6 +8192,7 @@ function PortalSocialWorkerQualificationGuide({
   );
 }
 
+
 function PortalPracticeView({
   practice,
   prerequisite,
@@ -8197,7 +8201,9 @@ function PortalPracticeView({
   isLoading,
   isError,
   onSectionChange,
+  slug,
 }: {
+
   practice:
     any;
 
@@ -8270,12 +8276,16 @@ function PortalPracticeView({
   isError:
     boolean;
 
+ 
   onSectionChange:
     (
       section:
         PracticeSection
     ) => void;
+
+  slug: string;
 }) {
+
   const progressSteps = [
     {
       key:
@@ -8328,13 +8338,19 @@ function PortalPracticeView({
     ] ??
     0;
 
-  const practiceMonth =
-    String(
-      practice
-        ?.practiceSemesterLabel ||
-      ""
-    ).trim() ||
-    "미정";
+  
+  const rawPracticeDate = String(
+    practice?.practiceDate || ""
+  ).trim();
+
+  const practiceMonthMatch = rawPracticeDate.match(
+    /^(\d{4})-(0[1-9]|1[0-2])/
+  );
+
+  const practiceMonth = practiceMonthMatch
+    ? `${practiceMonthMatch[1]}년 ${Number(practiceMonthMatch[2])}월`
+    : "미정";
+
 
   const practiceHours =
     Number(
@@ -8495,9 +8511,24 @@ function PortalPracticeView({
           <section className="px-5 pt-7">
             {/* 기본 정보 */}
             <div>
-              <div className="mb-2 text-[19px] font-extrabold tracking-[-0.02em] text-slate-950">
-                기본 정보
-              </div>
+              
+<div className="mb-2 flex items-center justify-between">
+  <div className="text-[19px] font-extrabold tracking-[-0.02em] text-slate-950">
+    기본 정보
+  </div>
+
+  <button
+    type="button"
+    onClick={() => {
+      window.location.href =
+        `/portal/${encodeURIComponent(slug)}/practice-apply`;
+    }}
+    className="rounded-lg bg-blue-600 px-4 py-2 text-[13px] font-bold text-white transition hover:bg-blue-700"
+  >
+    실습 신청하기
+  </button>
+</div>
+
 
               <div className="border-y border-slate-200">
                 {/* 회원 */}

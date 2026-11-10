@@ -2900,6 +2900,34 @@ if (isReadOnly) return;
     updatePlanSemesterMut.mutate(payload);
   };
 
+
+const handlePlanCategoryChange = (
+  row: any,
+  nextCategory: string
+) => {
+  if (isReadOnly) return;
+
+  const nextRequirementType =
+    nextCategory === "교양"
+      ? "교양"
+      : nextCategory === "일반"
+        ? "일반"
+        : row.planRequirementType === "전공필수"
+          ? "전공필수"
+          : "전공선택";
+
+  updatePlanSemesterMut.mutate({
+    id: Number(row.id),
+    category: nextCategory as "전공" | "교양" | "일반",
+    requirementType: nextRequirementType as
+      | "전공필수"
+      | "전공선택"
+      | "교양"
+      | "일반",
+  });
+};
+
+
 const handlePlanSettlementIncludedChange = (row: any, checked: boolean) => {
   if (isReadOnly) {
     toast.error("담당자 또는 호스트만 수정할 수 있습니다.");
@@ -5567,27 +5595,21 @@ disabled={isReadOnly}
                                     }
                                   }}
                                   onKeyDown={(e) =>
-                                    cycleSelectValue(
-                                      e,
-                                      ["전공", "교양", "일반"],
-                                      row.planCategory || "전공",
-                                      (next) => {
-                                        handlePlanSemesterBlur(row.id, "category", next);
+                                    
+onChange={(e) => {
+  handlePlanCategoryChange(row, e.target.value);
+}}
+onKeyDown={(e) =>
+  cycleSelectValue(
+    e,
+    ["전공", "교양", "일반"],
+    row.planCategory || "전공",
+    (next) => {
+      handlePlanCategoryChange(row, next);
+    }
+  )
+}
 
-                                        if (next === "교양") {
-                                          handlePlanSemesterBlur(row.id, "requirementType", "교양");
-                                        } else if (next === "일반") {
-                                          handlePlanSemesterBlur(row.id, "requirementType", "일반");
-                                        } else {
-                                          handlePlanSemesterBlur(
-                                            row.id,
-                                            "requirementType",
-                                            row.planRequirementType === "전공필수" ? "전공필수" : "전공선택"
-                                          );
-                                        }
-                                      }
-                                    )
-                                  }
                                 >
                                   <option value="전공">전공</option>
                                   <option value="교양">교양</option>
@@ -6181,12 +6203,18 @@ disabled={isReadOnly}
     isDuplicatedInOtherSemester;
 
                           return (
-                           <label
+                           
+<label
   key={row.id}
-  className={`flex items-center gap-3 px-4 py-3 text-sm ${
+  className={`flex items-center gap-3 px-4 py-3 text-sm transition-colors ${
+    checked
+      ? "bg-green-50 dark:bg-green-950/30"
+      : "hover:bg-muted/40"
+  } ${
     disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
   }`}
 >
+
   <Checkbox
     checked={checked}
     disabled={disabled}
@@ -6197,8 +6225,20 @@ disabled={isReadOnly}
       }
       toggleTemplateSubject(Number(row.id));
     }}
+  
   />
-  <span className="flex-1">{row.subjectName}</span>
+
+  <span className="flex-1 min-w-0">
+    {row.subjectName}
+  </span>
+
+{checked && (
+
+  <span className="shrink-0 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/50 dark:text-green-300">
+    ✓ 선택됨
+  </span>
+)}
+
 
   {isDuplicatedInOtherSemester && (
     <span className="text-xs text-red-500">

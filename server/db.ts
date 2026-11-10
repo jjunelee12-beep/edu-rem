@@ -37345,9 +37345,12 @@ export async function applyPlanSemesterTemplateAtomic(params: {
     settlementIncluded: boolean;
   }>;
 }) {
+  
+  const startedAt = performance.now();
   const db = await getDb();
 
   if (!db) {
+
     throwAppError(
       ERROR_CODES.INTERNAL_SERVER_ERROR,
       "DB not available",
@@ -37377,7 +37380,9 @@ export async function applyPlanSemesterTemplateAtomic(params: {
     );
   }
 
-  return db.transaction(async (tx) => {
+ 
+  const result = await db.transaction(async (tx) => {
+
     // 동일 학생에 대한 동시 템플릿 적용 방지
     const lockedStudents = await tx
       .select({ id: students.id })
@@ -37542,13 +37547,29 @@ export async function applyPlanSemesterTemplateAtomic(params: {
       } as any);
     }
 
+    
     return {
       success: true,
       appliedCount: subjects.length,
       preservedCount: preservedRows.length,
     };
   });
+
+  console.info(
+    "[PlanTemplate] apply completed",
+    {
+      studentId,
+      semesterNo,
+      subjectCount: subjects.length,
+      durationMs: Math.round(
+        performance.now() - startedAt
+      ),
+    }
+  );
+
+  return result;
 }
+
 
 export async function updatePlanSemester(
   id: number,

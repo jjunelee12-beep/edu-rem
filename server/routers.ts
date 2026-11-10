@@ -827,6 +827,51 @@ function checkEmploymentLoginLimit(ip: string): void {
 }
 
 
+/**
+ * 외부 현장실습 신청서 제출 제한
+ * 단일 서버 프로세스 기준, 15분에 최대 5회
+ */
+const publicPracticeApplicationAttempts = new Map<
+  string,
+  { count: number; resetAt: number }
+>();
+
+function checkPublicPracticeApplicationLimit(key: string) {
+  const now = Date.now();
+  const windowMs = 15 * 60 * 1000;
+
+  if (publicPracticeApplicationAttempts.size > 5000) {
+    for (const [savedKey, value] of publicPracticeApplicationAttempts) {
+      if (value.resetAt <= now) {
+        publicPracticeApplicationAttempts.delete(savedKey);
+      }
+    }
+  }
+
+  const current = publicPracticeApplicationAttempts.get(key);
+
+  if (!current || current.resetAt <= now) {
+    publicPracticeApplicationAttempts.set(key, {
+      count: 1,
+      resetAt: now + windowMs,
+    });
+    return;
+  }
+
+  if (current.count >= 5) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "신청 요청이 많습니다. 15분 후 다시 시도해 주세요.",
+      429
+    );
+  }
+
+  current.count += 1;
+}
+
+
+
+
 const WITHONE_LANDING_CHANNEL = "위드원교육 랜딩페이지";
 const WITHONE_LANDING_COURSE = "사회복지사 2급";
 
@@ -4328,6 +4373,381 @@ return {
 
           return getWork24JobDetail(input.wantedAuthNo);
         }),
+
+    /**
+     * ---------------------------------------------------------
+     * 현장실습 신청서 - CRM 등록 회원 자동 입력
+     * ---------------------------------------------------------
+     *
+     * 포털 로그인 세션을 기준으로 학생을 식별한다.
+     * 브라우저에서 studentId / organizationId를 받지 않는다.
+     * 데이터 조회 전용이며 기존 CRM 정보를 수정하지 않는다.
+     */
+    practiceApplicationInfo:
+      publicProcedure
+        .input(
+          z.object({
+            token: z.string().trim().min(1).max(255),
+          })
+        )
+        .query(async ({ input }) => {
+          const session =
+            await db.getStudentPortalSessionByToken({
+              token: input.token,
+            });
+
+          if (!session || session.usable !== true) {
+            throwAppError(
+              ERROR_CODES.AUTH_REQUIRED,
+              "학생일정포털 로그인이 필요합니다.",
+              401
+            );
+          }
+
+          const requests =
+            await db.listPracticeSupportRequestsByStudent(
+              session.studentId,
+              {
+                organizationId: session.organizationId,
+              }
+            );
+
+          
+          // JOIN으로 같은 실습 신청이 여러 번 조회되어도
+          // 신청서에는 실제 신청 ID별로 한 건만 사용한다.
+          const uniqueRequests = Array.from(
+            new Map(
+              requests
+                .filter(request => Number(request.id) > 0)
+                .map(request => [Number(request.id), request])
+            ).values()
+          );
+
+          // 기존 MY 실습현황과 동일하게
+          // 가장 최근에 생성된 실습 기록을 사용한다.
+          const currentRequest =
+            uniqueRequests.length > 0
+              ? uniqueRequests[uniqueRequests.length - 1]
+              : null;
+
+
+          const student = session.student;
+
+          const assigneeId = Number(
+            currentRequest?.assigneeId ||
+            student?.assigneeId ||
+            0
+          );
+
+          const assignee =
+            assigneeId > 0
+              ? await db.getAssignableUserById({
+                  organizationId: session.organizationId,
+                  userId: assigneeId,
+                })
+              : null;
+
+
+          // 담당자가 기존 신청서에 기록한
+          // 실습 진행일(평일/주말)을 자동 복원한다.
+          const savedNote = String(
+            currentRequest?.note || ""
+          );
+
+          const savedDayMatch = savedNote.match(
+            /^\[현장실습 신청서\] 실습 진행일:\s*(평일·주말|평일|주말)\s*$/m
+          );
+
+          const savedDays =
+            savedDayMatch?.[1] === "평일·주말"
+              ? "both"
+              : savedDayMatch?.[1] === "평일"
+                ? "weekday"
+                : savedDayMatch?.[1] === "주말"
+                  ? "weekend"
+                  : "";
+
+
+          return {
+            authenticated: true as const,
+
+            name: String(
+              student?.clientName || ""
+            ),
+
+            phone: String(
+              student?.phone || ""
+            ),
+
+            course: String(
+              currentRequest?.course ||
+              student?.course ||
+              ""
+            ),
+
+            address: String(
+              currentRequest?.inputAddress ||
+              student?.address ||
+              ""
+            ),
+
+            semester: String(
+              currentRequest?.practiceSemesterLabel ||
+              ""
+            ),
+
+            month: String(
+              currentRequest?.practiceDate ||
+              ""
+            ).slice(0, 7),
+
+            hours:
+              currentRequest?.practiceHours ??
+              null,
+
+            
+assignee: String(
+  assignee?.name ||
+  currentRequest?.assigneeName ||
+  ""
+),
+
+
+            
+            days: savedDays,
+
+            hasExistingRequest:
+  Boolean(currentRequest),
+
+requestId:
+  currentRequest ? Number(currentRequest.id) : null,
+
+          };
+        }),
+
+
+    /**
+     * 현장실습 신청서 - 등록 회원 신청 저장
+     */
+    submitPracticeApplication:
+      publicProcedure
+        .input(
+          z.object({
+            token: z.string().trim().min(1).max(255),
+requestId: z.number().int().positive().nullable().optional(),
+course: z.enum([
+              "사회복지사 2급",
+              "보육교사 2급",
+              "한국어교원 2급",
+            ]),
+            address: z.string().trim().min(1).max(500),
+            semester: z.string().regex(/^20\d{2}년 [12]학기$/),
+            month: z.string().regex(/^20\d{2}-(0[1-9]|1[0-2])$/),
+            hours: z.number().int().min(1).max(1000),
+            days: z.enum(["weekday", "weekend", "both"]),
+            assignee: z.string().trim().min(1).max(100),
+          })
+        )
+        .mutation(async ({ input }) => {
+          const session =
+            await db.getStudentPortalSessionByToken({
+              token: input.token,
+            });
+
+          if (!session || session.usable !== true) {
+            throwAppError(
+              ERROR_CODES.AUTH_REQUIRED,
+              "학생일정포털 로그인이 필요합니다.",
+              401
+            );
+          }
+
+          const organizationId = session.organizationId;
+          const studentId = session.studentId;
+          const student = session.student;
+
+          await assertOrganizationFeatureEnabled(
+            organizationId,
+            "allowPracticeCenter",
+            "실습배정지원센터를 사용할 수 없습니다."
+          );
+
+          const requests =
+            await db.listPracticeSupportRequestsByStudent(
+              studentId,
+              { organizationId }
+            );
+
+         
+         
+          // JOIN으로 중복 조회된 신청 기록을 ID 기준으로 정리한다.
+          const uniqueRequests = Array.from(
+            new Map(
+              requests
+                .filter(request => Number(request.id) > 0)
+                .map(request => [Number(request.id), request])
+            ).values()
+          );
+
+          // 같은 학생이라도 희망과정이 다르면
+          // 서로 다른 실습 신청서로 관리한다.
+          const matchingRequests = uniqueRequests.filter(
+            request =>
+              String(request.course || "").trim() ===
+              input.course
+          );
+
+          // 동일 과정의 기록이 이미 여러 개라면
+          // 임의로 덮어쓰지 않고 담당자 확인을 요청한다.
+          if (matchingRequests.length > 1) {
+            throwAppError(
+              ERROR_CODES.INVALID_REQUEST,
+              "동일 희망과정의 실습 신청 기록이 여러 건입니다. 담당자에게 문의해 주세요.",
+              409
+            );
+          }
+
+          // 전달된 신청 ID는 반드시 현재 학생의 기록이어야 한다.
+          const linkedRequest =
+            input.requestId != null
+              ? uniqueRequests.find(
+                  request =>
+                    Number(request.id) === input.requestId
+                )
+              : null;
+
+          if (input.requestId != null && !linkedRequest) {
+            throwAppError(
+              ERROR_CODES.INVALID_REQUEST,
+              "연결된 실습 신청 기록을 찾을 수 없습니다. 다시 접속해 주세요.",
+              409
+            );
+          }
+
+          // 같은 과정이면 기존 기록을 수정한다.
+          // 다른 과정이면 기존 기록을 수정하지 않는다.
+          const existing = matchingRequests[0] ?? null;
+
+
+
+
+          // 기존 담당자 연결은 보존하고,
+          // 신규 신청은 학생에게 배정된 담당자를 사용한다.
+          const assigneeId = Number(
+            existing?.assigneeId ||
+            student?.assigneeId ||
+            0
+          );
+
+          if (!assigneeId) {
+            throwAppError(
+              ERROR_CODES.INVALID_REQUEST,
+              "등록된 담당자가 없습니다. 담당자에게 문의해 주세요.",
+              400
+            );
+          }
+
+          const assignedUser =
+            await db.getAssignableUserById({
+              organizationId,
+              userId: assigneeId,
+            });
+
+          if (!assignedUser) {
+            throwAppError(
+              ERROR_CODES.INVALID_REQUEST,
+              "담당자 정보를 확인할 수 없습니다.",
+              400
+            );
+          }
+
+          const dayLabel = {
+            weekday: "평일",
+            weekend: "주말",
+            both: "평일·주말",
+          }[input.days];
+
+          // 이전 신청서의 진행일 기록만 교체한다.
+          // 다른 메모는 삭제하지 않는다.
+          const previousNote = String(existing?.note || "");
+
+          const cleanedNote = previousNote
+            .split("\n")
+            .filter(
+              line =>
+                !line.startsWith("[현장실습 신청서] 실습 진행일:")
+            )
+            .join("\n")
+            .trim();
+
+          const dayNote =
+            `[현장실습 신청서] 실습 진행일: ${dayLabel}`;
+
+          const nextNote = [
+            cleanedNote,
+            dayNote,
+          ].filter(Boolean).join("\n");
+
+          
+const data = {
+  course: input.course,
+  inputAddress: input.address,
+  practiceSemesterLabel: input.semester,
+  practiceDate: input.month,
+  practiceHours: input.hours,
+  assigneeName: String(assignedUser.name || "").trim(),
+  note: nextNote,
+};
+
+
+          if (existing?.id) {
+            await db.updatePracticeSupportRequest(
+              Number(existing.id),
+              data,
+              { organizationId }
+            );
+
+            return {
+              success: true as const,
+              requestId: Number(existing.id),
+              action: "updated" as const,
+            };
+          }
+
+          const clientName =
+            String(student?.clientName || "").trim();
+
+          const phone =
+            String(student?.phone || "").trim();
+
+          if (!clientName || !phone) {
+            throwAppError(
+              ERROR_CODES.INVALID_REQUEST,
+              "학생 이름 또는 연락처가 없습니다.",
+              400
+            );
+          }
+
+          const requestId =
+            await db.createPracticeSupportRequest({
+              organizationId,
+              studentId,
+              assigneeId,
+              clientName,
+              phone,
+              ...data,
+              coordinationStatus: "미섭외",
+              paymentStatus: "미결제",
+              feeAmount: "0",
+            });
+
+          return {
+            success: true as const,
+            requestId: Number(requestId),
+            action: "created" as const,
+          };
+        }),
+
 
 
     /**
@@ -15572,6 +15992,8 @@ await writeStudentAuditLog({
         return { success: true, id };
       }),
 
+
+
     createExternal: protectedProcedure
       .input(
         z.object({
@@ -16877,6 +17299,168 @@ await writeStudentAuditLog({
 });
 
         return { success: true, id };
+      }),
+
+/**
+     * 외부 현장실습 신청서 접수
+     * 로그인하지 않은 신청자 전용
+     */
+    submitPublicApplication: publicProcedure
+      .input(
+        z.object({
+          slug: z.string().trim().min(1).max(100),
+          name: z.string().trim().min(1).max(100),
+          phone: z.string().trim().min(1).max(30),
+          course: z.enum([
+            "사회복지사 2급",
+            "보육교사 2급",
+            "한국어교원 2급",
+          ]),
+          address: z.string().trim().min(1).max(500),
+          semester: z.string().regex(/^20\d{2}년 [12]학기$/),
+          month: z.string().regex(/^20\d{2}-(0[1-9]|1[0-2])$/),
+          hours: z.number().int().min(1).max(1000),
+          days: z.enum(["weekday", "weekend", "both"]),
+          assignee: z.string().trim().min(1).max(100),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        // URL slug로 회사 확인
+        const portal = await db.getPublicStudentPortalBySlug(
+          input.slug
+        );
+
+        if (!portal) {
+          throwAppError(
+            ERROR_CODES.DATA_NOT_FOUND,
+            "현재 신청할 수 없는 실습 신청서입니다.",
+            404
+          );
+        }
+
+        const organizationId = Number(portal.organizationId);
+
+        await assertOrganizationFeatureEnabled(
+          organizationId,
+          "allowPracticeCenter",
+          "실습배정지원센터를 사용할 수 없습니다."
+        );
+
+        const normalizedPhone = input.phone.replace(/\D/g, "");
+
+        if (!/^01\d{8,9}$/.test(normalizedPhone)) {
+          throwAppError(
+            ERROR_CODES.INVALID_REQUEST,
+            "올바른 휴대전화번호를 입력해 주세요.",
+            400
+          );
+        }
+
+        // 서버에서 확인 가능한 연결 주소를 이용한 요청 제한
+        const ip = String(
+          ctx.req?.socket?.remoteAddress || "unknown"
+        );
+
+        const limitKey = createHash("sha256")
+          .update(
+            `${organizationId}:${ip}:${normalizedPhone}`
+          )
+          .digest("hex");
+
+        checkPublicPracticeApplicationLimit(limitKey);
+
+        // 같은 회사의 직원만 조회
+        // 직원 이름은 기존 DB 함수에서 복호화하여 반환한다.
+        const users = await db.getAllUsersDetailed({
+          organizationId,
+        });
+
+       
+        const activeUsers = Array.from(
+          new Map(
+            users
+              .filter(
+                (user: any) =>
+                  Number(user.organizationId) === organizationId &&
+                  user.isActive === true &&
+                  ["staff", "admin", "host"].includes(
+                    String(user.role)
+                  )
+              )
+              .map((user: any) => [Number(user.id), user])
+          ).values()
+        );
+
+
+        // 시스템 접수 주체: 활성 Host
+        const hosts = activeUsers
+          .filter((user: any) => user.role === "host")
+          .sort((a: any, b: any) => Number(a.id) - Number(b.id));
+
+        const defaultHost = hosts[0];
+
+        if (!defaultHost) {
+          throwAppError(
+            ERROR_CODES.INVALID_REQUEST,
+            "접수 담당자가 설정되지 않았습니다. 교육원에 문의해 주세요.",
+            400
+          );
+        }
+
+        // 신청자가 입력한 이름과 정확히 일치하는 직원 검색
+        const matchedUsers = activeUsers.filter(
+          (user: any) =>
+            String(user.name || "").trim() === input.assignee
+        );
+
+        // 동명이인이 없을 때만 자동 배정
+        const assignedUser =
+          matchedUsers.length === 1
+            ? matchedUsers[0]
+            : defaultHost;
+
+        const dayLabel = {
+          weekday: "평일",
+          weekend: "주말",
+          both: "평일·주말",
+        }[input.days];
+
+        const note = [
+          "[현장실습 신청서] 외부 신청",
+          `[현장실습 신청서] 실습 진행일: ${dayLabel}`,
+          `[현장실습 신청서] 입력 담당자: ${input.assignee}`,
+        ].join("\n");
+
+        const requestId =
+          await db.createPracticeSupportExternalRequest({
+            organizationId,
+            assigneeId: Number(assignedUser.id),
+            createdBy: Number(defaultHost.id),
+            updatedBy: Number(defaultHost.id),
+
+            clientName: input.name,
+            phone: normalizedPhone,
+            assigneeName: input.assignee,
+            managerName: null,
+
+            course: input.course,
+            inputAddress: input.address,
+            practiceSemesterLabel: input.semester,
+            practiceDate: input.month,
+            practiceHours: input.hours,
+
+            note,
+            includeEducationCenter: true,
+            includePracticeInstitution: true,
+            coordinationStatus: "미섭외",
+            paymentStatus: "미결제",
+            feeAmount: "0",
+          });
+
+        return {
+          success: true as const,
+          requestId: Number(requestId),
+        };
       }),
 
     createExternal: protectedProcedure
