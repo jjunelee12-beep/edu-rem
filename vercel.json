@@ -11,6 +11,19 @@
       ],
       "destination": "https://edu-crm-api-production.up.railway.app/og/staff/:token"
     },
+
+{
+  "source": "/portal/:slug/practice-apply",
+  "has": [
+    {
+      "type": "header",
+      "key": "user-agent",
+      "value": ".*(kakaotalk-scrap|facebookexternalhit|Twitterbot|Slackbot).*"
+    }
+  ],
+  "destination": "https://edu-crm-api-production.up.railway.app/og/practice-apply/:slug"
+},
+
     {
   "source": "/portal/:slug",
   "has": [

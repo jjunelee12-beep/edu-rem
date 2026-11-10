@@ -5769,6 +5769,60 @@ if (
     }
   );
 
+
+app.get("/og/practice-apply/:slug", (req, res) => {
+  const slug = String(req.params.slug || "")
+    .trim()
+    .toLowerCase();
+
+  if (slug !== "with-one") {
+    return res.status(404).send("Not Found");
+  }
+
+  const pageUrl =
+    "https://edu-crm-five.vercel.app/portal/with-one/practice-apply";
+
+  const imageUrl =
+    "https://edu-crm-five.vercel.app/images/practice-support-og.png";
+
+  const title = "실습배정지원센터";
+  const description = "현장실습 신청 및 진행 안내";
+
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Cache-Control", "public, max-age=300");
+
+  return res.send(`
+    <!DOCTYPE html>
+    <html lang="ko">
+      <head>
+        <meta charset="utf-8" />
+        <title>${title}</title>
+        <meta name="description" content="${description}" />
+
+        <meta property="og:type" content="website" />
+        <meta property="og:locale" content="ko_KR" />
+        <meta property="og:title" content="${title}" />
+        <meta property="og:description" content="${description}" />
+        <meta property="og:image" content="${imageUrl}" />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta property="og:url" content="${pageUrl}" />
+        <meta property="og:site_name" content="실습배정지원센터" />
+
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="${title}" />
+        <meta name="twitter:description" content="${description}" />
+        <meta name="twitter:image" content="${imageUrl}" />
+      </head>
+      <body>
+        <p>실습배정지원센터 현장실습 신청 안내</p>
+        <a href="${pageUrl}">신청서 열기</a>
+      </body>
+    </html>
+  `);
+});
+
+
  app.get("/alpha", (_req, res) => {
   const targetUrl = "https://www.edualpha.co.kr/";
 const ogImageUrl = "https://go.withone.kr/images/alpha-og.jpg";

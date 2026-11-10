@@ -33,23 +33,33 @@ const [requestId, setRequestId] = useState<number | null>(null);
   const [form, setForm] = useState({ name: "", phone: "", course: "", address: "", semester: "", month: "", hours: "160", days: "", assignee: "" });
   const set = (key: keyof typeof form, value: string) => setForm(prev => ({ ...prev, [key]: value }));
 
-  useEffect(() => {
-    if (!fromPortal) { setReady(true); return; }
-    try { setToken(localStorage.getItem(`student_portal_token:${slug}`) || ""); }
-    finally { setReady(true); }
-  }, [slug, fromPortal]);
+  
+useEffect(() => {
+  setReady(false);
+  setToken("");
+  setRequestId(null);
+
+  try {
+    setToken(
+      localStorage.getItem(`student_portal_token:${slug}`) || ""
+    );
+  } finally {
+    setReady(true);
+  }
+}, [slug]);
+
 
   const applicationInfo = trpc.studentPortal.practiceApplicationInfo.useQuery(
     { token },
     {
-      enabled: ready && fromPortal && !!token,
+     enabled: ready && !!token,
       retry: false,
       refetchOnWindowFocus: false,
     }
   );
 
   useEffect(() => {
-    if (!fromPortal || !applicationInfo.data?.authenticated) return;
+    if (!applicationInfo.data?.authenticated) return;
     const info = applicationInfo.data;
 setRequestId(info.requestId ?? null);
 
@@ -67,12 +77,16 @@ setForm(prev => ({
       assignee: info.assignee || prev.assignee,
 
     }));
-  }, [fromPortal, applicationInfo.data]);
+  }, [applicationInfo.data]);
 
   const semesterOptions = useMemo(() => Array.from(new Set([...semesters, ...(form.semester && !semesters.includes(form.semester) ? [form.semester] : [])])), [semesters, form.semester]);
-  const authenticated = fromPortal && Boolean(applicationInfo.data?.authenticated);
-  const invalidSession = fromPortal && ready && (!token || applicationInfo.isError);
-  const loadingSession = fromPortal && ready && !!token && applicationInfo.isPending;
+  
+const authenticated =
+  ready && Boolean(applicationInfo.data?.authenticated);
+
+const loadingSession =
+  ready && !!token && applicationInfo.isPending;
+
   const canSubmit = Boolean(form.name.trim() && /^01\d{8,9}$/.test(form.phone.replace(/\D/g, "")) && form.course && form.address.trim() && form.semester && /^\d{4}-(0[1-9]|1[0-2])$/.test(form.month) && Number(form.hours) > 0 && form.days && form.assignee.trim());
 
   const [submitted, setSubmitted] = useState(false);
@@ -89,7 +103,6 @@ setForm(prev => ({
 
   const handleSubmit = async () => {
     if (!canSubmit || submitting || submitted) return;
-    if (fromPortal && !authenticated) return;
 
     setSubmitError("");
 
@@ -107,8 +120,8 @@ setForm(prev => ({
     };
 
     try {
-      if (fromPortal) {
-        await registeredMutation.mutateAsync({
+      if (authenticated) {
+  await registeredMutation.mutateAsync({
   token,
   requestId,
   ...commonInput,
@@ -153,10 +166,6 @@ setForm(prev => ({
           <section className="rounded-2xl bg-white p-6 text-center text-sm text-slate-600">
             등록된 실습 정보를 불러오는 중입니다.
           </section>
-        ) : invalidSession ? (
-          <section className="rounded-2xl bg-white p-6 text-center text-sm">
-            포털 로그인 세션이 만료되었거나 정보를 불러오지 못했습니다. 학생일정포털에서 다시 로그인해 주세요.
-          </section>
         ) : (
         <>
           <section className="rounded-[24px] bg-white px-5 pb-7 pt-6 shadow-[0_4px_24px_rgba(23,57,102,0.04)]">
@@ -180,7 +189,7 @@ setForm(prev => ({
   <input
     className={inputClass}
     value={form.assignee}
-    disabled={fromPortal}
+    disabled={authenticated}
     placeholder="담당 학습설계사 성함"
     onChange={e => set("assignee", e.target.value)}
   />
@@ -206,10 +215,11 @@ setForm(prev => ({
               type="button"
               onClick={handleSubmit}
               disabled={
-                !canSubmit ||
-                submitting ||
-                (fromPortal && !authenticated)
-              }
+  !ready ||
+  loadingSession ||
+  !canSubmit ||
+  submitting
+}
               className="h-14 w-full rounded-2xl bg-[#1655a2] text-base font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               {submitting ? "신청 접수 중..." : "실습 신청하기"}
