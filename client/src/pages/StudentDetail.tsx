@@ -5594,21 +5594,18 @@ disabled={isReadOnly}
                                       );
                                     }
                                   }}
+                                  
                                   onKeyDown={(e) =>
-                                    
-onChange={(e) => {
-  handlePlanCategoryChange(row, e.target.value);
-}}
-onKeyDown={(e) =>
-  cycleSelectValue(
-    e,
-    ["전공", "교양", "일반"],
-    row.planCategory || "전공",
-    (next) => {
-      handlePlanCategoryChange(row, next);
-    }
-  )
-}
+                                    cycleSelectValue(
+                                      e,
+                                      ["전공", "교양", "일반"],
+                                      row.planCategory || "전공",
+                                      (next) => {
+                                        handlePlanCategoryChange(row, next);
+                                      }
+                                    )
+                                  }
+
 
                                 >
                                   <option value="전공">전공</option>
