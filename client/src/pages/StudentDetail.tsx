@@ -916,17 +916,19 @@ if (isReadOnly) {
   })),
 });
 
-await Promise.all([
-  utils.planSemester.list.invalidate({ studentId }),
-  utils.creditSummary.student.getSummary.invalidate({ studentId }),
-]);
+
+await utils.planSemester.list.invalidate({ studentId });
+
+setTemplateDialogOpen(false);
+setSelectedTemplateIds([]);
 
 toast.success(
   `과목 ${result.appliedCount}개 적용 완료`
 );
 
-setTemplateDialogOpen(false);
-setSelectedTemplateIds([]);
+void utils.creditSummary.student.getSummary
+  .invalidate({ studentId });
+
 } catch (e: any) {
   await Promise.all([
     utils.planSemester.list.invalidate({ studentId }),
