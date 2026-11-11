@@ -37524,29 +37524,68 @@ perfStep("PLAN_AND_TRANSFER_READS");
       selectedNames.add(name);
     }
 
+    
     // 최종 결과에 대한 검사 완료 후 저장 시작
-    for (let i = 0; i < sharedCount; i++) {
-      const current = currentRows[i];
-      const next = subjects[i];
+    if (sharedCount > 0) {
+      const updates = Array.from({ length: sharedCount }, (_, i) => ({
+        id: Number(currentRows[i].id),
+        subjectName: normalizeSubjectName(subjects[i].subjectName),
+        category: subjects[i].category,
+        requirementType: subjects[i].requirementType,
+        settlementIncluded: subjects[i].settlementIncluded,
+        sortOrder: i,
+      }));
+
+      const buildCase = (
+        column: any,
+        getValue: (row: typeof updates[number]) => any
+      ) => sql`
+        CASE ${planSemesters.id}
+          ${sql.join(
+            updates.map(row => sql`WHEN ${row.id} THEN ${getValue(row)}`),
+            sql` `
+          )}
+          ELSE ${column}
+        END
+      `;
 
       await tx
         .update(planSemesters)
         .set({
-          subjectName: normalizeSubjectName(next.subjectName),
-          planCategory: next.category,
-          planRequirementType: next.requirementType,
-          settlementIncluded: next.settlementIncluded,
-          sortOrder: i,
+          subjectName: buildCase(
+            planSemesters.subjectName,
+            row => row.subjectName
+          ),
+          planCategory: buildCase(
+            planSemesters.planCategory,
+            row => row.category
+          ),
+          planRequirementType: buildCase(
+            planSemesters.planRequirementType,
+            row => row.requirementType
+          ),
+          settlementIncluded: buildCase(
+            planSemesters.settlementIncluded,
+            row => row.settlementIncluded
+          ),
+          sortOrder: buildCase(
+            planSemesters.sortOrder,
+            row => row.sortOrder
+          ),
           retakeRequired: false,
         } as any)
         .where(
           and(
-            eq(planSemesters.id, Number(current.id)),
+            inArray(
+              planSemesters.id,
+              updates.map(row => row.id)
+            ),
             eq(planSemesters.studentId, studentId),
             eq(planSemesters.organizationId, organizationId)
           )
         );
     }
+
 
 perfStep("UPDATE_ROWS");
 

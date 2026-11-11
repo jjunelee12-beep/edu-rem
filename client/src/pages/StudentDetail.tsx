@@ -2908,11 +2908,17 @@ if (isReadOnly) return;
   };
 
 
+
 const handlePlanCategoryChange = (
   row: any,
   nextCategory: string
 ) => {
   if (isReadOnly) return;
+
+  const previousCategory = row.planCategory;
+  const previousRequirementType = row.planRequirementType;
+
+  if (previousCategory === nextCategory) return;
 
   const nextRequirementType =
     nextCategory === "교양"
@@ -2923,16 +2929,51 @@ const handlePlanCategoryChange = (
           ? "전공필수"
           : "전공선택";
 
-  updatePlanSemesterMut.mutate({
-    id: Number(row.id),
-    category: nextCategory as "전공" | "교양" | "일반",
-    requirementType: nextRequirementType as
-      | "전공필수"
-      | "전공선택"
-      | "교양"
-      | "일반",
-  });
+  const updateCachedRow = (
+    category: string,
+    requirementType: string
+  ) => {
+    utils.planSemester.list.setData(
+      { studentId },
+      (old) =>
+        old?.map((item) =>
+          Number(item.id) === Number(row.id)
+            ? {
+                ...item,
+                planCategory: category,
+                planRequirementType: requirementType,
+              }
+            : item
+        )
+    );
+  };
+
+  // 선택 즉시 화면 변경
+  updateCachedRow(nextCategory, nextRequirementType);
+
+  // 기존 서버 저장 방식 유지
+  updatePlanSemesterMut.mutate(
+    {
+      id: Number(row.id),
+      category: nextCategory as "전공" | "교양" | "일반",
+      requirementType: nextRequirementType as
+        | "전공필수"
+        | "전공선택"
+        | "교양"
+        | "일반",
+    },
+    {
+      onError: () => {
+        // 저장 실패 시 기존 값 복구
+        updateCachedRow(
+          previousCategory,
+          previousRequirementType
+        );
+      },
+    }
+  );
 };
+
 
 
 const handlePlanSettlementIncludedChange = (row: any, checked: boolean) => {
