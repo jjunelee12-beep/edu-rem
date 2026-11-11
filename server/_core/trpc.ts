@@ -136,6 +136,33 @@ if (organization.subscriptionStatus === "cancelled") {
 }
 }
 
+
+const apiPerformanceMiddleware = t.middleware(async ({ path, type, next }) => {
+  const startedAt = performance.now();
+
+  try {
+    const result = await next();
+    const elapsedMs = Math.round(performance.now() - startedAt);
+
+    if (elapsedMs >= 500) {
+      console.warn(
+        `[PERF][API] ${type} ${path} ${elapsedMs}ms ${result.ok ? "OK" : "ERROR"}`
+      );
+    }
+
+    return result;
+  } catch (error) {
+    const elapsedMs = Math.round(performance.now() - startedAt);
+
+    console.warn(
+      `[PERF][API] ${type} ${path} ${elapsedMs}ms THROWN`
+    );
+
+    throw error;
+  }
+});
+
+
 const apiErrorLogMiddleware = t.middleware(
   async ({ ctx, path, type, rawInput, next }) => {
     const result = await next();
@@ -197,7 +224,21 @@ const requireUser = t.middleware(async (opts) => {
 );
   }
 
-await assertOrganizationActive(ctx.user);
+
+const organizationCheckStartedAt = performance.now();
+
+try {
+  await assertOrganizationActive(ctx.user);
+} finally {
+  const elapsedMs = Math.round(
+    performance.now() - organizationCheckStartedAt
+  );
+
+  if (elapsedMs >= 300) {
+    console.warn(`[PERF][AUTH] organizationCheck ${elapsedMs}ms`);
+  }
+}
+
 
   return next({
     ctx: {
@@ -207,9 +248,12 @@ await assertOrganizationActive(ctx.user);
   });
 });
 
+
 export const protectedProcedure = t.procedure
+  .use(apiPerformanceMiddleware)
   .use(requireUser)
   .use(apiErrorLogMiddleware);
+
 /**
  * admin / host 전용
  * superhost는 포함하지 않음
