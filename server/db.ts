@@ -37383,6 +37383,20 @@ export async function applyPlanSemesterTemplateAtomic(params: {
  
   const result = await db.transaction(async (tx) => {
 
+
+const perfStart = performance.now();
+let perfLast = perfStart;
+
+const perfStep = (name: string) => {
+  const now = performance.now();
+  console.info("[PERF][TEMPLATE]", name, {
+    stepMs: Math.round(now - perfLast),
+    totalMs: Math.round(now - perfStart),
+  });
+  perfLast = now;
+};
+
+
     // 동일 학생에 대한 동시 템플릿 적용 방지
     const lockedStudents = await tx
       .select({ id: students.id })
@@ -37403,6 +37417,8 @@ export async function applyPlanSemesterTemplateAtomic(params: {
         404
       );
     }
+
+perfStep("STUDENT_LOCK");
 
     const allPlanRows = await tx
       .select()
@@ -37428,6 +37444,8 @@ export async function applyPlanSemesterTemplateAtomic(params: {
           eq(transferSubjects.organizationId, organizationId)
         )
       );
+
+perfStep("PLAN_AND_TRANSFER_READS");
 
     const currentRows = allPlanRows.filter(
       row => Number(row.semesterNo) === semesterNo
@@ -37530,6 +37548,8 @@ export async function applyPlanSemesterTemplateAtomic(params: {
         );
     }
 
+perfStep("UPDATE_ROWS");
+
     for (let i = sharedCount; i < subjects.length; i++) {
       const next = subjects[i];
 
@@ -37547,6 +37567,7 @@ export async function applyPlanSemesterTemplateAtomic(params: {
       } as any);
     }
 
+perfStep("INSERT_ROWS");
     
     return {
       success: true,
