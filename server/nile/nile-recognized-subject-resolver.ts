@@ -1340,23 +1340,18 @@ export async function resolveNileRecognizedSubjects(
   }
 
 
-  const resolvedSubjects:
-    NileResolvedRecognizedSubject[] =
-    [];
-
-
-  for (
-    const subject
-    of subjects
-  ) {
-    resolvedSubjects.push(
-      await classifySingleSubject({
+  
+const resolvedSubjects:
+  NileResolvedRecognizedSubject[] =
+  await Promise.all(
+    subjects.map((subject) =>
+      classifySingleSubject({
         curriculum,
-
         subject,
       })
-    );
-  }
+    )
+  );
+
 
 
   return {
