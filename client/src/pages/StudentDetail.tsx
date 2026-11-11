@@ -917,7 +917,6 @@ if (isReadOnly) {
 });
 
 
-await utils.planSemester.list.invalidate({ studentId });
 
 setTemplateDialogOpen(false);
 setSelectedTemplateIds([]);
@@ -926,8 +925,14 @@ toast.success(
   `과목 ${result.appliedCount}개 적용 완료`
 );
 
-void utils.creditSummary.student.getSummary
-  .invalidate({ studentId });
+void Promise.all([
+  utils.planSemester.list.invalidate({ studentId }),
+  utils.creditSummary.student.getSummary.invalidate({ studentId }),
+]).catch((error) => {
+  console.error("[PlanTemplate] refresh failed", error);
+  toast.error("저장은 완료됐지만 화면 갱신에 실패했습니다.");
+});
+
 
 } catch (e: any) {
   await Promise.all([
@@ -5580,22 +5585,11 @@ disabled={isReadOnly}
                                   }}
                                   className="w-full h-8 px-2 text-sm border rounded bg-white"
                                   value={row.planCategory || "전공"}
-                                  onChange={(e) => {
-                                    const nextCategory = e.target.value;
-                                    handlePlanSemesterBlur(row.id, "category", nextCategory);
+                                  
+onChange={(e) => {
+  handlePlanCategoryChange(row, e.target.value);
+}}
 
-                                    if (nextCategory === "교양") {
-                                      handlePlanSemesterBlur(row.id, "requirementType", "교양");
-                                    } else if (nextCategory === "일반") {
-                                      handlePlanSemesterBlur(row.id, "requirementType", "일반");
-                                    } else {
-                                      handlePlanSemesterBlur(
-                                        row.id,
-                                        "requirementType",
-                                        row.planRequirementType === "전공필수" ? "전공필수" : "전공선택"
-                                      );
-                                    }
-                                  }}
                                   
                                   onKeyDown={(e) =>
                                     cycleSelectValue(
