@@ -900,6 +900,67 @@ if (isReadOnly) {
     }
   }
 
+
+  // 서버 저장 전 과목 목록을 즉시 화면에 반영
+  await utils.planSemester.list.cancel({ studentId });
+
+  const previousPlanRows =
+    utils.planSemester.list.getData({ studentId });
+
+  const sharedCount = Math.min(
+    currentRows.length,
+    normalizedRows.length
+  );
+
+  const optimisticRows = normalizedRows.map(
+    (row: any, index: number) => {
+      const existing = currentRows[index];
+
+      return {
+        ...(existing || {}),
+        id: existing
+          ? Number(existing.id)
+          : -(Date.now() + index + 1),
+        organizationId: existing?.organizationId,
+        studentId,
+        semesterNo: Number(templateDialogSemesterNo),
+        subjectName: String(row.subjectName).trim(),
+        planCategory: row.normalizedCategory,
+        planRequirementType: row.normalizedRequirementType,
+        settlementIncluded: !/실습|무료/.test(
+          String(row.subjectName || "")
+        ),
+        credits: existing?.credits ?? 3,
+        sortOrder: index,
+        retakeRequired: false,
+      };
+    }
+  );
+
+  utils.planSemester.list.setData(
+    { studentId },
+    (old) => {
+      if (!old) return old;
+
+      const targetSemester = Number(templateDialogSemesterNo);
+
+      const otherRows = old.filter(
+        (row: any) =>
+          Number(row.semesterNo) !== targetSemester
+      );
+
+      // 기존 과목이 더 많으면 나머지는 그대로 보존
+      const preservedRows = currentRows.slice(sharedCount);
+
+      return [
+        ...otherRows,
+        ...optimisticRows,
+        ...preservedRows,
+      ] as typeof old;
+    }
+  );
+
+
   const result = await applyPlanTemplateMut.mutateAsync({
   studentId,
   semesterNo: Number(templateDialogSemesterNo),
@@ -934,11 +995,14 @@ void Promise.all([
 });
 
 
+
 } catch (e: any) {
-  await Promise.all([
-    utils.planSemester.list.invalidate({ studentId }),
-    utils.creditSummary.student.getSummary.invalidate({ studentId }),
-  ]);
+  // 저장 실패 시 임시 표시를 취소하고 서버 데이터로 복구
+  await utils.planSemester.list.invalidate({ studentId });
+
+  void utils.creditSummary.student.getSummary.invalidate({
+    studentId,
+  });
 
   toast.error(
     e.message || "템플릿 적용 중 오류가 발생했습니다."
@@ -969,16 +1033,24 @@ void Promise.all([
   onError: (e) => toast.error(e.message),
 });
 
-  const bulkCreateTransferSubjectMut = trpc.transferSubject.bulkCreate.useMutation({
-  onSuccess: async (res) => {
-    await Promise.all([
-      utils.transferSubject.list.invalidate({ studentId }),
-      utils.creditSummary.student.getSummary.invalidate({ studentId }),
-    ]);
-    toast.success(`전적대 과목 ${res.count}개 추가 완료`);
-  },
-  onError: (e) => toast.error(e.message),
-});
+  
+const bulkCreateTransferSubjectMut =
+  trpc.transferSubject.bulkCreate.useMutation({
+    onSuccess: (res) => {
+      toast.success(`전적대 과목 ${res.count}개 추가 완료`);
+
+      // 저장 완료 후 목록과 학점요약을 백그라운드 갱신
+      void Promise.all([
+        utils.transferSubject.list.invalidate({ studentId }),
+        utils.creditSummary.student.getSummary.invalidate({ studentId }),
+      ]).catch((error) => {
+        console.error("[TransferSubject] refresh failed", error);
+        toast.error("저장은 완료됐지만 화면 갱신에 실패했습니다.");
+      });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
 
   const createTransferAttachmentMut = trpc.transferAttachment.create.useMutation({
     onSuccess: async () => {
