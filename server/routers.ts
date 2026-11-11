@@ -15421,6 +15421,19 @@ aiManagement: router({
       .query(async ({ ctx, input }) => {
         const organizationId = getCtxOrganizationId(ctx);
 
+
+const perfStartedAt = performance.now();
+let perfPreviousAt = perfStartedAt;
+
+const perfStep = (name: string) => {
+  const now = performance.now();
+  console.warn(
+    `[PERF][SUMMARY] ${name} step=${Math.round(now - perfPreviousAt)}ms total=${Math.round(now - perfStartedAt)}ms`
+  );
+  perfPreviousAt = now;
+};
+
+
         const student = await db.getStudent(input.studentId, {
           organizationId,
         });
@@ -15506,6 +15519,8 @@ let rule: any = null;
 });
         }
 
+perfStep("DB_READS");
+
         /**
  * 기존 학점요약 계산결과.
  *
@@ -15525,6 +15540,8 @@ const legacySummary =
     transferSubjects,
     extraItems,
   });
+
+perfStep("LEGACY_CALC");
 
 /**
  * ─────────────────────────────
@@ -15569,14 +15586,19 @@ const aiContext =
       organizationId,
   });
 
+
+perfStep("AI_CONTEXT");
+
 const engine =
   await analyzeStudentDetailRisk({
-    context:
-      aiContext,
-
-    studentId:
-      input.studentId,
+    context: aiContext,
+    studentId: input.studentId,
   });
+
+perfStep("RISK_ENGINE");
+
+
+
 
 return {
   /**
