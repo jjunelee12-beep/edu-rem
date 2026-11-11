@@ -1148,6 +1148,21 @@ async function analyzeStudentDetailRiskInternal(
       number;
   }
 ): Promise<StudentDetailRiskToolOutput> {
+
+
+  const riskPerfStartedAt = performance.now();
+  let riskPerfPreviousAt = riskPerfStartedAt;
+
+  const riskPerfStep = (name: string) => {
+    const now = performance.now();
+
+    console.warn(
+      `[PERF][RISK] ${name} step=${Math.round(now - riskPerfPreviousAt)}ms total=${Math.round(now - riskPerfStartedAt)}ms`
+    );
+
+    riskPerfPreviousAt = now;
+  };
+
   const studentId =
     Number(
       params.studentId
@@ -1212,6 +1227,8 @@ async function analyzeStudentDetailRiskInternal(
       "인증된 본인의 학생 정보만 조회할 수 있습니다."
     );
   }
+
+  riskPerfStep("VALIDATION");
 
   /**
    * 항상 studentId + organizationId로
@@ -1355,6 +1372,8 @@ async function analyzeStudentDetailRiskInternal(
     }
   ),
 ]);
+
+riskPerfStep("STUDENT_AND_DB_READS");
 
 const effectivePaymentDate =
   registrationSummary.paymentDate ??
@@ -2785,6 +2804,8 @@ const degreeSubjectTemplates =
       )
     : [];
 
+riskPerfStep("CATALOG_DB_READS");
+
 console.log(
   "[ACADEMIC_ENGINE_CATALOG_DEBUG]",
   {
@@ -2904,6 +2925,8 @@ const nileRecognition =
       ),
   });
 
+riskPerfStep("NILE_CURRENT");
+
 const degreeRecognizedSubjects =
   nileRecognition.canResolve
     ? nileRecognition.subjects
@@ -2968,6 +2991,8 @@ const projectedNileRecognition =
         })
       ),
   });
+
+riskPerfStep("NILE_PROJECTED");
 
 const projectedDegreeRecognizedSubjects =
   projectedNileRecognition.canResolve
@@ -3110,6 +3135,8 @@ const nileDegreePlanningRecognition =
           .values()
       ),
   });
+
+riskPerfStep("NILE_PLANNING");
 
 const degreeClassificationBySubjectKey =
   new Map<
@@ -5627,6 +5654,8 @@ const riskScore =
       : warningCount > 0
         ? "warning"
         : "normal";
+
+riskPerfStep("FINAL_CALC");
 
   return {
     student: {
