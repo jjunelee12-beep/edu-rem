@@ -261,6 +261,23 @@ export default function StudentDetail() {
   const { user } = useAuth();
   const utils = trpc.useUtils();
 
+
+const savingPlanRowIdsRef = useRef<Set<number>>(new Set());
+const [savingPlanRowIds, setSavingPlanRowIds] = useState<Set<number>>(
+  () => new Set()
+);
+
+const setPlanRowSaving = (rowId: number, saving: boolean) => {
+  if (saving) {
+    savingPlanRowIdsRef.current.add(rowId);
+  } else {
+    savingPlanRowIdsRef.current.delete(rowId);
+  }
+
+  setSavingPlanRowIds(new Set(savingPlanRowIdsRef.current));
+};
+
+
   const isAdmin = user?.role === "admin" || user?.role === "host";
   const planSectionRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const planFieldRefs = useRef<Record<string, HTMLInputElement | HTMLSelectElement | null>>({});
@@ -782,17 +799,22 @@ const { data: subjectCatalogItemList } =
   onError: (e) => toast.error(e.message),
 });
 
-const updatePlanSemesterMut = trpc.planSemester.update.useMutation({
-  onSuccess: async () => {
-  if (isApplyingTemplate) return;
 
-  await Promise.all([
-    utils.planSemester.list.invalidate({ studentId }),
-    utils.creditSummary.student.getSummary.invalidate({ studentId }),
-  ]);
-},
+const updatePlanSemesterMut = trpc.planSemester.update.useMutation({
+  onSuccess: () => {
+    if (isApplyingTemplate) return;
+
+    void Promise.all([
+      utils.planSemester.list.invalidate({ studentId }),
+      utils.creditSummary.student.getSummary.invalidate({ studentId }),
+    ]).catch((error) => {
+      console.error("[PlanSemester] refresh failed", error);
+      toast.error("저장은 완료됐지만 화면 갱신에 실패했습니다.");
+    });
+  },
   onError: (e) => toast.error(e.message),
 });
+
 
 const deletePlanSemesterMut = trpc.planSemester.delete.useMutation({
   onSuccess: async () => {
@@ -2981,11 +3003,16 @@ if (isReadOnly) return;
 
 
 
-const handlePlanCategoryChange = (
+
+const handlePlanCategoryChange = async (
   row: any,
   nextCategory: string
 ) => {
   if (isReadOnly) return;
+
+  const rowId = Number(row.id);
+
+  if (savingPlanRowIdsRef.current.has(rowId)) return;
 
   const previousCategory = row.planCategory;
   const previousRequirementType = row.planRequirementType;
@@ -3001,49 +3028,98 @@ const handlePlanCategoryChange = (
           ? "전공필수"
           : "전공선택";
 
-  const updateCachedRow = (
-    category: string,
-    requirementType: string
-  ) => {
+  setPlanRowSaving(rowId, true);
+
+  try {
+    // 기존 목록 조회가 새 선택값을 덮어쓰지 않도록 취소
+    await utils.planSemester.list.cancel({ studentId });
+
+    // 선택한 값을 화면에 먼저 반영
     utils.planSemester.list.setData(
       { studentId },
       (old) =>
         old?.map((item) =>
-          Number(item.id) === Number(row.id)
+          Number(item.id) === rowId
             ? {
                 ...item,
-                planCategory: category,
-                planRequirementType: requirementType,
+                planCategory: nextCategory,
+                planRequirementType: nextRequirementType,
               }
             : item
         )
     );
-  };
 
-  // 선택 즉시 화면 변경
-  updateCachedRow(nextCategory, nextRequirementType);
-
-  // 기존 서버 저장 방식 유지
-  updatePlanSemesterMut.mutate(
-    {
-      id: Number(row.id),
+    await updatePlanSemesterMut.mutateAsync({
+      id: rowId,
       category: nextCategory as "전공" | "교양" | "일반",
       requirementType: nextRequirementType as
         | "전공필수"
         | "전공선택"
         | "교양"
         | "일반",
-    },
-    {
-      onError: () => {
-        // 저장 실패 시 기존 값 복구
-        updateCachedRow(
-          previousCategory,
-          previousRequirementType
-        );
-      },
-    }
-  );
+    });
+  } catch (error) {
+    // 실패하면 서버에 저장된 실제 데이터로 복구
+    await utils.planSemester.list.invalidate({ studentId });
+  } finally {
+    setPlanRowSaving(rowId, false);
+  }
+};
+
+
+
+
+const handlePlanRequirementTypeChange = async (
+  row: any,
+  nextType: "전공필수" | "전공선택"
+) => {
+  if (isReadOnly) return;
+
+  const rowId = Number(row.id);
+
+  if (savingPlanRowIdsRef.current.has(rowId)) return;
+
+  const previousType = row.planRequirementType;
+
+  if (previousType === nextType) return;
+
+  // 기존 허용 개수 검사 유지
+  if (!canChangeRequirementType(nextType, rowId)) {
+    toast.error(`${nextType} 허용 개수를 초과했습니다.`);
+    return;
+  }
+
+  setPlanRowSaving(rowId, true);
+
+  try {
+    // 진행 중인 목록 조회 취소
+    await utils.planSemester.list.cancel({ studentId });
+
+    // 서버 응답 전에 화면 변경
+    utils.planSemester.list.setData(
+      { studentId },
+      (old) =>
+        old?.map((item) =>
+          Number(item.id) === rowId
+            ? {
+                ...item,
+                planRequirementType: nextType,
+              }
+            : item
+        )
+    );
+
+    // 기존 DB 저장 방식 유지
+    await updatePlanSemesterMut.mutateAsync({
+      id: rowId,
+      requirementType: nextType,
+    });
+  } catch (error) {
+    // 저장 실패 시 서버의 실제 값으로 복구
+    await utils.planSemester.list.invalidate({ studentId });
+  } finally {
+    setPlanRowSaving(rowId, false);
+  }
 };
 
 
@@ -5692,7 +5768,7 @@ disabled={isReadOnly}
 
                               <td className="px-2 py-1">
                                 <select
-			disabled={isReadOnly}
+			disabled={isReadOnly || savingPlanRowIds.has(Number(row.id))}
                                   ref={(el) => {
                                     planFieldRefs.current[`plan-category-${group.semesterNo}-${rowIndex}`] = el;
                                   }}
@@ -5726,37 +5802,35 @@ onChange={(e) => {
                               <td className="px-2 py-1">
                                 {row.planCategory === "전공" ? (
                                   <select
-			disabled={isReadOnly}
+			disabled={isReadOnly || savingPlanRowIds.has(Number(row.id))}
                                     ref={(el) => {
                                       planFieldRefs.current[`plan-type-${group.semesterNo}-${rowIndex}`] = el;
                                     }}
                                     className={`w-full h-8 px-2 text-sm rounded ${requirementBadgeClass(row.planRequirementType)}`}
                                     value={row.planRequirementType || "전공선택"}
-                                    onChange={(e) => {
-  const nextType = e.target.value;
-
-  if (!canChangeRequirementType(nextType, row.id)) {
-    toast.error(`${nextType} 허용 개수를 초과했습니다.`);
-    return;
-  }
-
-  handlePlanSemesterBlur(row.id, "requirementType", nextType);
+                                    
+onChange={(e) => {
+  handlePlanRequirementTypeChange(
+    row,
+    e.target.value as "전공필수" | "전공선택"
+  );
 }}
-                                    onKeyDown={(e) =>
-                                      cycleSelectValue(
-                                        e,
-                                        ["전공필수", "전공선택"],
-                                        row.planRequirementType || "전공선택",
-                                        (next) => {
-  if (!canChangeRequirementType(next, row.id)) {
-    toast.error(`${next} 허용 개수를 초과했습니다.`);
-    return;
-  }
 
-  handlePlanSemesterBlur(row.id, "requirementType", next);
+                                    
+onKeyDown={(e) =>
+  cycleSelectValue(
+    e,
+    ["전공필수", "전공선택"],
+    row.planRequirementType || "전공선택",
+    (next) => {
+      handlePlanRequirementTypeChange(
+        row,
+        next as "전공필수" | "전공선택"
+      );
+    }
+  )
 }
-                                      )
-                                    }
+
                                   >
                                     <option value="전공필수">전공필수</option>
                                     <option value="전공선택">전공선택</option>
