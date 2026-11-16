@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc";
 
-type Tab = "guide" | "service" | "reviews" | "developer";
+type Tab = "guide" | "service" | "reviews";
 const tabs: { key: Tab; title: string }[] = [
   { key: "guide", title: "취득가이드" },
   { key: "service", title: "교육원 서비스" },
@@ -148,18 +148,7 @@ export default function SocialWorkerGuide() {
       src="/images/service-main-banner.png"
       alt="사회복지사 2급 교육원 서비스"
     />
-  ) : (
-    <div className="swg-cover-other">
-      <small>
-        {tab === "reviews" ? "이용후기" : "개발자 이야기"}
-      </small>
-      <h1>
-  {tab === "reviews"
-    ? "실제 이용후기"
-    : "학생일정포털 개발자 이야기"}
-</h1>
-    </div>
-  )}
+  ) : null}
 </div>
       <nav className="swg-tabs" aria-label="안내 페이지 메뉴">{tabs.map(t => <button key={t.key} className={tab === t.key ? "active" : ""} onClick={() => changeTab(t.key)}>{t.title}</button>)}</nav>
       {tab === "guide" && <main className="swg-guide">
@@ -318,9 +307,9 @@ export default function SocialWorkerGuide() {
       </p>
 
       <ImageSlot
-        src="/images/service-employment-center.png"
-        label="취업정보센터 실제 운영 화면"
-      />
+  src="/images/service-employment-center.png"
+  label="고용24 연동 취업정보센터 모바일 화면"
+/>
 
       <div className="swg-service-points">
         <div><b>01</b><span>거주지 주변 채용공고 검색</span></div>
@@ -430,23 +419,165 @@ export default function SocialWorkerGuide() {
   </main>
 )}
 
+
 {tab === "reviews" && (
-  <main>
-    <section className="swg-section">
-      <span className="swg-eyebrow">실제 이용후기</span>
-      <h2>회원님들의 이용후기를 확인해 보세요.</h2>
-      <p>교육원 이용후기를 확인하실 수 있습니다.</p>
+  <main className="swg-reviews">
+    {/* 01. 상단 배너 */}
+    <div className="swg-review-hero">
+      <img
+        src="/images/service-review-banner.png"
+        alt="실제 이용후기"
+      />
+    </div>
+
+    {/* 03. 실제 후기 */}
+    <section className="swg-review-gallery">
+      <div className="swg-review-section-heading">
+        <span className="swg-review-kicker">STUDENT STORIES</span>
+        <h2>수강생이 전하는 이야기</h2>
+        <p>
+          학습 과정에서 느낀 경험과 이야기를
+          확인해 보세요.
+        </p>
+      </div>
+
+      <div className="swg-review-gallery-image">
+        <img
+          src="/images/service-review-grid.png"
+          alt="사회복지사 2급 수강생 후기 모음"
+          loading="lazy"
+        />
+      </div>
+
+      <p className="swg-review-disclaimer">
+        ※ 후기 내용은 실제 확인된 사례에 한해 게시하며,
+        개인정보는 보호 처리합니다.
+      </p>
     </section>
 
-    <Next
-      title="교육원 관리 서비스가 궁금하신가요?"
-      button="교육원 서비스 확인하기"
-      onClick={() => changeTab("service")}
-    />
+    {/* 04. 관리 서비스 확인 */}
+    <section className="swg-review-check">
+      <span className="swg-review-kicker">DIRECT EXPERIENCE</span>
+      <h2>
+        후기뿐 아니라,<br />
+        <em>실제 관리 방식까지 확인하세요.</em>
+      </h2>
+      <p>
+        학생일정포털에서는 담당자가 관리하는 학습계획,
+        수업과 실습 진행상황, 행정절차 및 자격증
+        신청 예상일을 직접 확인할 수 있습니다.
+      </p>
+
+      <div className="swg-review-check-items">
+        <div><span>✓</span> 개인별 학사일정과 진행상황</div>
+        <div><span>✓</span> 과목 누락 예방을 위한 설계 안전검사</div>
+        <div><span>✓</span> 실습 및 행정절차 진행현황</div>
+        <div><span>✓</span> 취업정보센터 채용공고 확인</div>
+      </div>
+
+      <button
+        type="button"
+        className="swg-review-service-btn"
+        onClick={() => changeTab("service")}
+      >
+        교육원 관리 서비스 확인하기 <span>→</span>
+      </button>
+    </section>
+
+    {/* 05. 개발자 이야기 */}
+    <section className="swg-review-developer">
+      <div className="swg-review-section-heading">
+        <span className="swg-review-kicker">DEVELOPER STORY</span>
+        <h2>7년간의 현장에서 찾은 답</h2>
+        <p>학습담당자가 직접 개발한 이유</p>
+      </div>
+
+      <div className="swg-review-story">
+        <div className="swg-review-story-number">01 / 문제를 보다</div>
+        <h3>학습자는 왜 담당자의 말만 믿어야 할까요?</h3>
+        <p>
+          7년간 학습담당자로 일하며 수많은 학습자분들의
+          과정을 함께해 왔습니다.
+        </p>
+        <p>
+          그 과정에서 과목 누락, 행정절차 지연,
+          담당자 연락 두절 등으로 취득 시기가
+          늦어지는 사례들을 접했습니다.
+        </p>
+        <p>
+          학습자는 오랜 시간과 비용을 투자하지만,
+          정작 자신의 과정이 어떻게 관리되는지
+          확인하기 어려운 구조가 문제라고 생각했습니다.
+        </p>
+      </div>
+
+      <div className="swg-review-story">
+        <div className="swg-review-story-number">02 / 방향을 고민하다</div>
+        <h3>학습관리도 발전해야 한다고 생각했습니다.</h3>
+        <p>
+          학점은행제는 학습자가 스스로 학습계획과
+          행정절차를 확인하는 것이 중요한 제도입니다.
+          담당자의 도움은 그 과정을 더 정확하고
+          편리하게 만들어야 합니다.
+        </p>
+        <p>
+          하지만 여전히 수기 관리와 개별 연락에
+          의존하는 방식만으로는 많은 학습자의
+          서로 다른 일정을 놓치지 않고 관리하기 어렵습니다.
+        </p>
+      </div>
+
+      <div className="swg-review-story swg-review-story-featured">
+        <div className="swg-review-story-number">03 / 직접 해결하다</div>
+        <h3>
+          그래서 학습자 중심의<br />
+          <span>학사관리시스템을 직접 개발했습니다.</span>
+        </h3>
+        <p>
+          시스템은 학습계획과 중요한 일정을 점검하고,
+          학습담당자는 정확한 안내와 필요한
+          행정 지원에 집중할 수 있도록 설계했습니다.
+        </p>
+        <p>
+          무엇보다 학습자 본인이 자신의 진행상황을
+          직접 확인할 수 있어야 한다고 생각했습니다.
+        </p>
+      </div>
+
+      <div className="swg-review-built">
+        <h3>직접 개발한 학습관리 서비스</h3>
+        <div><b>01</b><span>학사관리시스템</span><small>학습설계·학기·행정절차 관리</small></div>
+        <div><b>02</b><span>학생일정포털</span><small>개인별 학사일정 실시간 확인</small></div>
+        <div><b>03</b><span>실습배정지원센터</span><small>지역·일정별 실습 지원</small></div>
+        <div><b>04</b><span>취업정보센터</span><small>고용24 채용정보 연동</small></div>
+      </div>
+
+      <div className="swg-review-philosophy">
+        <strong>
+          100명의 학습자 중 단 한 명이라도
+          관리 누락으로 취득 시기가 늦어진다면,
+          그 한 사람에게는 결코 작은 문제가 아닙니다.
+        </strong>
+        <p>
+          학습자가 자신의 일정을 확인하며
+          안심하고 준비할 수 있는 평생교육 환경을
+          만들어 가겠습니다.
+        </p>
+      </div>
+
+      <div className="swg-review-author">
+        <span>학습관리시스템 개발자</span>
+        <h3>이재준 <small>학습설계 팀장</small></h3>
+        <a href="tel:01093117148">010-9311-7148</a>
+        <p>
+          과정에 대해 궁금하시거나 걱정되는 점이
+          있으시면 언제든지 편하게 연락 주세요.
+        </p>
+      </div>
+    </section>
   </main>
 )}
 
-      {tab === "developer" && <main><div className="swg-intro"><span className="swg-eyebrow">개발자 이야기</span><h2>학습자가 자신의 과정을 직접 확인할 수 있도록.</h2><p>학점은행제 학습관리 현장에서 과목 누락, 일정 지연, 행정절차 혼선을 줄이기 위해 학생일정포털과 관리 시스템을 직접 개발했습니다.</p></div><section className="swg-section"><h2>개발하게 된 이유</h2><p>사회복지사 2급은 긴 시간 준비하는 과정입니다. 담당자가 꼼꼼하게 관리하는 것뿐 아니라, 학습자 스스로 자신의 학습계획과 신청 일정을 확인할 수 있어야 한다고 생각했습니다.</p><ImageSlot src="/social-worker-guide/developer.jpg" label="개발자 또는 실제 시스템 개발 화면"/></section><section className="swg-section"><h2>시스템과 함께하는 학습관리</h2><p>학습계획, 설계 안전검사, 실습 진행상황, 행정절차와 자격증 신청 예상일을 한 화면에서 확인할 수 있도록 지속적으로 개선하고 있습니다.</p></section><Next title="취득 과정을 다시 확인하고 싶으신가요?" button="취득가이드로 돌아가기" onClick={() => changeTab("guide")}/></main>}
       <footer className="swg-footer">사회복지사 2급 필수 취득가이드<br/>안내 내용은 개인별 학력·이수내역과 기관별 운영 기준에 따라 달라질 수 있습니다.</footer>
     </div>
   </div>;
@@ -640,4 +771,836 @@ padding: 25px 16px;
 font-size: 21px;
 }
 }
+.swg-reviews {
+background: #fff;
+color: #102544;
+}
+
+.swg-review-hero img {
+display: block;
+width: 100%;
+height: auto;
+}
+
+.swg-review-kicker {
+display: inline-block;
+color: #1767d6;
+font-size: 11px;
+font-weight: 850;
+letter-spacing: 1.1px;
+margin-bottom: 9px;
+}
+
+.swg-review-section-heading {
+margin-bottom: 23px;
+}
+
+.swg-review-section-heading h2 {
+font-size: 23px;
+font-weight: 850;
+letter-spacing: -0.9px;
+line-height: 1.35;
+margin: 0 0 9px;
+color: #0d2850;
+}
+
+.swg-review-section-heading p {
+font-size: 14px;
+color: #66788e;
+line-height: 1.7;
+}
+
+.swg-review-stats-section {
+padding: 32px 20px 30px;
+background: linear-gradient(180deg, #f5f9ff, #fff);
+}
+
+.swg-review-stats {
+display: grid;
+grid-template-columns: repeat(2, minmax(0, 1fr));
+gap: 11px;
+}
+
+.swg-review-stats article {
+display: flex;
+flex-direction: column;
+align-items: flex-start;
+gap: 8px;
+background: #fff;
+border: 1px solid #dce8f9;
+border-radius: 17px;
+padding: 20px 15px;
+box-shadow: 0 5px 20px rgba(20, 72, 130, .05);
+}
+
+.swg-review-stats article > span {
+font-size: 13px;
+font-weight: 750;
+color: #536c89;
+}
+
+.swg-review-stats article > strong {
+font-size: clamp(20px, 5.5vw, 28px);
+font-weight: 900;
+color: #1267df;
+letter-spacing: -1px;
+}
+
+.swg-review-stats article > small {
+font-size: 11px;
+color: #8898aa;
+}
+
+.swg-review-stat-note {
+margin-top: 13px !important;
+font-size: 11px !important;
+color: #8995a5 !important;
+}
+
+.swg-review-gallery {
+padding: 35px 14px 32px;
+border-top: 8px solid #f3f6fb;
+}
+
+.swg-review-gallery .swg-review-section-heading {
+padding: 0 6px;
+}
+
+.swg-review-gallery-image {
+overflow: hidden;
+border-radius: 15px;
+border: 1px solid #e1eaf6;
+background: #edf5ff;
+}
+
+.swg-review-gallery-image img {
+display: block;
+width: 100%;
+height: auto;
+}
+
+.swg-review-disclaimer {
+font-size: 11px !important;
+line-height: 1.65 !important;
+color: #8492a4 !important;
+padding: 13px 6px 0;
+}
+
+.swg-review-check {
+padding: 36px 21px;
+background: linear-gradient(145deg, #103d7c, #075db6);
+color: #fff;
+}
+
+.swg-review-check .swg-review-kicker {
+color: #9ed3ff;
+}
+
+.swg-review-check h2 {
+color: #fff;
+font-size: 25px;
+line-height: 1.4;
+letter-spacing: -1px;
+margin: 0 0 14px;
+}
+
+.swg-review-check h2 em {
+font-style: normal;
+color: #ffe06b;
+}
+
+.swg-review-check > p {
+color: #dcecff;
+font-size: 14px;
+line-height: 1.85;
+}
+
+.swg-review-check-items {
+display: grid;
+gap: 9px;
+margin: 24px 0;
+}
+
+.swg-review-check-items div {
+display: flex;
+align-items: center;
+gap: 10px;
+padding: 12px 13px;
+background: rgba(255,255,255,.09);
+border: 1px solid rgba(255,255,255,.14);
+border-radius: 11px;
+font-size: 13px;
+font-weight: 650;
+}
+
+.swg-review-check-items span {
+display: grid;
+place-items: center;
+width: 23px;
+height: 23px;
+flex: none;
+border-radius: 50%;
+background: #fff;
+color: #1766d2;
+font-weight: 900;
+}
+
+.swg-review-service-btn {
+width: 100%;
+border: 0;
+border-radius: 12px;
+background: #fff;
+color: #104c94;
+font-size: 15px;
+font-weight: 850;
+padding: 17px 14px;
+display: flex;
+align-items: center;
+justify-content: center;
+gap: 10px;
+cursor: pointer;
+}
+
+.swg-review-service-btn span {
+font-size: 20px;
+}
+
+.swg-review-developer {
+padding: 40px 20px 35px;
+background: #f8faff;
+}
+
+.swg-review-story {
+padding: 22px 0;
+border-bottom: 1px solid #dfe8f4;
+}
+
+.swg-review-story-number {
+font-size: 11px;
+font-weight: 850;
+color: #2375d9;
+letter-spacing: .7px;
+margin-bottom: 11px;
+}
+
+.swg-review-story h3 {
+margin: 0 0 14px;
+color: #102d55;
+font-size: 19px;
+font-weight: 850;
+letter-spacing: -.6px;
+line-height: 1.5;
+}
+
+.swg-review-story p {
+margin-bottom: 12px;
+color: #4c6079;
+font-size: 14px;
+line-height: 1.9;
+}
+
+.swg-review-story-featured {
+margin: 20px -5px 0;
+padding: 23px 17px;
+background: #eaf3ff;
+border: 1px solid #d4e6fc;
+border-radius: 16px;
+}
+
+.swg-review-story-featured h3 span {
+color: #1168d4;
+}
+
+.swg-review-built {
+margin-top: 28px;
+padding: 23px 16px 12px;
+background: #fff;
+border: 1px solid #e0eaf6;
+border-radius: 17px;
+box-shadow: 0 8px 24px rgba(17,67,123,.04);
+}
+
+.swg-review-built h3 {
+margin: 0 0 17px;
+font-size: 17px;
+color: #102c54;
+}
+
+.swg-review-built > div {
+display: grid;
+grid-template-columns: 26px minmax(0,1fr);
+gap: 3px 10px;
+padding: 14px 0;
+border-top: 1px solid #edf1f7;
+}
+
+.swg-review-built b {
+grid-row: span 2;
+font-size: 12px;
+color: #2475d9;
+}
+
+.swg-review-built span {
+font-size: 14px;
+font-weight: 800;
+color: #183654;
+}
+
+.swg-review-built small {
+font-size: 12px;
+color: #78899b;
+line-height: 1.6;
+}
+
+.swg-review-philosophy {
+margin-top: 24px;
+padding: 24px 20px;
+background: #103e7d;
+color: #fff;
+border-radius: 17px;
+}
+
+.swg-review-philosophy strong {
+display: block;
+font-size: 17px;
+line-height: 1.75;
+letter-spacing: -.4px;
+}
+
+.swg-review-philosophy p {
+color: #d9e9ff;
+margin-top: 13px;
+font-size: 13px;
+line-height: 1.85;
+}
+
+.swg-review-author {
+margin-top: 22px;
+padding: 25px 20px;
+background: #fff;
+border: 1px solid #dce7f5;
+border-radius: 17px;
+text-align: left;
+}
+
+.swg-review-author > span {
+font-size: 12px;
+font-weight: 800;
+color: #2671c6;
+}
+
+.swg-review-author h3 {
+margin: 8px 0 12px;
+font-size: 25px;
+letter-spacing: -.8px;
+color: #0c2c56;
+}
+
+.swg-review-author h3 small {
+font-size: 14px;
+color: #526a84;
+font-weight: 650;
+}
+
+.swg-review-author a {
+display: inline-block;
+color: #1269cf;
+font-size: 19px;
+font-weight: 850;
+text-decoration: none;
+margin-bottom: 13px;
+}
+
+.swg-review-author p {
+font-size: 13px;
+color: #63778c;
+line-height: 1.8;
+}
+
+@media (max-width: 370px) {
+.swg-review-stats-section,
+.swg-review-developer {
+padding-left: 16px;
+padding-right: 16px;
+}
+
+.swg-review-check {
+padding-left: 17px;
+padding-right: 17px;
+}
+
+.swg-review-section-heading h2 {
+font-size: 21px;
+}
+
+.swg-review-check h2 {
+font-size: 23px;
+}
+}
+
+/* =========================================
+   실제 이용후기 - 모바일 리디자인
+   기존 CSS 맨 아래에 추가
+========================================= */
+
+.swg-reviews {
+  background: #ffffff;
+  color: #102544;
+  overflow: hidden;
+}
+
+/* 상단 이미지 배너 */
+.swg-review-hero {
+  width: 100%;
+  background: #eef5ff;
+  overflow: hidden;
+}
+
+.swg-review-hero img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* 공통 제목 */
+.swg-review-section-heading {
+  margin-bottom: 22px;
+}
+
+.swg-review-kicker {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 10px;
+  color: #1769d6;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 1.3px;
+}
+
+.swg-review-section-heading h2 {
+  margin: 0 0 10px;
+  font-size: 24px;
+  font-weight: 850;
+  line-height: 1.4;
+  letter-spacing: -1px;
+  color: #0d2850;
+}
+
+.swg-review-section-heading p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.8;
+  color: #697c92;
+}
+
+/* =========================================
+   01. 수강생 실제 후기
+========================================= */
+
+.swg-review-gallery {
+  padding: 38px 18px 36px;
+  background: linear-gradient(
+    180deg,
+    #ffffff 0%,
+    #f3f8ff 100%
+  );
+  border-top: 0;
+}
+
+.swg-review-gallery .swg-review-section-heading {
+  padding: 0 3px;
+}
+
+.swg-review-gallery-image {
+  overflow: hidden;
+  border-radius: 17px;
+  border: 1px solid #dce8f8;
+  background: #ffffff;
+  box-shadow: 0 10px 30px rgba(16, 61, 121, 0.08);
+}
+
+.swg-review-gallery-image img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.swg-review-disclaimer {
+  padding: 15px 3px 0;
+  margin: 0;
+  font-size: 11px !important;
+  line-height: 1.7 !important;
+  color: #8796a9 !important;
+}
+
+/* =========================================
+   02. 실제 관리 서비스 확인
+========================================= */
+
+.swg-review-check {
+  position: relative;
+  padding: 42px 22px 40px;
+  background: linear-gradient(
+    145deg,
+    #0a2852 0%,
+    #103e7e 55%,
+    #1465bd 100%
+  );
+  color: #ffffff;
+  overflow: hidden;
+}
+
+.swg-review-check::before {
+  content: "";
+  position: absolute;
+  width: 230px;
+  height: 230px;
+  right: -120px;
+  top: -115px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.05);
+  pointer-events: none;
+}
+
+.swg-review-check .swg-review-kicker {
+  position: relative;
+  color: #9bcaff;
+}
+
+.swg-review-check h2 {
+  position: relative;
+  margin: 0 0 17px;
+  font-size: 26px;
+  font-weight: 850;
+  line-height: 1.45;
+  letter-spacing: -1px;
+  color: #ffffff;
+}
+
+.swg-review-check h2 em {
+  font-style: normal;
+  color: #ffe16b;
+}
+
+.swg-review-check > p {
+  position: relative;
+  font-size: 14px;
+  line-height: 1.9;
+  color: #dceaff;
+}
+
+.swg-review-check-items {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  margin: 26px 0;
+}
+
+.swg-review-check-items div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 49px;
+  padding: 12px 13px;
+  border: 1px solid rgba(255,255,255,0.16);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.08);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.5;
+}
+
+.swg-review-check-items span {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #1464c4;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.swg-review-service-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 18px 19px;
+  border: none;
+  border-radius: 13px;
+  background: #ffffff;
+  color: #104887;
+  font-size: 15px;
+  font-weight: 850;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+  cursor: pointer;
+}
+
+.swg-review-service-btn span {
+  font-size: 21px;
+  line-height: 1;
+}
+
+/* =========================================
+   03. 개발자 이야기
+========================================= */
+
+.swg-review-developer {
+  padding: 46px 20px 42px;
+  background: #f7faff;
+}
+
+.swg-review-developer > .swg-review-section-heading {
+  padding-bottom: 23px;
+  margin-bottom: 5px;
+  border-bottom: 1px solid #dfe8f5;
+}
+
+.swg-review-story {
+  position: relative;
+  padding: 28px 2px;
+  border-bottom: 1px solid #e0e8f2;
+}
+
+.swg-review-story-number {
+  display: inline-block;
+  margin-bottom: 12px;
+  color: #176bd5;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.6px;
+}
+
+.swg-review-story h3 {
+  margin: 0 0 16px;
+  color: #102d55;
+  font-size: 20px;
+  font-weight: 850;
+  line-height: 1.5;
+  letter-spacing: -0.7px;
+}
+
+.swg-review-story p {
+  margin: 0 0 13px;
+  color: #4b6079;
+  font-size: 14px;
+  line-height: 1.95;
+}
+
+.swg-review-story p:last-child {
+  margin-bottom: 0;
+}
+
+/* 직접 개발 강조 카드 */
+.swg-review-story-featured {
+  margin: 24px 0 0;
+  padding: 26px 21px;
+  border: 1px solid #cbdfff;
+  border-radius: 19px;
+  background: linear-gradient(
+    145deg,
+    #e7f2ff,
+    #f7fbff
+  );
+  box-shadow: 0 8px 24px rgba(19,91,181,0.06);
+}
+
+.swg-review-story-featured h3 {
+  font-size: 21px;
+  line-height: 1.55;
+}
+
+.swg-review-story-featured h3 span {
+  color: #1266d2;
+}
+
+/* =========================================
+   04. 직접 개발한 4가지 시스템
+========================================= */
+
+.swg-review-built {
+  margin-top: 27px;
+  padding: 24px 17px 10px;
+  border: 1px solid #dce7f5;
+  border-radius: 19px;
+  background: #ffffff;
+  box-shadow: 0 8px 26px rgba(15,63,120,0.05);
+}
+
+.swg-review-built h3 {
+  margin: 0 0 17px;
+  color: #102d55;
+  font-size: 18px;
+  font-weight: 850;
+  letter-spacing: -0.5px;
+}
+
+.swg-review-built > div {
+  display: grid;
+  grid-template-columns: 31px minmax(0,1fr);
+  column-gap: 11px;
+  row-gap: 4px;
+  padding: 16px 0;
+  border-top: 1px solid #edf1f7;
+}
+
+.swg-review-built b {
+  grid-row: span 2;
+  display: grid;
+  place-items: center;
+  align-self: start;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: #e9f2ff;
+  color: #176bd6;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.swg-review-built span {
+  color: #153454;
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.swg-review-built small {
+  color: #75879b;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+/* =========================================
+   05. 개발 철학
+========================================= */
+
+.swg-review-philosophy {
+  position: relative;
+  margin-top: 26px;
+  padding: 29px 22px;
+  border-radius: 19px;
+  background: linear-gradient(
+    135deg,
+    #123f80,
+    #08274e
+  );
+  color: #ffffff;
+  overflow: hidden;
+}
+
+.swg-review-philosophy::before {
+  content: "“";
+  position: absolute;
+  top: -16px;
+  right: 15px;
+  color: rgba(255,255,255,0.09);
+  font-size: 125px;
+  font-family: Georgia, serif;
+  line-height: 1;
+}
+
+.swg-review-philosophy strong {
+  position: relative;
+  display: block;
+  font-size: 18px;
+  font-weight: 850;
+  line-height: 1.8;
+  letter-spacing: -0.5px;
+  color: #ffffff;
+}
+
+.swg-review-philosophy p {
+  position: relative;
+  margin-top: 17px;
+  color: #d4e7ff;
+  font-size: 13px;
+  line-height: 1.9;
+}
+
+/* =========================================
+   06. 개발자 연락처
+========================================= */
+
+.swg-review-author {
+  margin-top: 24px;
+  padding: 28px 23px;
+  border: 1px solid #dce6f4;
+  border-radius: 19px;
+  background: #ffffff;
+  box-shadow: 0 8px 26px rgba(17,67,123,0.05);
+}
+
+.swg-review-author > span {
+  display: inline-block;
+  color: #176bd3;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.swg-review-author h3 {
+  margin: 12px 0 10px;
+  color: #102d55;
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: -0.8px;
+}
+
+.swg-review-author h3 small {
+  margin-left: 5px;
+  color: #64768b;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.swg-review-author a {
+  display: inline-block;
+  margin-bottom: 18px;
+  color: #176bd3;
+  font-size: 20px;
+  font-weight: 850;
+  text-decoration: none;
+  letter-spacing: -0.4px;
+}
+
+.swg-review-author p {
+  padding-top: 16px;
+  border-top: 1px solid #e8eef6;
+  color: #60748b;
+  font-size: 13px;
+  line-height: 1.9;
+}
+
+/* 작은 모바일 대응 */
+@media (max-width: 370px) {
+  .swg-review-gallery {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .swg-review-check {
+    padding: 36px 17px;
+  }
+
+  .swg-review-check h2 {
+    font-size: 23px;
+  }
+
+  .swg-review-developer {
+    padding: 38px 16px;
+  }
+
+  .swg-review-story h3 {
+    font-size: 18px;
+  }
+
+  .swg-review-philosophy strong {
+    font-size: 16px;
+  }
+}
+
 `;
