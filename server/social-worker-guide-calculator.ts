@@ -432,15 +432,17 @@ console.log("[GUIDE TEMPLATE CHECK]", {
       degreeTemplates: catalog.degreeTemplates,
     });
 
-  // 5. DB 학위 템플릿을 자동설계 엔진 형식으로 변환
+  
+  // 5. 기존 학위 템플릿 + CRM 과목마스터의 공식 교양과목 통합
+  const templateKeys = new Set<string>();
+
   const degreeTemplates: DegreeFillTemplateItem[] =
     catalog.degreeTemplates.map((item) => {
-      const subjectName = String(
-        item.subjectName ?? ""
-      ).trim();
-
+      const subjectName = String(item.subjectName ?? "").trim();
       const subjectKey =
         getConfirmedSubjectEquivalenceKey(subjectName);
+
+      if (subjectKey) templateKeys.add(subjectKey);
 
       const nileClassification = subjectKey
         ? degreeClassificationBySubjectKey.get(subjectKey)
@@ -453,22 +455,6 @@ console.log("[GUIDE TEMPLATE CHECK]", {
         nileClassification?.requirementType ??
         item.requirementType ??
         null;
-
-if (
-  item.category === "교양" ||
-  item.requirementType === "교양"
-) {
-  console.log("[GUIDE LIBERAL CLASSIFICATION]", {
-    subjectName: item.subjectName,
-    dbCategory: item.category,
-    dbRequirementType: item.requirementType,
-    nileCategory: nileClassification?.category ?? null,
-    nileRequirementType:
-      nileClassification?.requirementType ?? null,
-    finalCategory: category,
-    finalRequirementType: requirementType,
-  });
-}
 
       if (
         category !== "전공" &&
@@ -501,6 +487,59 @@ if (
         sortOrder: Number(item.sortOrder ?? 0),
       };
     });
+
+  // CRM 과목마스터에 추가된 공식 교양과목만 후보에 반영
+  for (const item of catalog.masterItems) {
+    if (
+      item.category !== "교양" &&
+      item.requirementType !== "교양"
+    ) {
+      continue;
+    }
+
+    const subjectName = String(item.subjectName ?? "").trim();
+    const subjectKey =
+      getConfirmedSubjectEquivalenceKey(subjectName);
+
+    if (!subjectKey || templateKeys.has(subjectKey)) {
+      continue;
+    }
+
+    const nileClassification =
+      degreeClassificationBySubjectKey.get(subjectKey);
+
+    // CRM 표시만 교양인 과목은 추가하지 않음
+    if (
+      nileClassification?.category !== "교양" ||
+      nileClassification.requirementType !== "교양"
+    ) {
+      continue;
+    }
+
+    templateKeys.add(subjectKey);
+
+    degreeTemplates.push({
+      id: -Number(item.id),
+      courseKey: "social_worker_2",
+      subjectName,
+      category: "교양",
+      requirementType: "교양",
+      sortOrder: Number(item.sortOrder ?? 0),
+    });
+  }
+
+  console.log("[GUIDE DEGREE TEMPLATE MERGE]", {
+    originalCount: catalog.degreeTemplates.length,
+    mergedCount: degreeTemplates.length,
+    liberalSubjects: degreeTemplates
+      .filter(
+        (item) =>
+          item.category === "교양" &&
+          item.requirementType === "교양"
+      )
+      .map((item) => item.subjectName),
+  });
+
 
   // 6. 실제 과목 자동설계
   const subjectAnalysis = buildSocialWorkerGuideSubjectPlan({
