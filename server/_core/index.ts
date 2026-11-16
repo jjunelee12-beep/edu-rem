@@ -5822,6 +5822,54 @@ app.get("/og/practice-apply/:slug", (req, res) => {
   `);
 });
 
+// 사회복지사 2급 취득가이드 카카오톡 미리보기
+app.get("/og/social-worker-guide", (_req, res) => {
+  const targetUrl =
+    "https://edu-crm-five.vercel.app/social-worker-guide";
+
+  const imageUrl =
+    "https://edu-crm-five.vercel.app/images/a_clean_professional_clickable_banner_in_korean.png";
+
+  const shareUrl =
+  "https://edu-crm-five.vercel.app/social-worker-guide";
+
+  const title =
+    "사회복지사 2급, 수업만 들으면 끝일까요?";
+
+  const description =
+    "이론수업부터 현장실습·행정절차·자격증 신청까지! 취득 전 꼭 알아야 할 전체 과정";
+
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+
+  return res.status(200).send(`
+    <!DOCTYPE html>
+    <html lang="ko">
+      <head>
+        <meta charset="UTF-8" />
+        <title>${title}</title>
+        <meta name="description" content="${description}" />
+
+        <meta property="og:type" content="website" />
+        <meta property="og:title" content="${title}" />
+        <meta property="og:description" content="${description}" />
+        <meta property="og:image" content="${imageUrl}" />
+        <meta property="og:url" content="${shareUrl}" />
+
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:image" content="${imageUrl}" />
+
+        <meta http-equiv="refresh" content="0;url=${targetUrl}" />
+      </head>
+      <body>
+        <script>
+          window.location.replace(${JSON.stringify(targetUrl)});
+        </script>
+        <a href="${targetUrl}">취득가이드 바로가기</a>
+      </body>
+    </html>
+  `);
+});
+
 
  app.get("/alpha", (_req, res) => {
   const targetUrl = "https://www.edualpha.co.kr/";
