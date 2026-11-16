@@ -454,6 +454,22 @@ console.log("[GUIDE TEMPLATE CHECK]", {
         item.requirementType ??
         null;
 
+if (
+  item.category === "교양" ||
+  item.requirementType === "교양"
+) {
+  console.log("[GUIDE LIBERAL CLASSIFICATION]", {
+    subjectName: item.subjectName,
+    dbCategory: item.category,
+    dbRequirementType: item.requirementType,
+    nileCategory: nileClassification?.category ?? null,
+    nileRequirementType:
+      nileClassification?.requirementType ?? null,
+    finalCategory: category,
+    finalRequirementType: requirementType,
+  });
+}
+
       if (
         category !== "전공" &&
         category !== "교양" &&
