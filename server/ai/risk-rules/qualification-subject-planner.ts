@@ -2268,7 +2268,25 @@ if (!isMajor) {
         0
       );
   }
+console.log("[DEGREE LIBERAL CHECK]", {
+  remainingLiberal,
+  availableLiberal: available
+    .filter(item => {
+      const key = getConfirmedSubjectEquivalenceKey(item.subjectName);
+      const nile = key
+        ? params.degreeClassificationBySubjectKey.get(key)
+        : null;
 
+      return (
+        (nile?.category ?? item.category) === "교양" ||
+        (nile?.requirementType ?? item.requirementType) === "교양"
+      );
+    })
+    .map(item => ({
+      name: item.subjectName,
+      alreadySelected: params.selectedMap.has(getTemplateKey(item)),
+    })),
+});
   /**
    * 2. 교양 부족
    */
