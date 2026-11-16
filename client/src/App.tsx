@@ -86,6 +86,7 @@ import KakaoAiStaffAuthPage from "@/pages/KakaoAiStaffAuthPage";
 import AppToastHost from "@/components/notifications/AppToastHost";
 import MessengerRealtimeBridge from "@/components/notifications/MessengerRealtimeBridge";
 import AppRealtimeBridge from "@/components/notifications/AppRealtimeBridge";
+import SocialWorkerGuide from "@/pages/SocialWorkerGuide";
 
 function SuperhostRoute({
   component: Component,
@@ -245,6 +246,10 @@ function PublicRouter() {
   component={PublicStaffTeamPage}
 />
 <Route path="/withone" component={WithOneLanding} />
+<Route
+  path="/social-worker-guide"
+  component={SocialWorkerGuide}
+/>
 <Route
   path="/billing/register/:token"
   component={BillingRegisterPage}
@@ -562,6 +567,7 @@ function AppContent() {
   const isPublicPage =
   location === "/login" ||
   location === "/withone" ||
+location === "/social-worker-guide" ||
 location === "/employment-center" ||
   location.startsWith("/form/") ||
   location.startsWith("/ad-form/") ||

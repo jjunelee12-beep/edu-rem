@@ -12,6 +12,9 @@ superHostProcedure,
 import { z } from "zod";
 import * as db from "./db";
 import {
+  runSocialWorkerGuideCalculation,
+} from "./social-worker-guide-calculator";
+import {
   getOrganizationById,
   getOrganizationLimitStatus,
   getOrganizationFeatureFlags,
@@ -3821,10 +3824,196 @@ return {
       }),
   }),
 
-  system: systemRouter,
+    system: systemRouter,
   leadForm: publicLeadRouter,
   sms: smsRouter,
   saas: saasRouter,
+  
+  // ─── 사회복지사 2급 공개 취득가이드 ───────────────────
+  socialWorkerGuide: router({
+    getCalculationBasis: publicProcedure
+      .input(
+        z.object({
+          startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        })
+      )
+      .query(async ({ input }) => {
+        const [year, month, day] = input.startDate
+          .split("-")
+          .map(Number);
+
+        const parsed = new Date(Date.UTC(year, month - 1, day));
+
+        if (
+          parsed.getUTCFullYear() !== year ||
+          parsed.getUTCMonth() + 1 !== month ||
+          parsed.getUTCDate() !== day
+        ) {
+          throw new Error("올바른 날짜가 아닙니다.");
+        }
+
+        // 공개 가이드 전용으로 서버에서 승인한 조직만 사용
+        const organizationId = WITHONE_ORGANIZATION_ID;
+
+        if (
+          !Number.isSafeInteger(organizationId) ||
+          organizationId <= 0
+        ) {
+          throw new Error("공개 가이드 계산 설정이 필요합니다.");
+        }
+
+        const firstSemester =
+          month < 5 || (month === 5 && day < 15);
+
+        const secondSemester =
+          (month === 5 && day >= 15) ||
+          (month > 5 && month < 11) ||
+          (month === 11 && day < 15);
+
+        const semesterYear =
+          firstSemester || secondSemester ? year : year + 1;
+
+        const semesterHalf = secondSemester ? 2 : 1;
+
+        const semesterLabel =
+          `${semesterYear}년 ${semesterHalf}학기`;
+
+        const groups = [
+          {
+            key: "college_or_higher" as const,
+            label: "전문대졸 이상",
+          },
+          {
+            key: "high_school" as const,
+            label: "고등학교 졸업",
+          },
+        ];
+
+        const educationGroups = await Promise.all(
+          groups.map(async (group) => {
+            try {
+              const result = await runSocialWorkerGuideCalculation({
+                startDate: input.startDate,
+                educationGroup: group.key,
+                organizationId,
+              });
+
+              const calculation = result.calculation;
+              const applicationDate =
+                calculation?.success
+                  ? calculation.applicationDate
+                  : null;
+
+              const match = applicationDate
+                ? String(applicationDate).match(
+                    /^(\d{4})-(\d{2})/
+                  )
+                : null;
+
+              const success = Boolean(
+                result.success && match
+              );
+
+              return {
+                key: group.key,
+                label: group.label,
+                semesterCount: success
+                  ? calculation?.semesterCount ?? null
+                  : null,
+                expectedApplicationYear: success
+                  ? Number(match![1])
+                  : null,
+                expectedApplicationMonth: success
+                  ? Number(match![2])
+                  : null,
+                requiresDegree:
+                  group.key === "high_school",
+                verified: success,
+              };
+            } catch (error) {
+              console.error(
+                "[SocialWorkerGuide] 계산 실패",
+                group.key,
+                error
+              );
+
+              return {
+                key: group.key,
+                label: group.label,
+                semesterCount: null,
+                expectedApplicationYear: null,
+                expectedApplicationMonth: null,
+                requiresDegree:
+                  group.key === "high_school",
+                verified: false,
+              };
+            }
+          })
+        );
+
+        const verifiedBySharedEngine =
+          educationGroups.every(
+            (group) => group.verified
+          );
+
+        return {
+          startDate: input.startDate,
+          semesterLabel,
+          calculationType: "shared_engine" as const,
+          verifiedBySharedEngine,
+          educationGroups,
+          notice: verifiedBySharedEngine
+            ? "기존 학사일정 계산 엔진에 따른 예상 일정입니다. 실제 개강일, 실습 및 행정절차에 따라 달라질 수 있습니다."
+            : "일부 학력의 예상 일정을 계산하지 못했습니다. 과목설계 및 학위요건 확인이 필요합니다.",
+        };
+      }),
+  }),
+
+
+
+  // ─── 사회복지사 2급 계산 엔진 검증용 ───────────────────
+  socialWorkerGuideEngineTest: router({
+    calculate: protectedProcedure
+      .input(
+        z.object({
+          startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          educationGroup: z.enum([
+            "college_or_higher",
+            "high_school",
+          ]),
+        })
+      )
+      .query(async ({ input, ctx }) => {
+        const organizationId = Number(
+          ctx.user?.organizationId ?? 0
+        );
+
+        if (!Number.isSafeInteger(organizationId) ||
+            organizationId <= 0) {
+          throw new Error("교육기관 정보가 없습니다.");
+        }
+
+        const [year, month, day] = input.startDate
+          .split("-")
+          .map(Number);
+
+        const date = new Date(Date.UTC(year, month - 1, day));
+
+        if (
+          date.getUTCFullYear() !== year ||
+          date.getUTCMonth() + 1 !== month ||
+          date.getUTCDate() !== day
+        ) {
+          throw new Error("올바른 날짜가 아닙니다.");
+        }
+
+        return runSocialWorkerGuideCalculation({
+          startDate: input.startDate,
+          educationGroup: input.educationGroup,
+          organizationId,
+        });
+      }),
+  }),
 
   // ─── Student Portal (등록자 업무포털) ───────────────────────────────
   studentPortal: router({
