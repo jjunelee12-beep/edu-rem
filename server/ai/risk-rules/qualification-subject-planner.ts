@@ -2147,6 +2147,36 @@ console.log(
     )
 );
 
+console.log("[DEGREE LIBERAL EXCLUSION]", {
+  liberalTemplates: params.templates
+    .filter(
+      item =>
+        item.category === "교양" ||
+        item.requirementType === "교양"
+    )
+    .map(item => {
+      const key = getConfirmedSubjectEquivalenceKey(
+        item.subjectName
+      );
+
+      return {
+        name: item.subjectName,
+        key,
+        recognized: key
+          ? params.recognizedKeys.has(key)
+          : false,
+        selected: key
+          ? params.selectedMap.get(key)?.subjectName ?? null
+          : null,
+        excluded: isTemplateAlreadyUsed(
+          item,
+          params.recognizedKeys,
+          params.selectedMap
+        ),
+      };
+    }),
+});
+
   const available =
     (params.templates || [])
       .filter(
