@@ -3898,11 +3898,26 @@ return {
                 organizationId,
               });
 
-              const calculation = result.calculation;
-              const applicationDate =
-                calculation?.success
-                  ? calculation.applicationDate
-                  : null;
+              if (!result.success) {
+  console.error("[SocialWorkerGuide] 계산 결과 실패", {
+    educationGroup: group.key,
+    reason: result.reason,
+    subjectPlanCanPlan: result.subjectPlan?.canPlan,
+    unresolvedRequirements:
+      result.subjectPlan?.unresolvedRequirements,
+    semesterCanPlan: result.calculation?.semesterPlan?.canPlan,
+    semesterUnresolvedReasons:
+      result.calculation?.semesterPlan?.unresolvedReasons,
+    administrativeCanCalculate:
+      result.calculation?.administrativeTimeline?.canCalculate,
+  });
+}
+
+const calculation = result.calculation;
+const applicationDate =
+  calculation?.success
+    ? calculation.applicationDate
+    : null;
 
               const match = applicationDate
                 ? String(applicationDate).match(
