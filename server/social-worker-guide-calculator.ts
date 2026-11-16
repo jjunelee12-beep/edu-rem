@@ -387,6 +387,25 @@ export async function runSocialWorkerGuideCalculation(params: {
     params.organizationId
   );
 
+console.log("[GUIDE TEMPLATE CHECK]", {
+  organizationId: params.organizationId,
+  catalogId: catalog.catalogId,
+  total: catalog.degreeTemplates.length,
+  liberal: catalog.degreeTemplates
+    .filter(item =>
+      item.category === "교양" ||
+      item.requirementType === "교양"
+    )
+    .map(item => ({
+      id: item.id,
+      name: item.subjectName,
+      catalogId: item.catalogId,
+      courseKey: item.courseKey,
+      category: item.category,
+      requirementType: item.requirementType,
+    })),
+});
+
   // 2. DB 원본을 기존 자격요건 엔진 형식으로 변환
   const masterItems: QualificationRiskMasterItem[] =
     catalog.masterItems.map((item) => ({
