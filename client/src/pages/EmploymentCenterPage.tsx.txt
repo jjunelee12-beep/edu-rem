@@ -117,7 +117,7 @@ const CARDS = [
   {key:"jobs" as Section, icon:BriefcaseBusiness, title:"일자리 찾기", sub:"GPS로 내 주변 채용공고", tint:"bg-blue-50 text-blue-600"},
   {key:"practice" as Section, icon:MapPinned, title:"실습기관 찾기", sub:"지역별 기관 탐색", tint:"bg-teal-50 text-teal-600"},
   {key:"funds" as Section, icon:Wallet, title:"지원금 찾기", sub:"관련 지원제도 확인", tint:"bg-amber-50 text-amber-600"},
-  {key:"resume" as Section, icon:FileText, title:"이력서·자기소개서", sub:"모바일 작성 도구", tint:"bg-purple-50 text-purple-600"},
+  {key:"resume" as Section, icon:FileText, title:"이력서·자기소개서 (개발 중)", sub:"서비스 준비 중입니다", tint:"bg-purple-50 text-purple-600"},
   {key:"consultation" as Section, icon:MessageCircle, title:"무료 상담 신청하기", sub:"사회복지사 2급 취득 상담", tint:"bg-rose-50 text-rose-600"},
 ];
 const CONSULTATION_TOKEN = (import.meta.env.VITE_SUPPORT_CONSULTATION_TOKEN || "").trim();
@@ -1577,7 +1577,13 @@ const [privacyExpanded, setPrivacyExpanded] = useState(false);
   "h-12 w-full min-w-0 rounded-xl border border-[#d1d5db] bg-white px-3 text-[13px] font-semibold text-black outline-none placeholder:text-gray-400 focus:border-[#b7ff00] focus:ring-1 focus:ring-[#b7ff00]";
 
   return (
-    <div className="bg-[#080b08] px-3 pb-28 pt-5 text-white">
+    <div
+  className={`bg-[#080b08] px-3 pt-5 text-white ${
+    new URLSearchParams(window.location.search).get("embed") === "1"
+      ? "pb-5"
+      : "pb-28"
+  }`}
+>
       <div className="overflow-hidden rounded-[25px] border border-[#242a24] bg-[#111511] px-4 pb-6 pt-6 shadow-[0_15px_45px_rgba(0,0,0,.15)]">
 
         {/* 브랜드 */}
@@ -2555,6 +2561,15 @@ setPracticeView("map");
 
 function ComparePage(){return <SectionShell><p className="text-sm text-slate-600">학습관리 서비스를 선택할 때 확인해야 할 항목입니다. 특정 기관의 실제 제공 여부는 상담 전에 확인하세요.</p>{[["학사일정","개인별 수업·실습·행정 일정 확인"],["과목 누락 예방","필수·선택 과목 및 기존 이수내역 검토"],["실습 준비","선이수 요건·실습기관·실습 예정월 확인"],["행정절차","학습자등록·학점인정·학위신청 안내"],["자격증 신청","예상 신청시기와 협회 신청절차 확인"],["학생 포털","학생이 직접 진행상황을 조회할 수 있는지"]].map(([a,b])=><div key={a} className="rounded-xl border bg-white p-4"><p className="font-bold">{a}</p><p className="mt-1 text-xs text-slate-500">{b}</p></div>)}</SectionShell>}
 export default function EmploymentCenterPage(){
+const isConsultationEmbed = (() => {
+  const params = new URLSearchParams(window.location.search);
+
+  return (
+    params.get("section") === "consultation" &&
+    params.get("embed") === "1"
+  );
+})();
+
 const [portalToken, setPortalToken] = useState(
   readSupportPortalToken
 );
@@ -2585,11 +2600,26 @@ useEffect(() => {
     window.removeEventListener("pageshow", syncPortalToken);
   };
 }, []);
- const [section,setSection]=useState<Section>("home");
+ const [section, setSection] = useState<Section>(() => {
+  const params = new URLSearchParams(window.location.search);
+  const requested = params.get("section");
+
+  if (requested === "consultation") {
+    return "consultation";
+  }
+
+  return "home";
+});
  const [menu,setMenu]=useState(false);
  const [session,setSession]=useState<{token:string;expiresAt:number}|null>(()=>readSession());
  useEffect(()=>{const onPop=()=>setSection("home");window.addEventListener("popstate",onPop);return()=>window.removeEventListener("popstate",onPop)},[]);
- const go=(next:Section)=>{setSection(next);setMenu(false);window.scrollTo({top:0,behavior:"smooth"})};
+ const go = (next: Section) => {
+  if (next === "resume") return;
+
+  setSection(next);
+  setMenu(false);
+  window.scrollTo({ top: 0, behavior: "smooth" });
+};
 const portalLogout =
   trpc.studentPortal.logout.useMutation();
 
@@ -2613,6 +2643,16 @@ const signout = async () => {
   go("home");
 };
 
+if (isConsultationEmbed) {
+  return (
+    <div className="min-h-screen bg-[#080b08] text-white">
+      <div className="mx-auto max-w-[560px]">
+        <ConsultationForm />
+      </div>
+    </div>
+  );
+}
+
  return <div className="min-h-screen bg-[#f1f5fb] text-slate-900"><div className="mx-auto flex min-h-screen max-w-[560px] flex-col bg-[#f8fafc] shadow-[0_0_40px_rgba(18,48,88,.08)]">
  <header className="sticky top-0 z-40 border-b border-slate-100 bg-white/95 px-4 py-3 backdrop-blur"><div className="flex items-center justify-between gap-2"><button onClick={()=>section==="home"?setMenu(v=>!v):go("home")} className="flex min-w-0 items-center gap-2 text-left">
 
@@ -2629,7 +2669,36 @@ const signout = async () => {
 </span>
 
 <span className="min-w-0"><span className="block truncate text-[11px] font-bold text-blue-600">사회복지 통합지원센터</span><span className="block truncate text-sm font-black">{section==="home"?"나에게 필요한 정보를 한눈에":SECTION_LABEL[section]}</span></span></button><div className="flex shrink-0 items-center gap-2"><a href="/portal/with-one" className="rounded-lg bg-blue-50 px-2.5 py-2 text-[11px] font-bold text-blue-700">학사관리시스템</a><button onClick={()=>setMenu(v=>!v)} className="rounded-lg border p-2" aria-label="메뉴"><SlidersHorizontal size={17}/></button></div></div>
- {menu&&<nav className="mt-3 grid gap-1 rounded-xl bg-slate-50 p-2">{CARDS.map(c=><button key={c.key} onClick={()=>go(c.key)} className="rounded-lg px-3 py-2 text-left text-xs font-bold hover:bg-white">{c.title}</button>)}<a className="rounded-lg px-3 py-2 text-xs font-bold" href="/social-worker-guide">사회복지사 2급 취득 가이드</a><button onClick={()=>go("compare")} className="rounded-lg px-3 py-2 text-left text-xs font-bold">학습관리 비교</button>
+{menu && (
+  <nav className="flex flex-col gap-1 border-t border-slate-100 bg-white px-4 py-3">
+ {CARDS.map((c) => (
+  <button
+    key={c.key}
+    type="button"
+    disabled={c.key === "resume"}
+    onClick={() => go(c.key)}
+    className={`rounded-lg px-3 py-2 text-left text-xs font-bold ${
+      c.key === "resume"
+        ? "cursor-not-allowed text-slate-400"
+        : "hover:bg-white"
+    }`}
+  >
+    {c.title}
+  </button>
+))}
+<a
+  className="rounded-lg px-3 py-2 text-xs font-bold"
+  href="/social-worker-guide?tab=guide"
+>
+  사회복지사 2급 취득 가이드
+</a>
+
+<a
+  className="rounded-lg px-3 py-2 text-left text-xs font-bold"
+  href="/social-worker-guide?tab=service"
+>
+  학습관리 비교
+</a>
 <a
   href="/portal/with-one"
   className="rounded-lg px-3 py-2 text-xs font-bold"
@@ -2712,14 +2781,19 @@ const signout = async () => {
 
       <div className="grid grid-cols-2 gap-2.5">
         {CARDS.map((c) => (
-          <button
-            key={c.key}
-            type="button"
-            onClick={() => go(c.key)}
+  <button
+    key={c.key}
+    type="button"
+    disabled={c.key === "resume"}
+    onClick={() => go(c.key)}
 data-support-consultation={
   c.key === "consultation" ? "true" : undefined
 }
-            className="group flex min-h-[91px] items-center gap-2 rounded-[17px] border border-slate-200/80 bg-white px-3 py-3 text-left shadow-[0_3px_12px_rgba(15,43,83,0.035)] transition-all hover:border-blue-200 hover:shadow-md active:scale-[0.99]"
+            className={`group flex min-h-[91px] items-center gap-2 rounded-[17px] border border-slate-200/80 bg-white px-3 py-3 text-left shadow-[0_3px_12px_rgba(15,43,83,0.035)] transition-all ${
+  c.key === "resume"
+    ? "cursor-not-allowed opacity-60"
+    : "hover:border-blue-200 hover:shadow-md active:scale-[0.99]"
+}`}
           >
             <span
               className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] ${c.tint}`}
@@ -2779,11 +2853,10 @@ data-support-consultation={
           />
         </a>
 
-        <button
-          type="button"
-          onClick={() => go("compare")}
-          className="group flex min-h-[86px] w-full items-center gap-3 overflow-hidden rounded-[17px] border border-cyan-100 bg-gradient-to-r from-white via-white to-cyan-50 px-4 py-3 text-left shadow-[0_3px_12px_rgba(15,43,83,0.035)]"
-        >
+       <a
+  href="/social-worker-guide?tab=service"
+  className="group flex min-h-[86px] w-full items-center gap-3 overflow-hidden rounded-[17px] border border-cyan-100 bg-gradient-to-r from-white via-white to-cyan-50 px-4 py-3 text-left shadow-[0_3px_12px_rgba(15,43,83,0.035)]"
+>
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-cyan-100 text-blue-600">
             <ShieldCheck size={23} />
           </span>
@@ -2798,11 +2871,11 @@ data-support-consultation={
             </small>
           </span>
 
-          <ChevronRight
+                    <ChevronRight
             size={18}
             className="shrink-0 text-slate-600"
           />
-        </button>
+        </a>
       </div>
     </section>
   </main>

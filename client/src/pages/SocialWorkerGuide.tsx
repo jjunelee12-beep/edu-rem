@@ -59,8 +59,32 @@ const currentData =
 
   return (
     <section className="swg-section" id="qualification-estimate">
-      <span className="swg-eyebrow">자격증 신청 예상시기</span>
-      <h2>오늘 시작하면 자격증은 언제 신청할 수 있을까요?</h2>
+  <span className="swg-eyebrow">자격증 신청 예상시기</span>
+  <h2>오늘 시작하면 자격증은 언제 신청할 수 있을까요?</h2>
+
+  <div className="swg-basis-notice">
+    <strong>처음 시작하는 학습자 기준 안내</strong>
+
+    <p>
+      아래 예상시기는 기존 이수과목이나 인정학점 없이
+      처음 시작하는 학습자를 기준으로,
+      사회복지사 2급 취득요건과 학점은행제
+      공통 학사기준에 따라 안내합니다.
+    </p>
+
+    <p>
+      자격 취득요건과 학점은행제 행정절차는
+      모든 교육원에 동일하게 적용됩니다.
+      다만 전적대학에서 인정받을 수 있는 학점이나
+      기존에 이수한 사회복지사 관련 과목이 있다면
+      개인별 자격증 신청 가능 시기는 달라질 수 있습니다.
+    </p>
+
+    <p>
+      실제 신청 가능 시기는 개강일, 과목 및 실습 이수,
+      학점인정·학위신청 등 행정절차에 따라 달라질 수 있습니다.
+    </p>
+  </div>
 
 
 {isValidStartDate && (isLoading || isFetching) && (
@@ -131,11 +155,52 @@ function ImageSlot({ src, label }: { src: string; label: string }) {
   return <div className="swg-image">{!failed ? <img src={src} alt={label} loading="lazy" onError={() => setFailed(true)} /> : <div className="swg-placeholder"><strong>사진 추가 예정</strong><span>{label}</span><small>{src}</small></div>}</div>;
 }
 export default function SocialWorkerGuide() {
-  const [tab, setTab] = useState<Tab>("guide");
-  const changeTab = (next: Tab) => { setTab(next); window.scrollTo({ top: 0, behavior: "smooth" }); };
-  const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const getInitialTab = (): Tab => {
+    const params = new URLSearchParams(window.location.search);
+    const requestedTab = params.get("tab");
+
+    if (requestedTab === "service") return "service";
+    if (requestedTab === "reviews") return "reviews";
+
+    return "guide";
+  };
+
+  const [tab, setTab] = useState<Tab>(getInitialTab);
+const [consultOpen, setConsultOpen] = useState(false);
+
+  const changeTab = (next: Tab) => {
+    setTab(next);
+
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", next);
+    window.history.replaceState({}, "", url.toString());
+
+    window.scrollTo({ top: 0, behavior: "instant" });
+  };
+
+  const jump = (id: string) =>
+    document.getElementById(id)?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
   return <div className="swg-root"><style>{styles}</style>
-    <header className="swg-header"><span>사회복지사 2급</span></header>
+    <header className="swg-header">
+  <a
+    href="/employment-center"
+    className="swg-brand"
+    aria-label="사회복지 통합지원센터 홈으로 이동"
+  >
+    <img
+      src="/images/employment-center/social-welfare-logo.png"
+      alt="사회복지 통합지원센터"
+      className="swg-brand-logo"
+    />
+  </a>
+
+  <a href="/employment-center" className="swg-home-link">
+    센터 홈 ›
+  </a>
+</header>
     <div className="swg-shell">
       <div className="swg-cover">
   {tab === "guide" ? (
@@ -576,6 +641,47 @@ export default function SocialWorkerGuide() {
       </div>
     </section>
   </main>
+)}
+<div className="swg-fixed-consult">
+  <button
+    type="button"
+    onClick={() => setConsultOpen(true)}
+  >
+    무료 상담 신청하기 →
+  </button>
+</div>
+
+{consultOpen && (
+  <div
+    className="swg-consult-overlay"
+    onClick={() => setConsultOpen(false)}
+  >
+    <div
+      className="swg-consult-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-label="사회복지사 2급 무료 상담 신청"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="swg-consult-header">
+        <strong>사회복지사 2급 무료 상담 신청</strong>
+
+        <button
+          type="button"
+          onClick={() => setConsultOpen(false)}
+          aria-label="상담 창 닫기"
+        >
+          ✕
+        </button>
+      </div>
+
+      <iframe
+  title="사회복지사 2급 상담 신청"
+  src="/employment-center?section=consultation&embed=1"
+  className="swg-consult-frame"
+/>
+    </div>
+  </div>
 )}
 
       <footer className="swg-footer">사회복지사 2급 필수 취득가이드<br/>안내 내용은 개인별 학력·이수내역과 기관별 운영 기준에 따라 달라질 수 있습니다.</footer>
@@ -1603,4 +1709,242 @@ font-size: 23px;
   }
 }
 
+
+/* 통합지원센터 브랜드 */
+.swg-header .swg-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #102d53;
+  font-size: 15px;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.swg-brand-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  background: #145a9d;
+  color: white;
+  border-radius: 9px;
+  font-size: 18px;
+}
+
+.swg-header .swg-home-link {
+  font-size: 12px;
+  color: #145a9d;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+/* 예상시기 공통 기준 */
+.swg-basis-notice {
+  margin-top: 18px;
+  padding: 17px;
+  background: #f1f6fd;
+  border: 1px solid #dce8f7;
+  border-radius: 12px;
+}
+
+.swg-basis-notice strong {
+  display: block;
+  color: #124b88;
+  font-size: 15px;
+  margin-bottom: 10px;
+}
+
+.swg-basis-notice p {
+  font-size: 13px;
+  line-height: 1.8;
+  margin-top: 9px;
+}
+
+/* 하단 상담 버튼 */
+.swg-root {
+  padding-bottom: 90px;
+}
+
+.swg-fixed-consult {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 480px;
+  z-index: 100;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  background: rgba(255,255,255,.97);
+  border-top: 1px solid #e2e8f0;
+  box-shadow: 0 -4px 18px rgba(0,0,0,.06);
+}
+
+.swg-fixed-consult button {
+  width: 100%;
+  border: 0;
+  border-radius: 12px;
+  background: #145a9d;
+  color: white;
+  font-size: 16px;
+  font-weight: 800;
+  padding: 15px;
+  cursor: pointer;
+}
+
+/* 상담 팝업 */
+.swg-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(15,23,42,.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.swg-modal {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  background: white;
+  border-radius: 18px;
+  padding: 28px 22px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.2);
+}
+
+.swg-modal-close {
+  position: absolute;
+  right: 18px;
+  top: 16px;
+  border: 0;
+  background: transparent;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.swg-modal p {
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.swg-consult-preparing {
+  margin-top: 20px !important;
+  padding: 14px;
+  background: #f1f6fd;
+  border-radius: 10px;
+  text-align: center;
+}
+
+/* 사회복지 통합지원센터 상단 로고 */
+.swg-header {
+  height: 64px;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #ffffff;
+}
+
+.swg-header .swg-brand {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  text-decoration: none;
+}
+
+.swg-brand-logo {
+  display: block;
+  width: auto;
+  max-width: 220px;
+  height: 42px;
+  object-fit: contain;
+  object-position: left center;
+}
+
+.swg-header .swg-home-link {
+  flex-shrink: 0;
+  margin-left: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #145a9d;
+  text-decoration: none;
+}
+
+@media (max-width: 370px) {
+  .swg-brand-logo {
+    max-width: 190px;
+    height: 38px;
+  }
+}
+/* 취득 가이드 상담 팝업 */
+.swg-consult-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: rgba(15, 23, 42, 0.65);
+}
+
+.swg-consult-dialog {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 480px;
+  height: min(90dvh, 800px);
+  overflow: hidden;
+  border-radius: 20px;
+  background: #ffffff;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+}
+
+.swg-consult-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  padding: 16px;
+  border-bottom: 1px solid #e2e8f0;
+  color: #102d53;
+  font-size: 14px;
+}
+
+.swg-consult-header button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: #f1f5f9;
+  color: #475569;
+  cursor: pointer;
+}
+
+.swg-consult-frame {
+  display: block;
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: white;
+}
+
+@media (max-width: 480px) {
+  .swg-consult-overlay {
+    padding: 8px;
+  }
+
+  .swg-consult-dialog {
+    height: 92dvh;
+    border-radius: 16px;
+  }
+}
 `;

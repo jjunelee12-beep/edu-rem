@@ -1,7 +1,18 @@
 {
   "rewrites": [
-{
-  "source": "/social-worker-guide",
+    {
+      "source": "/employment-center",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(kakaotalk-scrap|facebookexternalhit|Twitterbot|Slackbot).*"
+        }
+      ],
+      "destination": "https://edu-crm-api-production.up.railway.app/og/employment-center"
+    },
+    {
+      "source": "/social-worker-guide",
   "has": [
     {
       "type": "header",

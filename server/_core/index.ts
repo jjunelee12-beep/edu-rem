@@ -5822,6 +5822,59 @@ app.get("/og/practice-apply/:slug", (req, res) => {
   `);
 });
 
+// 사회복지 통합지원센터 카카오톡 OG
+app.get("/og/employment-center", (_req, res) => {
+  const targetUrl =
+    "https://edu-crm-five.vercel.app/employment-center";
+
+  const imageUrl =
+    "https://edu-crm-five.vercel.app/images/employment-center/social-welfare-og.png";
+
+  const title = "사회복지 통합지원센터";
+
+  const description =
+    "사회복지 일자리·실습기관·지원금 정보부터 사회복지사 2급 취득 가이드까지 한곳에서 확인하세요.";
+
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Cache-Control", "public, max-age=300");
+
+  return res.status(200).send(`
+    <!DOCTYPE html>
+    <html lang="ko">
+      <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+        <title>${title}</title>
+        <meta name="description" content="${description}" />
+
+        <meta property="og:type" content="website" />
+        <meta property="og:locale" content="ko_KR" />
+        <meta property="og:title" content="${title}" />
+        <meta property="og:description" content="${description}" />
+        <meta property="og:image" content="${imageUrl}" />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta property="og:url" content="${targetUrl}" />
+        <meta property="og:site_name" content="사회복지 통합지원센터" />
+
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="${title}" />
+        <meta name="twitter:description" content="${description}" />
+        <meta name="twitter:image" content="${imageUrl}" />
+
+        <meta http-equiv="refresh" content="0;url=${targetUrl}" />
+      </head>
+      <body>
+        <script>
+          window.location.replace(${JSON.stringify(targetUrl)});
+        </script>
+        <a href="${targetUrl}">사회복지 통합지원센터 바로가기</a>
+      </body>
+    </html>
+  `);
+});
+
 // 사회복지사 2급 취득가이드 카카오톡 미리보기
 app.get("/og/social-worker-guide", (_req, res) => {
   const targetUrl =
