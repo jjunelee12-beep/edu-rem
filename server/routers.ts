@@ -3711,7 +3711,7 @@ export const appRouter = router({
         id: String(item.id),
         name: String(item.name),
         address: String(item.address),
-        price: String(item.feeAmount ?? ""),
+        price: String(item.price ?? ""),
       }));
     }),
 
@@ -3753,7 +3753,7 @@ export const appRouter = router({
             id: String(item.id),
             name: String(item.name),
             address: String(item.address || ""),
-            price: String(item.feeAmount ?? ""),
+            price: String(item.price ?? ""),
             lat:
               item.latitude == null
                 ? null
