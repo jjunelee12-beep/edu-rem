@@ -1,9 +1,13 @@
 import { z } from "zod";
 import { publicProcedure, router } from "./_core/trpc";
 import {
-  GOV24_CATEGORIES, GOV24_EDUCATION_SUBCATEGORIES,
-  getGov24ServiceById, getGov24SupportConditions,
-  listGov24Services, searchGov24Services,
+  GOV24_CATEGORIES,
+  GOV24_EDUCATION_SUBCATEGORIES,
+  getGov24ServiceById,
+  getGov24SupportConditions,
+  listGov24Services,
+  searchGov24Services,
+  recommendGov24Services,
 } from "./gov24.service";
 
 /** 공개 통합지원센터용. API 인증키는 Railway 서버에만 보관 */
@@ -27,6 +31,31 @@ export const gov24Router = router({
       educationSubcategory: z.enum(GOV24_EDUCATION_SUBCATEGORIES).default("전체"),
     }).default({}))
     .query(({ input }) => searchGov24Services(input)),
+
+
+recommend: publicProcedure
+  .input(
+    z.object({
+      page: z.number().int().min(1).max(10000).default(1),
+      perPage: z.number().int().min(1).max(30).default(20),
+      keyword: z.string().trim().max(60).optional(),
+      category: z.enum(GOV24_CATEGORIES).default("전체"),
+      profile: z.object({
+        region: z.string().max(30),
+        district: z.string().max(50),
+        birthYear: z.string().max(4),
+        employment: z.string().max(50),
+        education: z.string().max(50),
+        household: z.string().max(30),
+        income: z.string().max(50),
+        welfare: z.string().max(50),
+        special: z.array(z.string().max(50)).max(20),
+        currentSupport: z.string().max(100),
+      }),
+    })
+  )
+  .query(({ input }) => recommendGov24Services(input)),
+
 
   detail: publicProcedure
     .input(z.object({ serviceId: z.string().trim().min(1).max(80) }))
