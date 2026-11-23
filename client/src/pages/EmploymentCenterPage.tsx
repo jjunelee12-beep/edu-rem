@@ -216,7 +216,7 @@ const signout = async () => {
   go("home");
 };
 
- return <div className="min-h-screen bg-[#f1f5fb] text-slate-900"><div className="mx-auto min-h-screen max-w-[560px] bg-[#f8fafc] shadow-[0_0_40px_rgba(18,48,88,.08)]">
+ return <div className="min-h-screen bg-[#f1f5fb] text-slate-900"><div className="mx-auto flex min-h-screen max-w-[560px] flex-col bg-[#f8fafc] shadow-[0_0_40px_rgba(18,48,88,.08)]">
  <header className="sticky top-0 z-40 border-b border-slate-100 bg-white/95 px-4 py-3 backdrop-blur"><div className="flex items-center justify-between gap-2"><button onClick={()=>section==="home"?setMenu(v=>!v):go("home")} className="flex min-w-0 items-center gap-2 text-left">
 
 <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-blue-50">
@@ -319,6 +319,9 @@ const signout = async () => {
             key={c.key}
             type="button"
             onClick={() => go(c.key)}
+data-support-consultation={
+  c.key === "consultation" ? "true" : undefined
+}
             className="group flex min-h-[91px] items-center gap-2 rounded-[17px] border border-slate-200/80 bg-white px-3 py-3 text-left shadow-[0_3px_12px_rgba(15,43,83,0.035)] transition-all hover:border-blue-200 hover:shadow-md active:scale-[0.99]"
           >
             <span
@@ -405,11 +408,25 @@ const signout = async () => {
         </button>
       </div>
     </section>
+  </main>
+)}
 
-    
-
+{section === "jobs" && (
+  <LegacyEmploymentJobs
+    portalToken={isPortalLoggedIn ? portalToken : ""}
+    onPortalLogin={setPortalToken}
+    onSessionChange={setSession}
+    onBack={() => go("home")}
+  />
+)}
+ {section==="funds"&&<FundWizard/>}
+ {section==="certificate"&&<CertificateWizard onConsult={()=>go("consultation")}/>}
+ {section==="practice"&&<PracticePage/>}
+ {section==="resume"&&<ResumeEditor/>}
+ {section==="consultation"&&<ConsultationForm/>}
+ {section==="compare"&&<ComparePage/>}
 {/* 통합지원센터 푸터 */}
-<footer className="mt-10 border-t border-slate-200 pt-4">
+<footer className="mt-auto border-t border-slate-200 bg-[#f8fafc] px-4 pt-4 pb-24">
 
   {/* 가로 3단 구성 */}
   <div className="grid grid-cols-[1.35fr_1fr_1.1fr] gap-2">
@@ -476,38 +493,43 @@ const signout = async () => {
   </div>
 
 </footer>
-
-
-
-  </main>
-)}
-
-{section === "jobs" && (
-  <LegacyEmploymentJobs
-    portalToken={isPortalLoggedIn ? portalToken : ""}
-    onPortalLogin={setPortalToken}
-    onSessionChange={setSession}
-    onBack={() => go("home")}
-  />
-)}
- {section==="funds"&&<FundWizard/>}
- {section==="certificate"&&<CertificateWizard onConsult={()=>go("consultation")}/>}
- {section==="practice"&&<PracticePage/>}
- {section==="resume"&&<ResumeEditor/>}
- {section==="consultation"&&<ConsultationForm/>}
- {section==="compare"&&<ComparePage/>}
  {section!=="home"&&<div className="fixed bottom-4 left-1/2 z-30 flex w-[min(92%,520px)] -translate-x-1/2 justify-between rounded-2xl border bg-white p-2 shadow-xl"><button onClick={()=>go("home")} className="flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold"><Home size={16}/> 통합지원센터 홈</button><a href="/social-worker-guide" className="flex items-center gap-1 rounded-xl bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700"><BookOpen size={15}/> 취득 가이드</a></div>}
- </div></div>;
+ 
+</div></div>;
 }
 
 
 function PublicEmploymentJobs({
   onLogin,
+  activeToken = "",
+  referencePoint = null,
+  onSearchAddress,
+  onCurrentLocation,
+  onSelectJob,
+  nearbyJobs = [],
+  nearbyLoading = false,
+  nearbyPreparing = false,
 }: {
   onLogin: () => void;
+  activeToken?: string;
+  referencePoint?: { lat: number; lng: number } | null;
+  onSearchAddress?: (address: string) => void;
+  onCurrentLocation?: () => void;
+  onSelectJob?: (job: Job) => void;
+  nearbyJobs?: Job[];
+  nearbyLoading?: boolean;
+  nearbyPreparing?: boolean;
 }) {
-  const [page, setPage] = useState(1);
+    const [page, setPage] = useState(1);
   const [bannerFailed, setBannerFailed] = useState(false);
+
+  const isLoggedIn = Boolean(activeToken);
+
+  const [draftAddress, setDraftAddress] = useState("");
+
+  const [sortBy, setSortBy] = useState<
+    "latest" | "distance" | "deadline"
+  >("latest");
 
   const jobsQuery =
     trpc.employmentCenter.publicLatestJobs.useQuery(
@@ -519,9 +541,63 @@ function PublicEmploymentJobs({
       }
     );
 
-  const jobs = jobsQuery.data?.jobs ?? [];
+    const jobs = jobsQuery.data?.jobs ?? [];
   const total = jobsQuery.data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / 10));
+
+    const displayedJobs = useMemo(() => {
+    const result: Job[] =
+      sortBy === "distance" && isLoggedIn
+        ? [...nearbyJobs]
+        : [...jobs];
+
+
+    const getDateValue = (value?: string | null) => {
+      if (!value) return null;
+
+      const normalized = String(value).replace(/\D/g, "");
+
+      if (normalized.length < 8) return null;
+
+      const timestamp = new Date(
+        `${normalized.slice(0, 4)}-${normalized.slice(4, 6)}-${normalized.slice(6, 8)}T00:00:00`
+      ).getTime();
+
+      return Number.isFinite(timestamp) ? timestamp : null;
+    };
+
+    if (sortBy === "deadline") {
+      result.sort((a, b) => {
+        const aDate = getDateValue(a.closesAt);
+        const bDate = getDateValue(b.closesAt);
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const aValue =
+          aDate !== null && aDate >= today.getTime()
+            ? aDate
+            : Number.POSITIVE_INFINITY;
+
+        const bValue =
+          bDate !== null && bDate >= today.getTime()
+            ? bDate
+            : Number.POSITIVE_INFINITY;
+
+        return aValue - bValue;
+      });
+    }
+
+        if (sortBy === "distance" && isLoggedIn) {
+      result.sort(
+        (a, b) =>
+          (a.distanceKm ?? Infinity) -
+          (b.distanceKm ?? Infinity)
+      );
+    }
+
+    return result;
+  }, [jobs, nearbyJobs, sortBy, isLoggedIn]);
 
   return (
     <div className="min-h-screen bg-[#f7f9fd] px-4 pb-28 pt-5 text-slate-900">
@@ -620,14 +696,44 @@ function PublicEmploymentJobs({
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={onLogin}
-            className="flex shrink-0 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[12px] font-bold"
-          >
-            등록일순
-            <SlidersHorizontal size={14} />
-          </button>
+          
+<div className="flex shrink-0 items-center gap-1 rounded-full border border-slate-200 bg-white p-1 shadow-sm">
+  <button
+    type="button"
+    onClick={() => setSortBy("latest")}
+    className={`flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-1.5 text-[10px] font-bold ${
+      sortBy === "latest"
+        ? "bg-blue-50 text-blue-600"
+        : "text-slate-500"
+    }`}
+  >
+    <CalendarDays size={12} />
+    등록일순
+  </button>
+
+  <button
+    type="button"
+    onClick={onLogin}
+    className="flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-1.5 text-[10px] font-bold text-slate-500"
+  >
+    <MapPin size={12} />
+    거리순
+  </button>
+
+  <button
+    type="button"
+    onClick={onLogin}
+    className={`flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-1.5 text-[10px] font-bold ${
+      sortBy === "deadline"
+        ? "bg-blue-50 text-blue-600"
+        : "text-slate-500"
+    }`}
+  >
+    <Clock3 size={12} />
+    마감임박순
+  </button>
+</div>
+
         </div>
 
         {jobsQuery.isLoading && (
@@ -657,8 +763,8 @@ function PublicEmploymentJobs({
           </p>
         )}
 
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {jobs.map((job) => (
+        <div className="mt-4 grid grid-cols-2 gap-2.5">
+  {displayedJobs.map((job) => (
             <button
               key={job.id}
               type="button"
@@ -669,11 +775,11 @@ function PublicEmploymentJobs({
                 {job.company || "기관명 확인 필요"}
               </p>
 
-              <h3 className="mt-2 line-clamp-2 min-h-[40px] text-[15px] font-extrabold leading-5">
+              <h3 className="mt-1.5 line-clamp-2 min-h-[36px] text-[12px] font-extrabold leading-[18px]">
                 {job.title}
               </h3>
 
-              <p className="mt-3 text-[13px] font-bold text-slate-800">
+             <p className="mt-2 text-[11px] font-bold text-slate-800">
                 {job.salary || "급여 정보 확인"}
               </p>
 
@@ -684,14 +790,25 @@ function PublicEmploymentJobs({
                 </span>
               </div>
 
-              <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-100 pt-3 text-[11px] text-slate-500">
-                <span className="truncate">
-                  {job.employmentType || "고용형태 확인"}
-                </span>
-                <span className="shrink-0">
-                  {shortDate(job.closesAt)} 마감
-                </span>
-              </div>
+              
+<div className="mt-3 border-t border-slate-100 pt-2.5">
+  <div className="flex items-center justify-between gap-1 text-[10px] text-slate-500">
+    <span className="flex items-center gap-1">
+      <MapPin size={11} />
+      거리 미정
+    </span>
+
+    <span className="truncate">
+      {job.employmentType || "고용형태 미정"}
+    </span>
+  </div>
+
+  <div className="mt-1.5 flex items-center gap-1 text-[10px] text-slate-500">
+    <Clock3 size={11} />
+    {shortDate(job.closesAt)} 마감
+  </div>
+</div>
+
             </button>
           ))}
         </div>
@@ -1040,156 +1157,166 @@ async function login(e: React.FormEvent) {
   );
 }
 
-        if (!activeToken && !showLogin) {
-      return (
-        <PublicEmploymentJobs
-          onLogin={() => setShowLogin(true)}
-        />
-      );
-    }
+       
+if (!activeToken) {
+  return (
+    <>
+      {/* 기존 비로그인 채용공고 화면 유지 */}
+      <PublicEmploymentJobs
+        onLogin={() => setShowLogin(true)}
+      />
 
-    if (!activeToken) return (
-    <div className="min-h-screen bg-[#f2f7fd] text-slate-900">
-      <div className="mx-auto min-h-screen max-w-[430px] bg-[#f2f7fd]">
-
-        
-        {/* 공개 채용공고로 돌아가기 */}
-        <div className="px-4 pt-4">
-          <button
-            type="button"
-            onClick={() => setShowLogin(false)}
-            className="flex items-center gap-2 text-[13px] font-bold text-slate-600"
+      {/* 등록회원 로그인 팝업 */}
+      {showLogin && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 px-4 py-5 backdrop-blur-[3px]"
+          onClick={() => setShowLogin(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="등록회원 로그인"
+            className="max-h-[90dvh] w-full max-w-[420px] overflow-y-auto rounded-[24px] bg-white p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
           >
-            <ArrowLeft size={17} />
-            채용공고 목록으로 돌아가기
-          </button>
-        </div>
+            {/* 상단 */}
+            <div className="flex items-start justify-between">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+                <ShieldCheck size={25} />
+              </div>
 
-        {/* 상단 배너 */}
-        <div className="relative">
-
-          <img
-  src="/images/withone-employment-hero.png"
-  alt="사회복지 통합지원센터 일자리 찾기"
-  className="block h-auto w-full"
-/>
-        </div>
-
-        {/* 등록회원 확인 */}
-        <div className="relative z-10 -mt-5 px-4">
-          <form
-            onSubmit={login}
-            className="rounded-[24px] bg-white px-5 pb-5 pt-6 shadow-[0_8px_30px_rgba(20,50,90,0.08)]"
-          >
-            <div className="mb-5">
-              <div className="mb-3 h-[3px] w-8 rounded-full bg-[#0967f6]" />
-
-              <h2 className="text-[21px] font-extrabold tracking-tight text-[#10223f]">
-                등록회원 확인
-              </h2>
-
-              <p className="mt-2 text-[13px] leading-5 text-slate-500">
-  등록회원은 이름과 휴대폰 번호로
-  <br />
-  학사관리시스템과 통합지원센터를
-  <br />
-  하나의 계정으로 이용할 수 있습니다.
-</p>
+              <button
+                type="button"
+                onClick={() => setShowLogin(false)}
+                aria-label="닫기"
+                className="rounded-full bg-slate-100 p-2 text-slate-500"
+              >
+                <X size={19} />
+              </button>
             </div>
 
-            <div className="space-y-4">
-              <div>
-                <label
-                  htmlFor="employment-member-name"
-                  className="mb-2 block text-[13px] font-bold text-slate-800"
-                >
-                  이름
-                </label>
+            <h2 className="mt-4 text-[20px] font-black tracking-tight text-slate-900">
+              등록회원은 무료로 이용할 수 있어요!
+            </h2>
 
+            <p className="mt-2 break-keep text-[12px] leading-5 text-slate-500">
+              로그인하시면 채용공고 상세정보부터
+              내 주변 일자리까지 확인하실 수 있습니다.
+            </p>
+
+            {/* 제공 기능 */}
+            <div className="mt-4 space-y-3 rounded-2xl bg-[#f3f7ff] p-4">
+              {[
+                "채용공고 상세정보 무료 열람",
+                "지도 기반 내 주변 일자리 확인",
+                "거리순 정렬 및 지역·주소 검색",
+              ].map((item) => (
+                <div
+                  key={item}
+                  className="flex items-center gap-2.5"
+                >
+                  <ShieldCheck
+                    size={17}
+                    className="shrink-0 text-blue-600"
+                  />
+                  <span className="text-[12px] font-semibold text-slate-700">
+                    {item}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* 등록회원 로그인 */}
+            <div className="mt-5 border-t border-slate-100 pt-5">
+              <h3 className="text-[14px] font-extrabold text-slate-900">
+                이미 등록회원이신가요?
+              </h3>
+
+              <p className="mt-1 text-[11px] text-slate-500">
+                등록하신 이름과 휴대폰 번호를 입력해주세요.
+              </p>
+
+              <form onSubmit={login} className="mt-3 space-y-2.5">
                 <input
-                  id="employment-member-name"
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
+                  placeholder="이름"
                   autoComplete="name"
-                  placeholder="등록하신 이름을 입력해주세요"
-                  className="h-[48px] w-full rounded-xl border border-[#dce5f1] bg-[#f8fafc] px-4 text-[14px] outline-none transition-colors focus:border-[#0967f6] focus:bg-white"
+                  required
+                  className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-[13px] outline-none focus:border-blue-500"
                 />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="employment-member-phone"
-                  className="mb-2 block text-[13px] font-bold text-slate-800"
-                >
-                  휴대폰 번호
-                </label>
 
                 <input
-                  id="employment-member-phone"
                   type="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
+                  placeholder="휴대폰 번호"
                   inputMode="tel"
                   autoComplete="tel"
-                  placeholder="01012345678"
-                  className="h-[48px] w-full rounded-xl border border-[#dce5f1] bg-[#f8fafc] px-4 text-[14px] outline-none transition-colors focus:border-[#0967f6] focus:bg-white"
+                  required
+                  className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-[13px] outline-none focus:border-blue-500"
                 />
-              </div>
+
+                {loginError && (
+                  <p role="alert" className="text-[12px] text-red-600">
+                    {loginError}
+                  </p>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={verify.isPending}
+                  className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#0967f6] text-[14px] font-extrabold text-white disabled:opacity-50"
+                >
+                  {verify.isPending
+                    ? "로그인 확인 중..."
+                    : "등록회원 로그인"}
+                  <ArrowRight size={16} />
+                </button>
+              </form>
             </div>
 
-            {loginError && (
-              <p role="alert" className="mt-3 text-[13px] text-red-600">
-                {loginError}
-              </p>
-            )}
+            {/* 취득 가이드와 상담 */}
+            <div className="mt-5 border-t border-slate-100 pt-5">
+              <h3 className="text-center text-[13px] font-extrabold text-slate-900">
+                사회복지사 2급을 처음 알아보시나요?
+              </h3>
 
-            <button
-              type="submit"
-              disabled={verify.isPending}
-              className="mt-5 flex h-[50px] w-full items-center justify-center gap-2 rounded-xl bg-[#0967f6] text-[15px] font-bold text-white shadow-[0_4px_12px_rgba(9,103,246,0.15)] transition-colors active:bg-blue-700 disabled:opacity-60"
-            >
-              {verify.isPending ? "로그인 중..." : "로그인하고 일자리 찾기"}
-              <ArrowRight size={17} />
-            </button>
+              <a
+                href="/social-worker-guide"
+                className="mt-3 flex h-11 items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 text-[12px] font-bold text-blue-700"
+              >
+                사회복지사 2급 취득 가이드
+                <ArrowRight size={15} />
+              </a>
 
-            <p className="mt-4 text-center text-[11px] text-slate-400">
-              이름과 휴대폰 번호로 등록 여부만 확인합니다.
-            </p>
-          </form>
-        </div>
-
-        {/* 비수강생 교육과정 안내 */}
-        <div className="px-4 pb-5 pt-4">
-          <div className="rounded-[20px] bg-[#e7f0fc] px-5 py-5">
-            <h3 className="text-[16px] font-extrabold text-[#10223f]">
-사회복지사 2급 취득을 준비하시나요?
-            </h3>
-
-            <p className="mt-2 text-[12px] leading-5 text-slate-600">
-  취득과정부터 실습, 행정절차,
-  <br />
-  자격증 신청 예상일까지 확인해 보세요.
-</p>
-
-            <a
-  href="/social-worker-guide"
-  className="mt-4 flex h-[42px] w-full items-center justify-center gap-2 rounded-xl border border-[#0967f6] bg-white text-[13px] font-bold text-[#0967f6]"
->
-  사회복지사 2급 취득 가이드
-  <ArrowRight size={15} />
-</a>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLogin(false);
+                  onBack();
+                  window.setTimeout(() => {
+                    document
+                      .querySelector<HTMLButtonElement>(
+                        '[data-support-consultation]'
+                      )
+                      ?.click();
+                  }, 0);
+                }}
+                className="mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-100 text-[12px] font-bold text-slate-700"
+              >
+                사회복지사 2급 상담 신청
+                <ArrowRight size={15} />
+              </button>
+            </div>
           </div>
         </div>
-
-        <p className="px-5 pb-8 text-center text-[11px] leading-5 text-slate-400">
-          채용정보 제공: 고용24
-          <br />
-          실제 채용 조건과 마감 여부는 공고에서 확인해주세요.
-        </p>
-      </div>
-    </div>
+      )}
+    </>
   );
+}
+
 
   return <div className="min-h-screen bg-[#edf3fa] text-slate-900">
     <div className="relative mx-auto flex min-h-screen max-w-[560px] flex-col bg-white shadow-[0_0_40px_rgba(18,48,88,.09)]">
