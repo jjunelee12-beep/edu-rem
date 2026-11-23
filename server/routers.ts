@@ -34680,7 +34680,7 @@ if (rest.studentLoginId !== undefined) {
   }
 
   const plannedSemesters =
-    result.calculation.semesterPlan.plannedSemesters;
+  result.calculation.semesterPlan.semesters;
 
   // 실습 포함 전체 과목 수
   const generatedCount = plannedSemesters.reduce(
