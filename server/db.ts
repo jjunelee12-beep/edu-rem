@@ -29636,6 +29636,7 @@ export async function upsertPlan(data: InsertPlan) {
 }
 
 
+
 export async function createInitialStudentSemesterPlan(params: {
   organizationId: number;
   studentId: number;
@@ -29643,22 +29644,13 @@ export async function createInitialStudentSemesterPlan(params: {
     semesterOrder: number;
     semesterLabel: string;
     estimatedStartDate: string;
-    subjects: Array<{
-      subjectName: string;
-      category: string | null;
-      requirementType: string | null;
-      credits: number;
-    }>;
+    subjectCount: number;
   }>;
 }) {
   const database = await getDb();
-  if (!database) {
-    throw new Error("DB 연결에 실패했습니다.");
-  }
+  if (!database) throw new Error("DB 연결에 실패했습니다.");
 
-  const organizationId = requireOrganizationId(
-    params.organizationId
-  );
+  const organizationId = requireOrganizationId(params.organizationId);
   const studentId = Number(params.studentId);
 
   if (!Number.isSafeInteger(studentId) || studentId <= 0) {
@@ -29669,87 +29661,47 @@ export async function createInitialStudentSemesterPlan(params: {
     throw new Error("생성할 학기 정보가 없습니다.");
   }
 
-  // 저장 전에 전체 데이터 검증
-  const semesterRows: Array<typeof semesters.$inferInsert> = [];
-  const subjectRows: Array<typeof planSemesters.$inferInsert> = [];
-  const seenSubjects = new Set<string>();
   const seenOrders = new Set<number>();
+  const semesterRows: Array<typeof semesters.$inferInsert> = [];
 
   for (const semester of params.plannedSemesters) {
-    const semesterOrder = Number(semester.semesterOrder);
+    const order = Number(semester.semesterOrder);
+    const count = Number(semester.subjectCount);
     const startDate = String(semester.estimatedStartDate || "");
-    const monthMatch = startDate.match(
-      /^(20\d{2})-(0[1-9]|1[0-2])-\d{2}$/
+
+    const match = startDate.match(
+      /^(20\d{2})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/
     );
 
     if (
-      !Number.isSafeInteger(semesterOrder) ||
-      semesterOrder <= 0 ||
-      seenOrders.has(semesterOrder) ||
-      !monthMatch ||
-      !/^\d{4}년 [12]학기$/.test(semester.semesterLabel) ||
-      !semester.subjects.length
+      !Number.isSafeInteger(order) ||
+      order <= 0 ||
+      seenOrders.has(order) ||
+      !Number.isSafeInteger(count) ||
+      count < 1 ||
+      count > 8 ||
+      !match ||
+      !/^\d{4}년 [12]학기$/.test(semester.semesterLabel)
     ) {
-      throw new Error("학기 자동설계 결과가 올바르지 않습니다.");
+      throw new Error("학기 자동배치 결과가 올바르지 않습니다.");
     }
 
-    seenOrders.add(semesterOrder);
+    seenOrders.add(order);
 
     semesterRows.push({
       organizationId,
       studentId,
-      semesterOrder,
+      semesterOrder: order,
       semesterLabel: semester.semesterLabel,
-      plannedMonth: `${monthMatch[1]}${monthMatch[2]}`,
-      plannedSubjectCount: semester.subjects.length,
+      plannedMonth: `${match[1]}${match[2]}`,
+      plannedSubjectCount: count,
       plannedInstitution: null,
       plannedInstitutionId: null,
       plannedAmount: null,
     });
-
-    for (const [index, subject] of semester.subjects.entries()) {
-      const subjectName = String(subject.subjectName || "").trim();
-      const category = subject.category;
-      const requirementType = subject.requirementType;
-      const credits = Number(subject.credits);
-      const subjectKey = subjectName.replace(/\s+/g, "").toLowerCase();
-
-      if (
-        !subjectName ||
-        seenSubjects.has(subjectKey) ||
-        !["전공", "교양", "일반"].includes(String(category)) ||
-        !["전공필수", "전공선택", "교양", "일반"].includes(
-          String(requirementType)
-        ) ||
-        !Number.isSafeInteger(credits) ||
-        credits <= 0
-      ) {
-        throw new Error(
-          `자동설계 과목 정보를 확인해주세요: ${subjectName || "과목명 없음"}`
-        );
-      }
-
-      seenSubjects.add(subjectKey);
-
-      subjectRows.push({
-        organizationId,
-        studentId,
-        semesterNo: semesterOrder,
-        subjectName,
-        planCategory: category as "전공" | "교양" | "일반",
-        planRequirementType: requirementType as
-          | "전공필수"
-          | "전공선택"
-          | "교양"
-          | "일반",
-        credits,
-        sortOrder: index,
-      });
-    }
   }
 
   return database.transaction(async (tx) => {
-    // 같은 학생의 동시 저장 요청 직렬화
     const lockedStudent = await tx
       .select({ id: students.id })
       .from(students)
@@ -29767,27 +29719,28 @@ export async function createInitialStudentSemesterPlan(params: {
       throw new Error("학생 정보를 찾을 수 없습니다.");
     }
 
-    // 트랜잭션 내부에서 기존 데이터 재확인
-    const [existingSemesters, existingSubjects] = await Promise.all([
-      tx.select({ id: semesters.id })
-        .from(semesters)
-        .where(
-          and(
-            eq(semesters.studentId, studentId),
-            eq(semesters.organizationId, organizationId)
-          )
+    // 기존 학기표 또는 우리 플랜이 있으면 생성하지 않음
+    const existingSemesters = await tx
+      .select({ id: semesters.id })
+      .from(semesters)
+      .where(
+        and(
+          eq(semesters.studentId, studentId),
+          eq(semesters.organizationId, organizationId)
         )
-        .limit(1),
-      tx.select({ id: planSemesters.id })
-        .from(planSemesters)
-        .where(
-          and(
-            eq(planSemesters.studentId, studentId),
-            eq(planSemesters.organizationId, organizationId)
-          )
+      )
+      .limit(1);
+
+    const existingSubjects = await tx
+      .select({ id: planSemesters.id })
+      .from(planSemesters)
+      .where(
+        and(
+          eq(planSemesters.studentId, studentId),
+          eq(planSemesters.organizationId, organizationId)
         )
-        .limit(1),
-    ]);
+      )
+      .limit(1);
 
     if (existingSemesters.length || existingSubjects.length) {
       return {
@@ -29796,17 +29749,22 @@ export async function createInitialStudentSemesterPlan(params: {
       };
     }
 
+    // 과목명은 생성하지 않음
+    // 학기별 예정 과목 수만 저장
     await tx.insert(semesters).values(semesterRows);
-    await tx.insert(planSemesters).values(subjectRows);
 
     return {
       created: true,
       reason: "created" as const,
       semesterCount: semesterRows.length,
-      subjectCount: subjectRows.length,
+      subjectCount: semesterRows.reduce(
+        (sum, row) => sum + Number(row.plannedSubjectCount || 0),
+        0
+      ),
     };
   });
 }
+
 
 
 // ─── Refunds ─────────────────────────────────────────────────────────
