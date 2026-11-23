@@ -693,51 +693,168 @@ const todayKst = [
 }
 
 
+
 export async function recommendGov24Services(
   input: RecommendationInput
 ) {
   const all = await loadAllServices();
   const keyword = input.keyword?.trim().toLowerCase() ?? "";
 
-  const filtered = all.filter(row => {
-    if (keyword &&
-        !allText(row).includes(keyword) &&
-        !String(row.소관기관명 ?? "").toLowerCase().includes(keyword)) {
-      return false;
-    }
+  const regionGroups: Record<string, string[]> = {
+    서울: ["서울", "서울특별시"],
+    경기: ["경기", "경기도"],
+    인천: ["인천", "인천광역시"],
+    부산: ["부산", "부산광역시"],
+    대구: ["대구", "대구광역시"],
+    대전: ["대전", "대전광역시"],
+    광주: ["광주", "광주광역시"],
+    울산: ["울산", "울산광역시"],
+    세종: ["세종", "세종특별자치시"],
+    강원: ["강원", "강원특별자치도"],
+    충북: ["충북", "충청북도"],
+    충남: ["충남", "충청남도"],
+    전북: ["전북", "전북특별자치도"],
+    전남: ["전남", "전라남도"],
+    경북: ["경북", "경상북도"],
+    경남: ["경남", "경상남도"],
+    제주: ["제주", "제주특별자치도"],
+  };
 
-    if (
-      input.category !== "전체" &&
-      !classifyGov24Service(row).includes(input.category)
-    ) {
-      return false;
-    }
+  const userAliases = regionGroups[input.profile.region] ?? [];
+  const allRegionEntries = Object.entries(regionGroups);
 
-    return true;
-  });
+  const candidates = all
+    .filter(item => {
+      const searchable = [
+        allText(item),
+        String(item.소관기관명 ?? "").toLowerCase(),
+      ].join(" ");
 
-  const ranked = filtered
-  .map(item => ({
-    item,
-    match: scoreGov24Recommendation(item, input.profile),
-    applicationPeriod: analyzeGov24ApplicationPeriod(item),
-  }))
+      if (keyword && !searchable.includes(keyword)) {
+        return false;
+      }
+
+      if (
+        input.category !== "전체" &&
+        !classifyGov24Service(item).includes(input.category)
+      ) {
+        return false;
+      }
+
+      return true;
+    })
+    .map(item => {
+      const match = scoreGov24Recommendation(
+        item,
+        input.profile
+      );
+      const applicationPeriod =
+        analyzeGov24ApplicationPeriod(item);
+
+      const target = String(item.지원대상 ?? "");
+      const criteria = String(item.선정기준 ?? "");
+      const eligibility = `${target} ${criteria}`;
+      const district = input.profile.district.trim();
+
+      const sameDistrict =
+        Boolean(district) && eligibility.includes(district);
+
+      const sameRegion = userAliases.some(
+        alias => eligibility.includes(alias)
+      );
+
+      // 지역 제한이 명확하게 기재된 경우에만
+      // 다른 지역 거주자 대상 사업을 제외
+      const hasResidenceRule =
+        /거주자|거주민|주민등록|주소를 둔|거주하는/.test(
+          eligibility
+        );
+
+      const otherRegionMentioned =
+        allRegionEntries.some(([region, aliases]) =>
+          region !== input.profile.region &&
+          aliases.some(alias => eligibility.includes(alias))
+        );
+
+      const nationwide =
+        /전국|전 국민|전국민|지역 제한 없음|거주지 무관/.test(
+          eligibility
+        );
+
+      const regionMismatch =
+        hasResidenceRule &&
+        otherRegionMentioned &&
+        !sameRegion &&
+        !sameDistrict &&
+        !nationwide;
+
+      const regionPriority = sameDistrict
+        ? 3
+        : sameRegion
+          ? 2
+          : nationwide
+            ? 1
+            : 0;
+
+      const periodPriority =
+        applicationPeriod.status === "within_period" ||
+        applicationPeriod.status === "ongoing"
+          ? 2
+          : applicationPeriod.status === "upcoming"
+            ? 1
+            : 0;
+
+      return {
+        item,
+        match,
+        applicationPeriod,
+        regionMismatch,
+        regionPriority,
+        periodPriority,
+      };
+    })
+    .filter(result => {
+      if (result.regionMismatch) return false;
+
+      if (result.applicationPeriod.status === "ended") {
+        return false;
+      }
+
+      // 관련성 근거가 적은 사업은 추천에서 제외
+      if (result.match.score < 35) return false;
+      if (result.match.matched.length < 2) return false;
+
+      return true;
+    })
     .sort((a, b) =>
+      b.regionPriority - a.regionPriority ||
       b.match.score - a.match.score ||
+      b.periodPriority - a.periodPriority ||
       String(a.item.서비스명 ?? "").localeCompare(
-        String(b.item.서비스명 ?? ""), "ko"
+        String(b.item.서비스명 ?? ""),
+        "ko"
       )
     );
 
-  const start = (input.page - 1) * input.perPage;
+  const selected = candidates.slice(0, 10);
 
   return {
-    page: input.page,
-    perPage: input.perPage,
+    page: 1,
+    perPage: 10,
     totalCount: all.length,
-    matchCount: ranked.length,
-    data: ranked.slice(start, start + input.perPage),
-    notice: "추천 순위는 공개 지원조건과 입력정보의 키워드 관련성을 비교한 결과이며, 실제 수급 자격을 의미하지 않습니다.",
+    matchCount: selected.length,
+    data: selected.map(({
+      item,
+      match,
+      applicationPeriod,
+    }) => ({
+      item,
+      match,
+      applicationPeriod,
+    })),
+    notice:
+      "공개 지원조건과 입력정보의 관련성이 높은 사업을 최대 10건 안내합니다. 실제 수급 자격 및 접수 가능 여부는 공식 기관 확인이 필요합니다.",
   };
 }
+
 

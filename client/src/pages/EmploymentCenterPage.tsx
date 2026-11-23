@@ -753,14 +753,7 @@ const year =
   }
 
   // 여러 금액을 합산하거나 서로 다른 지급 주기를 비교하지 않음
-  const maximumCandidates = candidates.filter(
-    candidate => candidate.priority === 2
-  );
-
-  if (
-  maximumCandidates.length !== 1 ||
-  candidates.length !== 1
-) {
+  if (candidates.length !== 1) {
     return {
       headline: "지원 금액 상세 확인",
       period: "지급 기준 별도 확인",
@@ -769,15 +762,20 @@ const year =
     };
   }
 
-  const selected = maximumCandidates[0];
+  
+const selected = candidates[0];
+const isMaximum = selected.priority === 2;
 
-  return {
-    headline: `최대 ${selected.amount}`,
-    period: selected.period,
-    note:
-      "공개 지원내용에서 명시적으로 확인된 상한액입니다. 개인별 실제 지급액과 다를 수 있습니다.",
-    evidence: selected.context,
-  };
+return {
+  headline: isMaximum
+    ? `최대 ${selected.amount}`
+    : `지원내용 명시 금액 ${selected.amount}`,
+  period: selected.period,
+  note: isMaximum
+    ? "공개 지원내용에 명시된 상한액입니다. 개인별 지급액은 다를 수 있습니다."
+    : "공개 지원내용에서 확인된 금액입니다. 지급액·지급조건 및 실제 수령 가능 여부는 상세 안내를 확인해야 합니다.",
+  evidence: selected.context,
+};
 }
 
 
@@ -795,7 +793,6 @@ function FundWizard() {
   const [special, setSpecial] = useState<string[]>([]);
   const [currentSupport, setCurrentSupport] = useState("");
   const [keyword, setKeyword] = useState("");
-const [fundPage, setFundPage] = useState(1);
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const currentYear = new Date().getFullYear();
@@ -833,8 +830,8 @@ const fundProfile = {
 
 const query = trpc.gov24.recommend.useQuery(
   {
-    page: fundPage,
-    perPage: 20,
+    page: 1,
+perPage: 10,
     keyword: keyword.trim() || undefined,
     category: categoryMap[category] || "전체",
     profile: fundProfile,
@@ -847,6 +844,7 @@ const query = trpc.gov24.recommend.useQuery(
 );
 
 const rankedFunds = query.data?.data ?? [];
+const recommendedCount = rankedFunds.length;
 
 
 
@@ -1181,14 +1179,13 @@ const rankedFunds = query.data?.data ?? [];
     </p>
 
     <p className="mt-2 text-2xl font-black text-slate-900">
-      {query.data?.matchCount ?? rankedFunds.length}건
+      {recommendedCount}건
     </p>
 
     <p className="mt-2 text-xs leading-5 text-slate-600">
-      전체 검색 결과를 입력 조건과 비교한 뒤
-관련성이 높은 순서로 정렬했습니다.
-현재 {fundPage}페이지에서
-{rankedFunds.length}개 사업을 표시합니다.
+     입력하신 거주지역과 개인 조건을 기준으로
+관련성이 높은 지원사업을 최대 10건 선별했습니다.
+실제 지원 가능 여부는 공식 공고를 확인해 주세요.
     </p>
 
     <p className="mt-1 text-xs text-amber-700">
@@ -1232,7 +1229,6 @@ const rankedFunds = query.data?.data ?? [];
               value={keyword}
               onChange={e => {
   setKeyword(e.target.value);
-  setFundPage(1);
   setExpanded(null);
 }}
               placeholder={`현재 검색어: ${searchTerm}`}
@@ -1267,20 +1263,16 @@ const rankedFunds = query.data?.data ?? [];
                 
 <div className="space-y-2">
   <p
-    className={`text-xs font-black ${
-      match.status === "related"
-        ? "text-blue-700"
-        : match.status === "mismatch"
-          ? "text-red-700"
-          : "text-amber-700"
-    }`}
-  >
-    {match.status === "related"
-      ? "입력 조건과 관련성 높음"
-      : match.status === "mismatch"
-        ? "조건 불일치 가능성"
-        : "지원 조건 추가 확인 필요"}
-  </p>
+  className={`text-xs font-black ${
+    match.status === "related"
+      ? "text-blue-700"
+      : "text-amber-700"
+  }`}
+>
+  {match.status === "related"
+    ? "입력 조건과 관련성 높음"
+    : "지원 조건 추가 확인 필요"}
+</p>
 
   {match.matched.length > 0 && (
     <div className="rounded-xl bg-blue-50 p-3">
@@ -1438,47 +1430,6 @@ const rankedFunds = query.data?.data ?? [];
               </article>
             );
           })}
-
-
-{query.isSuccess &&
-  (query.data?.matchCount ?? 0) > 20 && (
-    <div className="flex items-center justify-between gap-3 rounded-xl bg-white p-3">
-      <button
-        type="button"
-        disabled={fundPage <= 1}
-        onClick={() => {
-          setFundPage(p => Math.max(1, p - 1));
-          setExpanded(null);
-        }}
-        className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-bold disabled:opacity-40"
-      >
-        이전
-      </button>
-
-      <span className="text-sm font-semibold text-slate-700">
-        {fundPage} /{" "}
-        {Math.ceil(
-          (query.data?.matchCount ?? 0) / 20
-        )}
-      </span>
-
-      <button
-        type="button"
-        disabled={
-          fundPage * 20 >=
-          (query.data?.matchCount ?? 0)
-        }
-        onClick={() => {
-          setFundPage(p => p + 1);
-          setExpanded(null);
-        }}
-        className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-40"
-      >
-        다음
-      </button>
-    </div>
-  )}
-
 
           {!query.isLoading &&
             !query.isError &&
