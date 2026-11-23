@@ -2716,7 +2716,10 @@ if (isConsultationEmbed) {
   >
     {portalLogout.isPending ? "로그아웃 중..." : "로그아웃"}
   </button>
-)}</nav>}</header>
+)}
+  </nav>
+)}
+</header>
  
 {section === "home" && (
   <main className="px-4 pb-6">
