@@ -3656,6 +3656,116 @@ export const appRouter = router({
 
   // ─── 위드원교육 취업정보센터 ─────────────────────
   employmentCenter: router({
+
+
+    // 전국 실습기관 8개 미리보기
+    publicPracticePreview: publicProcedure.query(async () => {
+      const rows = await db.listMergedPracticeInstitutions({
+        organizationId: WITHONE_ORGANIZATION_ID,
+        institutionType: "institution",
+      });
+
+      const valid = rows.filter((item: any) =>
+        item.sourceType === "master" &&
+        Boolean(String(item.associationManagementNo || "").trim()) &&
+        !item.isInactive &&
+        String(item.address || "").trim()
+      );
+
+      const getRegion = (address: string) => {
+        const head = String(address).trim().split(/\s+/)[0] || "기타";
+        return head.replace(
+          /특별자치도|특별자치시|광역시|특별시|자치도|도|시$/g,
+          ""
+        );
+      };
+
+      const regions = new Map<string, any[]>();
+
+      for (const item of valid) {
+        const region = getRegion(item.address);
+
+        if (!regions.has(region)) {
+          regions.set(region, []);
+        }
+
+        regions.get(region)!.push(item);
+      }
+
+      const selected: any[] = [];
+      const buckets = [...regions.values()];
+
+      while (
+        selected.length < 8 &&
+        buckets.some(bucket => bucket.length > 0)
+      ) {
+        for (const bucket of buckets) {
+          if (selected.length >= 8) break;
+
+          const item = bucket.shift();
+          if (item) selected.push(item);
+        }
+      }
+
+      return selected.map((item: any) => ({
+        id: String(item.id),
+        name: String(item.name),
+        address: String(item.address),
+        price: String(item.feeAmount ?? ""),
+      }));
+    }),
+
+    // 등록 학습자 전용 전체 실습기관 조회
+    practiceNearby: publicProcedure
+      .input(
+        z.object({
+          token: z.string().min(1).max(1000),
+        })
+      )
+      .query(async ({ input }) => {
+        const session =
+          await db.getStudentPortalSessionByToken({
+            token: input.token,
+          });
+
+        if (
+          session?.usable !== true ||
+          Number(session.organizationId) !==
+            WITHONE_ORGANIZATION_ID
+        ) {
+          throw new Error("등록 학습자 인증이 필요합니다.");
+        }
+
+        const rows = await db.listMergedPracticeInstitutions({
+          organizationId: WITHONE_ORGANIZATION_ID,
+          institutionType: "institution",
+        });
+
+        return rows
+          .filter((item: any) =>
+            item.sourceType === "master" &&
+            Boolean(
+              String(item.associationManagementNo || "").trim()
+            ) &&
+            !item.isInactive
+          )
+          .map((item: any) => ({
+            id: String(item.id),
+            name: String(item.name),
+            address: String(item.address || ""),
+            price: String(item.feeAmount ?? ""),
+            lat:
+              item.latitude == null
+                ? null
+                : Number(item.latitude),
+            lng:
+              item.longitude == null
+                ? null
+                : Number(item.longitude),
+          }));
+      }),
+
+
     /**
      * 이름 + 휴대폰 번호로 등록회원 확인
      */
