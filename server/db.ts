@@ -29749,9 +29749,39 @@ export async function createInitialStudentSemesterPlan(params: {
       };
     }
 
-    // 과목명은 생성하지 않음
-    // 학기별 예정 과목 수만 저장
+    
+    // 학기별 예정표 생성
     await tx.insert(semesters).values(semesterRows);
+
+    // 학기별 예정 과목 수만큼
+    // 우리 플랜에 임시 과목 생성
+    const placeholderRows: Array<
+      typeof planSemesters.$inferInsert
+    > = [];
+
+    for (const semester of params.plannedSemesters) {
+      const semesterNo = Number(semester.semesterOrder);
+      const subjectCount = Number(semester.subjectCount);
+
+      for (let i = 0; i < subjectCount; i++) {
+        placeholderRows.push({
+          organizationId,
+          studentId,
+          semesterNo,
+          subjectName: `${semesterNo}학기 새 과목${i + 1}`,
+          planCategory: "전공",
+          planRequirementType: "전공선택",
+          credits: 3,
+          sortOrder: i,
+          settlementIncluded: true,
+        } as typeof planSemesters.$inferInsert);
+      }
+    }
+
+    if (placeholderRows.length > 0) {
+      await tx.insert(planSemesters).values(placeholderRows);
+    }
+
 
     return {
       created: true,
