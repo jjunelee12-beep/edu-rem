@@ -24,6 +24,7 @@ import { buildSettlementSalesSummaryExcel } from "./_core/settlement-sales-summa
 import { buildOrganizationExcelExport } from "./_core/organization-excel-export";
 import { emitLiveNotification } from "./_core/live-notifications";
 import { publicLeadRouter } from "./publicLead.router";
+import { gov24Router } from "./gov24.router";
 import bcrypt from "bcryptjs";
 import { smsRouter } from "./_core/sms.router";
 import Tesseract from "tesseract.js";
@@ -3632,6 +3633,25 @@ async function assertTransferSubjectWritePermission(
   }
 }
 
+async function verifyUnifiedEmploymentToken(
+  token: string
+): Promise<void> {
+  const portalSession =
+    await db.getStudentPortalSessionByToken({
+      token,
+    });
+
+  if (
+    portalSession?.usable === true &&
+Number(portalSession.organizationId) ===
+  WITHONE_ORGANIZATION_ID
+  ) {
+    return;
+  }
+
+  verifyEmploymentToken(token);
+}
+
 export const appRouter = router({
 
   // ─── 위드원교육 취업정보센터 ─────────────────────
@@ -3737,7 +3757,7 @@ return {
         })
       )
       .query(async ({ input }) => {
-        verifyEmploymentToken(input.token);
+       await verifyUnifiedEmploymentToken(input.token);
 
         return getWork24Regions();
       }),
@@ -3755,7 +3775,7 @@ return {
     })
   )
   .query(async ({ input }) => {
-    verifyEmploymentToken(input.token);
+    await verifyUnifiedEmploymentToken(input.token);
 
     return getWork24Jobs({
       page: input.page,
@@ -3775,7 +3795,7 @@ return {
         })
       )
       .query(async ({ input }) => {
-        verifyEmploymentToken(input.token);
+        await verifyUnifiedEmploymentToken(input.token);
 
         const result = await getWork24AllJobs();
 
@@ -3787,10 +3807,49 @@ return {
         };
       }),
 
+ 
+    /**
+     * 비로그인 공개용 전국 채용공고 목록
+     * 기존 고용24 목록 조회 서비스를 재사용한다.
+     */
+    publicLatestJobs: publicProcedure
+      .input(
+        z.object({
+          page: z.number().int().min(1).max(1000).default(1),
+          size: z.number().int().min(1).max(20).default(10),
+        })
+      )
+     
+      .query(async ({ input }) => {
+        const result = await getWork24Jobs({
+          page: input.page,
+          size: input.size,
+        });
+
+        return {
+          ...result,
+          jobs: [...result.jobs].sort((a, b) => {
+            const normalizeDate = (value: string) => {
+              const digits = String(value || "").replace(/\D/g, "");
+              return digits.length >= 8
+                ? Number(digits.slice(0, 8))
+                : 0;
+            };
+
+            return (
+              normalizeDate(b.registeredAt) -
+              normalizeDate(a.registeredAt)
+            );
+          }),
+        };
+      }),
+
+
     /**
      * 등록회원 전용 가까운 채용공고 30건 조회
      */
     nearbyJobs: publicProcedure
+
       .input(
         z.object({
           token: z.string().min(1).max(1000),
@@ -3799,7 +3858,7 @@ return {
         })
       )
       .query(async ({ input }) => {
-        verifyEmploymentToken(input.token);
+        await verifyUnifiedEmploymentToken(input.token);
 
         return getWork24NearbyJobs({
           lat: input.lat,
@@ -3818,16 +3877,17 @@ return {
         })
       )
       .query(async ({ input }) => {
-        verifyEmploymentToken(input.token);
+        await verifyUnifiedEmploymentToken(input.token);
 
         return getWork24JobDetail(input.wantedAuthNo);
       }),
   }),
 
-    system: systemRouter,
+        system: systemRouter,
   leadForm: publicLeadRouter,
   sms: smsRouter,
   saas: saasRouter,
+  gov24: gov24Router,
   
   // ─── 사회복지사 2급 공개 취득가이드 ───────────────────
   socialWorkerGuide: router({

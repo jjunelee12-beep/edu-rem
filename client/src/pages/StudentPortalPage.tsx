@@ -1808,7 +1808,7 @@ onQualificationApplication={() =>
     href="/employment-center"
     className="flex h-10 items-center rounded-xl border border-blue-200 bg-white/95 px-4 text-[12px] font-extrabold text-blue-700 shadow-sm"
   >
-    취업정보센터 이동하기
+    사회복지 통합지원센터
     <ChevronRight className="ml-1 h-4 w-4" />
   </a>
 </div>
