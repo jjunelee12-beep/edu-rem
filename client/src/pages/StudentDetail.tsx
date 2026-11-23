@@ -2753,11 +2753,15 @@ practiceDate: planForm.practiceDate || null,
 }
 
 await Promise.all([
-      utils.plan.get.invalidate({ studentId }),
-      utils.practiceSupport.listByStudent.invalidate({ studentId }),
-      utils.semester.list.invalidate({ studentId }),
-      utils.student.get.invalidate({ id: studentId }),
-    ]);
+  utils.plan.get.invalidate({ studentId }),
+  utils.practiceSupport.listByStudent.invalidate({ studentId }),
+  utils.semester.list.invalidate({ studentId }),
+  utils.planSemester.list.invalidate({ studentId }),
+  utils.creditSummary.student.getSummary.invalidate({
+    studentId,
+  }),
+  utils.student.get.invalidate({ id: studentId }),
+]);
 
     toast.success("플랜 및 실습 정보 저장 완료");
     setEditingPlan(false);
@@ -5690,12 +5694,12 @@ disabled={isReadOnly}
                         <tbody>
                           {group.rows.map((row: any, rowIndex: number) => (
                             <tr
-  key={`${row.id}-${row.subjectName}-${row.planCategory}-${row.planRequirementType}-${row.sortOrder}`}
+  key={row.id}
   className="border-b last:border-0"
 >
                               <td className="px-2 py-1">
   <Input
-    key={`plan-name-${row.id}-${row.subjectName}-${row.sortOrder}`}
+    key={`plan-name-${row.id}`}
     ref={(el) => {
       planFieldRefs.current[`plan-name-${group.semesterNo}-${rowIndex}`] = el;
     }}

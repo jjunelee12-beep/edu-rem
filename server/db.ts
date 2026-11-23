@@ -29635,6 +29635,180 @@ export async function upsertPlan(data: InsertPlan) {
   }
 }
 
+
+export async function createInitialStudentSemesterPlan(params: {
+  organizationId: number;
+  studentId: number;
+  plannedSemesters: Array<{
+    semesterOrder: number;
+    semesterLabel: string;
+    estimatedStartDate: string;
+    subjects: Array<{
+      subjectName: string;
+      category: string | null;
+      requirementType: string | null;
+      credits: number;
+    }>;
+  }>;
+}) {
+  const database = await getDb();
+  if (!database) {
+    throw new Error("DB 연결에 실패했습니다.");
+  }
+
+  const organizationId = requireOrganizationId(
+    params.organizationId
+  );
+  const studentId = Number(params.studentId);
+
+  if (!Number.isSafeInteger(studentId) || studentId <= 0) {
+    throw new Error("올바른 학생 정보가 필요합니다.");
+  }
+
+  if (!params.plannedSemesters.length) {
+    throw new Error("생성할 학기 정보가 없습니다.");
+  }
+
+  // 저장 전에 전체 데이터 검증
+  const semesterRows: Array<typeof semesters.$inferInsert> = [];
+  const subjectRows: Array<typeof planSemesters.$inferInsert> = [];
+  const seenSubjects = new Set<string>();
+  const seenOrders = new Set<number>();
+
+  for (const semester of params.plannedSemesters) {
+    const semesterOrder = Number(semester.semesterOrder);
+    const startDate = String(semester.estimatedStartDate || "");
+    const monthMatch = startDate.match(
+      /^(20\d{2})-(0[1-9]|1[0-2])-\d{2}$/
+    );
+
+    if (
+      !Number.isSafeInteger(semesterOrder) ||
+      semesterOrder <= 0 ||
+      seenOrders.has(semesterOrder) ||
+      !monthMatch ||
+      !/^\d{4}년 [12]학기$/.test(semester.semesterLabel) ||
+      !semester.subjects.length
+    ) {
+      throw new Error("학기 자동설계 결과가 올바르지 않습니다.");
+    }
+
+    seenOrders.add(semesterOrder);
+
+    semesterRows.push({
+      organizationId,
+      studentId,
+      semesterOrder,
+      semesterLabel: semester.semesterLabel,
+      plannedMonth: `${monthMatch[1]}${monthMatch[2]}`,
+      plannedSubjectCount: semester.subjects.length,
+      plannedInstitution: null,
+      plannedInstitutionId: null,
+      plannedAmount: null,
+    });
+
+    for (const [index, subject] of semester.subjects.entries()) {
+      const subjectName = String(subject.subjectName || "").trim();
+      const category = subject.category;
+      const requirementType = subject.requirementType;
+      const credits = Number(subject.credits);
+      const subjectKey = subjectName.replace(/\s+/g, "").toLowerCase();
+
+      if (
+        !subjectName ||
+        seenSubjects.has(subjectKey) ||
+        !["전공", "교양", "일반"].includes(String(category)) ||
+        !["전공필수", "전공선택", "교양", "일반"].includes(
+          String(requirementType)
+        ) ||
+        !Number.isSafeInteger(credits) ||
+        credits <= 0
+      ) {
+        throw new Error(
+          `자동설계 과목 정보를 확인해주세요: ${subjectName || "과목명 없음"}`
+        );
+      }
+
+      seenSubjects.add(subjectKey);
+
+      subjectRows.push({
+        organizationId,
+        studentId,
+        semesterNo: semesterOrder,
+        subjectName,
+        planCategory: category as "전공" | "교양" | "일반",
+        planRequirementType: requirementType as
+          | "전공필수"
+          | "전공선택"
+          | "교양"
+          | "일반",
+        credits,
+        sortOrder: index,
+      });
+    }
+  }
+
+  return database.transaction(async (tx) => {
+    // 같은 학생의 동시 저장 요청 직렬화
+    const lockedStudent = await tx
+      .select({ id: students.id })
+      .from(students)
+      .where(
+        and(
+          eq(students.id, studentId),
+          eq(students.organizationId, organizationId),
+          sql`${students.deletedAt} IS NULL`
+        )
+      )
+      .limit(1)
+      .for("update");
+
+    if (!lockedStudent.length) {
+      throw new Error("학생 정보를 찾을 수 없습니다.");
+    }
+
+    // 트랜잭션 내부에서 기존 데이터 재확인
+    const [existingSemesters, existingSubjects] = await Promise.all([
+      tx.select({ id: semesters.id })
+        .from(semesters)
+        .where(
+          and(
+            eq(semesters.studentId, studentId),
+            eq(semesters.organizationId, organizationId)
+          )
+        )
+        .limit(1),
+      tx.select({ id: planSemesters.id })
+        .from(planSemesters)
+        .where(
+          and(
+            eq(planSemesters.studentId, studentId),
+            eq(planSemesters.organizationId, organizationId)
+          )
+        )
+        .limit(1),
+    ]);
+
+    if (existingSemesters.length || existingSubjects.length) {
+      return {
+        created: false,
+        reason: "existing_data" as const,
+      };
+    }
+
+    await tx.insert(semesters).values(semesterRows);
+    await tx.insert(planSemesters).values(subjectRows);
+
+    return {
+      created: true,
+      reason: "created" as const,
+      semesterCount: semesterRows.length,
+      subjectCount: subjectRows.length,
+    };
+  });
+}
+
+
 // ─── Refunds ─────────────────────────────────────────────────────────
 export async function listRefunds(
   assigneeId?: number,
