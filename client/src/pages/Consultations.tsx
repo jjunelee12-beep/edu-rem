@@ -1044,11 +1044,42 @@ const canDelete = canManageAll;
       </td>
 
       <td className="px-1 py-2">
-        <InlineNotesCell
-  value={item.notes || ""}
-  onCommit={(v) => onBlur(item.id, "notes", v)}
-  disabled={!canEditNotesAndStatus}
-/>
+        
+<div className="space-y-1.5">
+  {Array.isArray(item.duplicateOwners) &&
+    item.duplicateOwners.length > 0 && (
+      <div className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
+        <div className="font-semibold mb-1">
+          ⚠ 중복 상담 회원
+        </div>
+
+        <div className="text-amber-800">
+          동일한 연락처로 등록된 상담이 있습니다.
+        </div>
+
+        {item.duplicateOwners.map(
+          (
+            owner: {
+              teamName: string;
+              assigneeName: string;
+            },
+            index: number
+          ) => (
+            <div key={index} className="mt-1 font-medium">
+              {owner.teamName} · {owner.assigneeName}
+            </div>
+          )
+        )}
+      </div>
+    )}
+
+  <InlineNotesCell
+    value={item.notes || ""}
+    onCommit={(v) => onBlur(item.id, "notes", v)}
+    disabled={!canEditNotesAndStatus}
+  />
+</div>
+
       </td>
 
       <td className="px-1 py-2">

@@ -27073,6 +27073,188 @@ return rows.map((row) =>
 );
 }
 
+
+
+export async function getConsultationDuplicateOwners(
+  visibleRows: Array<{
+    id: number;
+    phoneHash?: string | null;
+    assigneeId: number;
+  }>,
+  organizationIdValue: number
+): Promise<Record<number, Array<{
+  teamName: string;
+  assigneeName: string;
+}>>> {
+  const database = await getDb();
+  if (!database || visibleRows.length === 0) return {};
+
+  const organizationId =
+    requireOrganizationId(organizationIdValue);
+
+  const hashes = Array.from(
+    new Set(
+      visibleRows
+        .map(row => String(row.phoneHash || "").trim())
+        .filter(Boolean)
+    )
+  );
+
+  if (hashes.length === 0) return {};
+
+  type Match = {
+    id: number;
+    phoneHash: string | null;
+    assigneeId: number;
+  };
+
+  const matchesByPhone = new Map<string, Match[]>();
+
+  // 대량 IN 조건을 피하기 위해 200개씩 분할 조회
+  const BATCH_SIZE = 200;
+
+  for (let i = 0; i < hashes.length; i += BATCH_SIZE) {
+    const batch = hashes.slice(i, i + BATCH_SIZE);
+
+    const matches = await database
+      .select({
+        id: consultations.id,
+        phoneHash: consultations.phoneHash,
+        assigneeId: consultations.assigneeId,
+      })
+      .from(consultations)
+      .where(
+        and(
+          eq(consultations.organizationId, organizationId),
+          inArray(consultations.phoneHash, batch),
+          sql`${consultations.deletedAt} IS NULL`
+        )
+      );
+
+    for (const match of matches) {
+      if (!match.phoneHash) continue;
+
+      const existing =
+        matchesByPhone.get(match.phoneHash) || [];
+
+      existing.push(match);
+      matchesByPhone.set(match.phoneHash, existing);
+    }
+  }
+
+  // 실제 중복된 상담에서 필요한 담당자 ID만 추출
+  const duplicateOwnerIds = new Set<number>();
+
+  for (const row of visibleRows) {
+    if (!row.phoneHash) continue;
+
+    const matches =
+      matchesByPhone.get(row.phoneHash) || [];
+
+    if (matches.length <= 1) continue;
+
+    for (const match of matches) {
+      if (Number(match.id) !== Number(row.id)) {
+        duplicateOwnerIds.add(Number(match.assigneeId));
+      }
+    }
+  }
+
+  const staffMap = new Map<
+    number,
+    { teamName: string; assigneeName: string }
+  >();
+
+  const ownerIds = Array.from(duplicateOwnerIds)
+    .filter(id => Number.isSafeInteger(id) && id > 0);
+
+  // 전체 직원 목록 대신 실제 중복 담당자만 조회
+  if (ownerIds.length > 0) {
+    for (let i = 0; i < ownerIds.length; i += BATCH_SIZE) {
+      const batch = ownerIds.slice(i, i + BATCH_SIZE);
+
+      const staff = await database
+        .select({
+          id: users.id,
+          name: users.name,
+          teamName: teams.name,
+        })
+        .from(users)
+        .leftJoin(
+          userOrgMappings,
+          and(
+            eq(userOrgMappings.userId, users.id),
+            eq(userOrgMappings.organizationId, organizationId)
+          )
+        )
+        .leftJoin(
+          teams,
+          and(
+            eq(teams.id, userOrgMappings.teamId),
+            eq(teams.organizationId, organizationId)
+          )
+        )
+        .where(
+          and(
+            eq(users.organizationId, organizationId),
+            inArray(users.id, batch)
+          )
+        );
+
+      for (const user of staff) {
+        staffMap.set(Number(user.id), {
+          teamName: String(user.teamName || "미배정"),
+          assigneeName: user.name
+            ? String(decryptPersonalData(user.name))
+            : "담당자 미확인",
+        });
+      }
+    }
+  }
+
+  const result: Record<
+    number,
+    Array<{ teamName: string; assigneeName: string }>
+  > = {};
+
+  for (const row of visibleRows) {
+    if (!row.phoneHash) continue;
+
+    const matches =
+      matchesByPhone.get(row.phoneHash) || [];
+
+    if (matches.length <= 1) continue;
+
+    const owners = new Map<
+      number,
+      { teamName: string; assigneeName: string }
+    >();
+
+    for (const match of matches) {
+      if (Number(match.id) === Number(row.id)) continue;
+
+      const ownerId = Number(match.assigneeId);
+
+      owners.set(
+        ownerId,
+        staffMap.get(ownerId) || {
+          teamName: "미배정",
+          assigneeName: "담당자 미확인",
+        }
+      );
+    }
+
+    if (owners.size > 0) {
+      result[Number(row.id)] =
+        Array.from(owners.values());
+    }
+  }
+
+  return result;
+}
+
+
+
 export async function getConsultation(
   id: number,
   params?: {

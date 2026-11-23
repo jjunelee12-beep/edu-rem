@@ -33784,50 +33784,71 @@ messageData.workflow = {
   }),
 }),
   consultation: router({
-  list: protectedProcedure
-    .input(
-      z
-        .object({
-          showAll: z.boolean().optional(),
-        })
-        .optional()
-    )
-    .query(async ({ ctx, input }) => {
-  const organizationId = getCtxOrganizationId(ctx);
+  
+list: protectedProcedure
+  .input(
+    z.object({
+      showAll: z.boolean().optional(),
+    }).optional()
+  )
+  .query(async ({ ctx, input }) => {
+    const organizationId = getCtxOrganizationId(ctx);
 
-  if (!organizationId) {
-    throwAppError(
-  ERROR_CODES.ORGANIZATION_REQUIRED,
-  "organizationId is required",
-  400
-);
-  }
+    if (!organizationId) {
+      throwAppError(
+        ERROR_CODES.ORGANIZATION_REQUIRED,
+        "organizationId is required",
+        400
+      );
+    }
 
-  const showAll = !!input?.showAll;
-  const myId = Number(ctx.user.id) || 1;
+    const showAll = !!input?.showAll;
+    const myId = Number(ctx.user.id);
 
-  if (isHost(ctx.user) && showAll) {
-  return db.listConsultations(undefined, {
-    organizationId,
-  });
-}
+    let rows;
 
-if (isAdmin(ctx.user) && showAll) {
+    if (isHost(ctx.user) && showAll) {
+      rows = await db.listConsultations(undefined, {
+        organizationId,
+      });
+    
+} else if (isAdmin(ctx.user) && showAll) {
   const teamMemberIds =
     await db.getUserTeamMemberIds(myId, {
       organizationId,
     });
 
-  return db.listConsultations(undefined, {
-    organizationId,
-    assigneeIds: teamMemberIds,
-  });
-}
+  const allowedIds = Array.from(
+    new Set([
+      myId,
+      ...teamMemberIds.map(Number),
+    ])
+  ).filter(id => Number.isSafeInteger(id) && id > 0);
 
-return db.listConsultations(myId, {
-  organizationId,
-});
-}), 
+  rows = await db.listConsultations(undefined, {
+    organizationId,
+    assigneeIds: allowedIds,
+  });
+
+    } else {
+      rows = await db.listConsultations(myId, {
+        organizationId,
+      });
+    }
+
+    const duplicateOwners =
+      await db.getConsultationDuplicateOwners(
+        rows,
+        organizationId
+      );
+
+    return rows.map(row => ({
+      ...row,
+      duplicateOwners:
+        duplicateOwners[Number(row.id)] || [],
+    }));
+  }),
+
 
     create: protectedProcedure
       .input(
@@ -33904,11 +33925,12 @@ if (input.rows.length > MAX_BULK_CONSULTATIONS) {
           Number.isFinite(assigneeId) && assigneeId > 0 ? assigneeId : 1;
 
         const dataList = input.rows.map((row) => ({
-          ...row,
-          consultDate: new Date(row.consultDate),
-          finalEducation: row.finalEducation ?? "",
-          assigneeId: safeAssigneeId,
-        }));
+  ...row,
+  organizationId: getCtxOrganizationId(ctx),
+  consultDate: new Date(row.consultDate),
+  finalEducation: row.finalEducation ?? "",
+  assigneeId: safeAssigneeId,
+}));
 
         await db.bulkCreateConsultations(dataList as any);
 
@@ -33953,7 +33975,8 @@ if (input.rows.length > MAX_BULK_CONSULTATIONS) {
           if (!clientName || !phone) continue;
 
           rows.push({
-            consultDate: new Date(consultDateStr),
+  organizationId: getCtxOrganizationId(ctx),
+  consultDate: new Date(consultDateStr),
             channel,
             clientName,
             phone,
