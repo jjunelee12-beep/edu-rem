@@ -32,6 +32,11 @@ import {
 const BANNER = "/images/employment/practice-banner.png";
 const PRACTICE_URL = "https://narangedu.liveklass.com/classes/257714";
 const COMPANY_IMAGE = "/images/employment/company-default.png";
+const HERO_BANNER =
+  "/images/employment-center/social-welfare-hero-bg.png";
+
+const CENTER_LOGO =
+  "/images/employment-center/social-welfare-logo.png";
 const SESSION_KEY = "withone-employment-session";
 const SUPPORT_PORTAL_SLUG = "with-one";
 
@@ -212,7 +217,21 @@ const signout = async () => {
 };
 
  return <div className="min-h-screen bg-[#f1f5fb] text-slate-900"><div className="mx-auto min-h-screen max-w-[560px] bg-[#f8fafc] shadow-[0_0_40px_rgba(18,48,88,.08)]">
- <header className="sticky top-0 z-40 border-b border-slate-100 bg-white/95 px-4 py-3 backdrop-blur"><div className="flex items-center justify-between gap-2"><button onClick={()=>section==="home"?setMenu(v=>!v):go("home")} className="flex min-w-0 items-center gap-2 text-left"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white">{section==="home"?<Home size={18}/>:<ArrowLeft size={18}/>}</span><span className="min-w-0"><span className="block truncate text-[11px] font-bold text-blue-600">사회복지 통합지원센터</span><span className="block truncate text-sm font-black">{section==="home"?"나에게 필요한 정보를 한눈에":SECTION_LABEL[section]}</span></span></button><div className="flex shrink-0 items-center gap-2"><a href="/portal/with-one" className="rounded-lg bg-blue-50 px-2.5 py-2 text-[11px] font-bold text-blue-700">학사관리시스템</a><button onClick={()=>setMenu(v=>!v)} className="rounded-lg border p-2" aria-label="메뉴"><SlidersHorizontal size={17}/></button></div></div>
+ <header className="sticky top-0 z-40 border-b border-slate-100 bg-white/95 px-4 py-3 backdrop-blur"><div className="flex items-center justify-between gap-2"><button onClick={()=>section==="home"?setMenu(v=>!v):go("home")} className="flex min-w-0 items-center gap-2 text-left">
+
+<span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-blue-50">
+  {section === "home" ? (
+    <img
+      src={CENTER_LOGO}
+      alt="사회복지 통합지원센터"
+      className="h-full w-full object-contain"
+    />
+  ) : (
+    <ArrowLeft size={19} className="text-blue-700" />
+  )}
+</span>
+
+<span className="min-w-0"><span className="block truncate text-[11px] font-bold text-blue-600">사회복지 통합지원센터</span><span className="block truncate text-sm font-black">{section==="home"?"나에게 필요한 정보를 한눈에":SECTION_LABEL[section]}</span></span></button><div className="flex shrink-0 items-center gap-2"><a href="/portal/with-one" className="rounded-lg bg-blue-50 px-2.5 py-2 text-[11px] font-bold text-blue-700">학사관리시스템</a><button onClick={()=>setMenu(v=>!v)} className="rounded-lg border p-2" aria-label="메뉴"><SlidersHorizontal size={17}/></button></div></div>
  {menu&&<nav className="mt-3 grid gap-1 rounded-xl bg-slate-50 p-2">{CARDS.map(c=><button key={c.key} onClick={()=>go(c.key)} className="rounded-lg px-3 py-2 text-left text-xs font-bold hover:bg-white">{c.title}</button>)}<a className="rounded-lg px-3 py-2 text-xs font-bold" href="/social-worker-guide">사회복지사 2급 취득 가이드</a><button onClick={()=>go("compare")} className="rounded-lg px-3 py-2 text-left text-xs font-bold">학습관리 비교</button>
 <a
   href="/portal/with-one"
@@ -232,7 +251,248 @@ const signout = async () => {
     {portalLogout.isPending ? "로그아웃 중..." : "로그아웃"}
   </button>
 )}</nav>}</header>
- {section==="home"&&<main className="px-4 pb-24"><section className="relative mt-4 overflow-hidden rounded-[24px] bg-gradient-to-br from-[#103d83] to-[#0868d8] px-5 py-7 text-white"><p className="text-xs font-semibold text-blue-100">SOCIAL WELFARE SUPPORT</p><h1 className="mt-3 text-[24px] font-black leading-tight">사회복지 정보부터<br/>취업 준비까지 한곳에서</h1><p className="mt-3 text-xs leading-5 text-blue-100">일자리, 실습, 지원제도, 자격증 신청시기를 쉽고 빠르게 확인하세요.</p><div className="mt-5 flex gap-2"><button onClick={()=>go("certificate")} className="rounded-xl bg-white px-4 py-2.5 text-xs font-black text-blue-700">자격증 예상일 확인</button><button onClick={()=>go("jobs")} className="rounded-xl border border-white/50 px-4 py-2.5 text-xs font-bold">내 주변 일자리</button></div></section><section className="mt-6"><div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-black">주요 서비스</h2><span className="text-[11px] text-slate-400">6개 서비스</span></div><div className="grid grid-cols-2 gap-3">{CARDS.map(c=><button key={c.key} onClick={()=>go(c.key)} className="min-h-[146px] rounded-2xl border border-slate-100 bg-white p-4 text-left shadow-sm"><span className={`flex h-10 w-10 items-center justify-center rounded-xl ${c.tint}`}><c.icon size={21}/></span><span className="mt-3 block text-sm font-black">{c.title}</span><span className="mt-1 block text-[11px] text-slate-500">{c.sub}</span></button>)}</div></section><section className="mt-7 space-y-2"><h2 className="mb-3 text-lg font-black">취득 준비 가이드</h2><a href="/social-worker-guide" className="flex items-center justify-between rounded-2xl border bg-white p-4"><span><b className="block text-sm">사회복지사 2급 취득 가이드</b><small className="mt-1 block text-slate-500">이론·실습·행정절차·자격증 신청</small></span><ChevronRight size={18}/></a><button onClick={()=>go("compare")} className="flex w-full items-center justify-between rounded-2xl border bg-white p-4 text-left"><span><b className="block text-sm">학습관리 서비스 비교</b><small className="mt-1 block text-slate-500">일정·과목·실습·행정 관리 항목</small></span><ChevronRight size={18}/></button></section><p className="mt-7 text-center text-[11px] leading-5 text-slate-400">정보 제공 서비스이며 공공기관 공식 사이트가 아닙니다.<br/>최종 신청 자격과 일정은 해당 기관에서 확인하세요.</p></main>}
+ 
+{section === "home" && (
+  <main className="px-4 pb-6">
+
+    {/* 메인 배너 */}
+    <section
+      className="relative mt-4 overflow-hidden rounded-[22px] bg-gradient-to-br from-[#123f87] to-[#0869d8] px-5 py-6 text-white"
+      style={{
+        backgroundImage: `url("${HERO_BANNER}")`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      }}
+    >
+      <div className="relative z-10 max-w-[78%]">
+        <p className="text-[10px] font-bold tracking-wide text-blue-100">
+          SOCIAL WELFARE SUPPORT
+        </p>
+
+        <h1 className="mt-3 text-[21px] font-black leading-[1.35] tracking-tight">
+          사회복지 정보부터
+          <br />
+          취업 준비까지 한곳에서
+        </h1>
+
+        <p className="mt-3 text-[11px] leading-[1.7] text-blue-100">
+          일자리, 실습, 지원제도, 자격증 신청시기를
+          쉽고 빠르게 확인하세요.
+        </p>
+      </div>
+
+      <div className="relative z-10 mt-5 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => go("certificate")}
+          className="rounded-full bg-white px-4 py-2.5 text-[11px] font-extrabold text-blue-700 shadow-sm"
+        >
+          자격증 예상일 확인
+        </button>
+
+        <button
+          type="button"
+          onClick={() => go("jobs")}
+          className="rounded-full border border-white/25 bg-blue-950/30 px-4 py-2.5 text-[11px] font-bold text-white"
+        >
+          내 주변 일자리
+        </button>
+      </div>
+    </section>
+
+    {/* 주요 서비스 */}
+    <section className="mt-7">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="flex items-center gap-2 text-[17px] font-black text-slate-900">
+          <span className="h-5 w-1 rounded-full bg-blue-600" />
+          주요 서비스
+        </h2>
+
+        <span className="rounded-full bg-blue-50 px-3 py-1 text-[11px] font-semibold text-blue-700">
+          6개 서비스
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2.5">
+        {CARDS.map((c) => (
+          <button
+            key={c.key}
+            type="button"
+            onClick={() => go(c.key)}
+            className="group flex min-h-[91px] items-center gap-2 rounded-[17px] border border-slate-200/80 bg-white px-3 py-3 text-left shadow-[0_3px_12px_rgba(15,43,83,0.035)] transition-all hover:border-blue-200 hover:shadow-md active:scale-[0.99]"
+          >
+            <span
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] ${c.tint}`}
+            >
+              <c.icon size={21} strokeWidth={2} />
+            </span>
+
+            <span className="min-w-0 flex-1">
+              <span className="block break-keep text-[12px] font-extrabold leading-[1.35] text-slate-900">
+                {c.title}
+              </span>
+
+              <span className="mt-1 block break-keep text-[10px] leading-[1.35] text-slate-500">
+                {c.sub}
+              </span>
+            </span>
+
+            <ChevronRight
+              size={14}
+              className="shrink-0 text-slate-400 transition-transform group-hover:translate-x-0.5"
+            />
+          </button>
+        ))}
+      </div>
+    </section>
+
+    {/* 취득 준비 가이드 */}
+    <section className="mt-8">
+      <h2 className="mb-3 flex items-center gap-2 text-[17px] font-black text-slate-900">
+        <span className="h-5 w-1 rounded-full bg-blue-600" />
+        취득 준비 가이드
+      </h2>
+
+      <div className="space-y-2.5">
+
+        <a
+          href="/social-worker-guide"
+          className="group flex min-h-[86px] items-center gap-3 overflow-hidden rounded-[17px] border border-blue-100 bg-gradient-to-r from-white via-white to-blue-50 px-4 py-3 shadow-[0_3px_12px_rgba(15,43,83,0.035)]"
+        >
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-blue-100 text-blue-600">
+            <BookOpen size={23} />
+          </span>
+
+          <span className="min-w-0 flex-1">
+            <b className="block text-[13px] font-extrabold text-slate-900">
+              사회복지사 2급 취득 가이드
+            </b>
+
+            <small className="mt-1 block text-[11px] leading-4 text-slate-500">
+              이론·실습·행정절차·자격증 신청
+            </small>
+          </span>
+
+          <ChevronRight
+            size={18}
+            className="shrink-0 text-slate-600"
+          />
+        </a>
+
+        <button
+          type="button"
+          onClick={() => go("compare")}
+          className="group flex min-h-[86px] w-full items-center gap-3 overflow-hidden rounded-[17px] border border-cyan-100 bg-gradient-to-r from-white via-white to-cyan-50 px-4 py-3 text-left shadow-[0_3px_12px_rgba(15,43,83,0.035)]"
+        >
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-cyan-100 text-blue-600">
+            <ShieldCheck size={23} />
+          </span>
+
+          <span className="min-w-0 flex-1">
+            <b className="block text-[13px] font-extrabold text-slate-900">
+              학습관리 서비스 비교
+            </b>
+
+            <small className="mt-1 block text-[11px] leading-4 text-slate-500">
+              일정·과목·실습·행정 관리 항목
+            </small>
+          </span>
+
+          <ChevronRight
+            size={18}
+            className="shrink-0 text-slate-600"
+          />
+        </button>
+      </div>
+    </section>
+
+    
+
+{/* 통합지원센터 푸터 */}
+<footer className="mt-10 border-t border-slate-200 pt-4">
+
+  {/* 가로 3단 구성 */}
+  <div className="grid grid-cols-[1.35fr_1fr_1.1fr] gap-2">
+
+    {/* 왼쪽: 센터 소개 */}
+    <div className="min-w-0 pr-2">
+      <div className="flex items-center gap-1">
+        <img
+          src={CENTER_LOGO}
+          alt="사회복지 통합지원센터"
+          className="h-7 w-7 shrink-0 object-contain"
+        />
+        <h3 className="text-[10px] font-black tracking-tight text-slate-900">
+          사회복지 통합지원센터
+        </h3>
+      </div>
+
+      <p className="mt-2 break-keep text-[9px] leading-[1.6] text-slate-500">
+        사회복지사의 취득부터 취업까지,
+        <br />
+        필요한 정보를 한곳에서 제공합니다.
+      </p>
+    </div>
+
+    {/* 가운데: 서비스 */}
+    <div className="min-w-0 border-l border-slate-200 pl-3">
+      <h4 className="mb-2 text-[10px] font-extrabold text-slate-900">
+        서비스
+      </h4>
+
+      <div className="flex flex-col items-start gap-1">
+        {[
+          { label: "자격증 신청 예상일", key: "certificate" },
+          { label: "일자리 찾기", key: "jobs" },
+          { label: "실습기관 찾기", key: "practice" },
+          { label: "지원금 찾기", key: "funds" },
+        ].map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => go(item.key as Section)}
+            className="text-left text-[9px] leading-[1.4] text-slate-600 hover:text-blue-600"
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+    </div>
+
+    {/* 오른쪽: 문의사항 */}
+    <div className="min-w-0 border-l border-slate-200 pl-3">
+      <h4 className="mb-2 text-[10px] font-extrabold text-slate-900">
+        문의사항
+      </h4>
+
+      <a
+        href="tel:01093117148"
+        className="flex items-center gap-1 text-[11px] font-black text-blue-600"
+      >
+        <span className="shrink-0">☎</span>
+        <span>010-9311-7148</span>
+      </a>
+
+      <p className="mt-1 text-[9px] leading-[1.5] text-slate-500">
+        이재준 (개발·운영 담당)
+      </p>
+    </div>
+  </div>
+
+  {/* 저작권 */}
+  <div className="mt-4 border-t border-slate-200 py-3">
+    <p className="text-[9px] text-slate-400">
+      © 2026 사회복지 통합지원센터. All rights reserved.
+    </p>
+  </div>
+
+</footer>
+
+
+
+  </main>
+)}
+
 {section === "jobs" && (
   <LegacyEmploymentJobs
     portalToken={isPortalLoggedIn ? portalToken : ""}
