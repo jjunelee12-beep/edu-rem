@@ -1568,25 +1568,6 @@ setPracticeView("map");
     </div>
   </div>
 )}
-
-
-              {loginError && (
-                <p className="text-xs text-red-600">
-                  {loginError}
-                </p>
-              )}
-
-              <button
-                type="submit"
-                disabled={login.isPending}
-                className="w-full rounded-xl bg-blue-600 py-3 text-sm font-bold text-white"
-              >
-                {login.isPending ? "확인 중..." : "로그인"}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
     </SectionShell>
   );
 }
