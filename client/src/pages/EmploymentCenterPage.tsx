@@ -4,6 +4,10 @@ import EmploymentKakaoMap, {
   type EmploymentMapJob,
 } from "@/components/EmploymentKakaoMap";
 
+import PracticeKakaoMap, {
+  loadKakao as loadPracticeKakao,
+} from "@/components/PracticeKakaoMap";
+
 import {
   ArrowLeft,
   ArrowRight,
@@ -31,7 +35,7 @@ import {
 
 const BANNER = "/images/employment/practice-banner.png";
 const PRACTICE_BANNER =
-  "/images/employment/a_clean_banner_style_image_matching_the_style_left.png";
+  "/images/employment-center/a_clean_banner_style_image_matching_the_style_left.png";
 const PRACTICE_URL = "https://narangedu.liveklass.com/classes/257714";
 const COMPANY_IMAGE = "/images/employment/company-default.png";
 const HERO_BANNER =
@@ -864,13 +868,12 @@ function PracticePage({
   loggedIn: boolean;
   onPortalLogin: (token: string) => void;
 }) {
-  const mapElement = useRef<HTMLDivElement>(null);
 
 const [practiceView, setPracticeView] =
   useState<"map" | "list">("map");
 
-const [mapReady, setMapReady] = useState(false);
-const [mapError, setMapError] = useState("");
+const [selectedPracticeId, setSelectedPracticeId] =
+  useState<string | null>(null);
 
 const [address, setAddress] = useState("");
   const [origin, setOrigin] = useState<{
@@ -882,69 +885,6 @@ const [address, setAddress] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [loginError, setLoginError] = useState("");
-
-useEffect(() => {
-  let cancelled = false;
-  let timer: ReturnType<typeof setInterval> | null = null;
-
-  const checkKakao = () => {
-    const kakao = (window as any).kakao;
-
-    if (!kakao?.maps?.load) {
-      return false;
-    }
-
-    kakao.maps.load(() => {
-      if (cancelled) return;
-
-      const ready =
-        !!kakao.maps.Map &&
-        !!kakao.maps.Marker &&
-        !!kakao.maps.services?.Geocoder &&
-        !!kakao.maps.services?.Places;
-
-      setMapReady(ready);
-
-      if (!ready) {
-        setMapError(
-          "주소 검색 서비스를 준비하지 못했습니다."
-        );
-      } else {
-        setMapError("");
-      }
-    });
-
-    return true;
-  };
-
-  if (!checkKakao()) {
-    timer = setInterval(() => {
-      if (checkKakao() && timer) {
-        clearInterval(timer);
-        timer = null;
-      }
-    }, 300);
-
-    // 기존 지도 SDK가 로드되지 않은 경우
-    const timeout = setTimeout(() => {
-      if (!cancelled) {
-        setMapError(
-          "지도 서비스를 불러오지 못했습니다. 잠시 후 다시 시도해주세요."
-        );
-      }
-    }, 10000);
-
-    return () => {
-      cancelled = true;
-      if (timer) clearInterval(timer);
-      clearTimeout(timeout);
-    };
-  }
-
-  return () => {
-    cancelled = true;
-  };
-}, []);
 
   const login = trpc.studentPortal.login.useMutation();
 
@@ -970,13 +910,20 @@ useEffect(() => {
     return true;
   };
 
-  const priceText = (price: string) => {
-    const n = Number(price);
+  const priceText = (price: string | number | null | undefined) => {
+  if (price === null || price === undefined || String(price).trim() === "") {
+    return "정보 없음";
+  }
 
-    return price && Number.isFinite(n) && n > 0
-      ? `${n.toLocaleString("ko-KR")}원`
-      : "실습비 별도 확인";
-  };
+  const raw = String(price).trim();
+  const numeric = raw.replace(/[,\s원₩]/g, "");
+
+  if (/^\d+(\.\d+)?$/.test(numeric)) {
+    return `${Number(numeric).toLocaleString("ko-KR")}원`;
+  }
+
+  return raw;
+};
 
   const results = useMemo(() => {
     const rows = (all.data || []) as PracticePublicItem[];
@@ -1035,83 +982,30 @@ const missingCoordinateCount = useMemo(() => {
   ).length;
 }, [all.data]);
 
-  useEffect(() => {
-  if (
-  !loggedIn ||
-  !origin ||
-  !mapReady ||
-  practiceView !== "map" ||
-  !mapElement.current
-) return;
+ 
 
-    const kakao = (window as any).kakao;
+  
+const searchAddress = async (e: React.FormEvent) => {
+  e.preventDefault();
 
-    if (!kakao?.maps?.Map || !kakao?.maps?.Marker) return;
+  if (!requireLogin()) return;
+  if (!address.trim()) return;
 
-    const map = new kakao.maps.Map(mapElement.current, {
-      center: new kakao.maps.LatLng(
-        origin.lat,
-        origin.lng
-      ),
-      level: 7,
-    });
+  try {
+    const kakao = await loadPracticeKakao();
 
-    const bounds = new kakao.maps.LatLngBounds();
-
-    const center = new kakao.maps.LatLng(
-      origin.lat,
-      origin.lng
-    );
-
-    bounds.extend(center);
-
-    new kakao.maps.Marker({
-      map,
-      position: center,
-    });
-
-    for (const item of results) {
-      if (item.lat == null || item.lng == null) continue;
-
-      const position = new kakao.maps.LatLng(
-        item.lat,
-        item.lng
-      );
-
-      bounds.extend(position);
-
-      new kakao.maps.Marker({
-        map,
-        position,
-        title: item.name,
-      });
+    if (
+      !kakao.maps.services?.Geocoder ||
+      !kakao.maps.services?.Places
+    ) {
+      alert("카카오 주소 검색 서비스를 사용할 수 없습니다.");
+      return;
     }
-
-    map.setBounds(bounds);
-  }, [loggedIn, origin, results, mapReady, practiceView]);
-
-  const searchAddress = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!requireLogin()) return;
-    if (!address.trim()) return;
-
-    const kakao = (window as any).kakao;
-
-if (
-  !mapReady ||
-  !kakao?.maps?.services?.Geocoder ||
-  !kakao?.maps?.services?.Places
-) {
-  alert(
-    mapError ||
-    "지도 서비스를 준비하고 있습니다. 잠시 후 다시 검색해주세요."
-  );
-  return;
-}
 
     const apply = (lat: number, lng: number) => {
       setOrigin({ lat, lng });
+      setSelectedPracticeId(null);
+      setPracticeView("map");
     };
 
     new kakao.maps.services.Geocoder().addressSearch(
@@ -1127,9 +1021,9 @@ if (
 
         new kakao.maps.services.Places().keywordSearch(
           address.trim(),
-          (places: any[], s: string) => {
+          (places: any[], placeStatus: string) => {
             if (
-              s === kakao.maps.services.Status.OK &&
+              placeStatus === kakao.maps.services.Status.OK &&
               places?.length
             ) {
               apply(
@@ -1137,13 +1031,20 @@ if (
                 Number(places[0].x)
               );
             } else {
-              alert("주소를 찾지 못했습니다.");
+              alert("입력하신 주소를 찾지 못했습니다.");
             }
           }
         );
       }
     );
-  };
+  } catch (error: any) {
+    alert(
+      error?.message ||
+      "카카오 주소 검색 서비스를 불러오지 못했습니다."
+    );
+  }
+};
+
 
   const useGps = () => {
     if (!requireLogin()) return;
@@ -1151,9 +1052,12 @@ if (
     navigator.geolocation.getCurrentPosition(
       position => {
         setOrigin({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-        });
+  lat: position.coords.latitude,
+  lng: position.coords.longitude,
+});
+
+setSelectedPracticeId(null);
+setPracticeView("map");
       },
       () => {
         alert("현재 위치를 확인할 수 없습니다.");
@@ -1288,12 +1192,6 @@ if (
         </button>
       </form>
 
-      {mapError && loggedIn && (
-        <p className="text-xs text-amber-700">
-          {mapError}
-        </p>
-      )}
-
       {/* 4. 지도 영역 */}
       <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-[#e9f1ed]">
         <div className="absolute right-3 top-3 z-10 flex rounded-full bg-white p-1 shadow-sm">
@@ -1327,10 +1225,15 @@ if (
         </div>
 
         {loggedIn && origin && practiceView === "map" ? (
-          <div
-            ref={mapElement}
-            className="h-[220px] w-full"
-          />
+  <PracticeKakaoMap
+    institutions={results}
+    referencePoint={origin}
+    selectedId={selectedPracticeId}
+    onSelectInstitution={(institution) => {
+      setSelectedPracticeId(String(institution.id));
+    }}
+    className="h-[220px] w-full"
+  />
         ) : loggedIn && origin && practiceView === "list" ? (
           <div className="flex h-[220px] flex-col items-center justify-center px-6 text-center text-sm text-slate-600">
             <MapPin
@@ -1396,16 +1299,42 @@ if (
 
       <div className="space-y-2">
         {visibleInstitutions.map((item: any) => (
-          <article
-            key={item.id}
-            className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-sm"
-          >
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-emerald-50">
-              <MapPinned
-                size={23}
-                className="text-emerald-600"
-              />
-            </div>
+  <article
+    key={item.id}
+    role="button"
+    tabIndex={0}
+    onClick={() => {
+      if (!requireLogin()) return;
+
+      if (item.lat == null || item.lng == null) {
+        alert("이 기관의 지도 좌표가 등록되어 있지 않습니다.");
+        return;
+      }
+
+      if (!origin) {
+        alert("먼저 주소를 검색하거나 현재 위치를 선택해주세요.");
+        return;
+      }
+
+      setSelectedPracticeId(String(item.id));
+      setPracticeView("map");
+    }}
+    onKeyDown={(e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        e.currentTarget.click();
+      }
+    }}
+    className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-sm"
+  >
+            <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-slate-100">
+  <img
+    src={COMPANY_IMAGE}
+    alt="실습기관 대표 이미지"
+    className="h-full w-full object-cover"
+    loading="lazy"
+  />
+</div>
 
             <div className="min-w-0 flex-1">
               <p className="truncate text-[13px] font-extrabold text-slate-900">
@@ -1511,45 +1440,135 @@ if (
       </div>
 
 
-      {loginOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-sm space-y-3 rounded-2xl bg-white p-5">
-            <div className="flex justify-between">
-              <h3 className="font-black">
-                등록 학습자 로그인
-              </h3>
+      
+{loginOpen && (
+  <div
+    className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 px-4 py-5 backdrop-blur-[3px]"
+    onClick={() => setLoginOpen(false)}
+  >
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="실습기관 찾기 회원 로그인"
+      className="max-h-[90dvh] w-full max-w-[420px] overflow-y-auto rounded-[24px] bg-white p-5 shadow-2xl"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-start justify-between">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
+          <ShieldCheck size={25} />
+        </div>
 
-              <button
-                type="button"
-                onClick={() => setLoginOpen(false)}
-              >
-                <X size={20} />
-              </button>
-            </div>
+        <button
+          type="button"
+          onClick={() => setLoginOpen(false)}
+          aria-label="닫기"
+          className="rounded-full bg-slate-100 p-2 text-slate-500"
+        >
+          <X size={19} />
+        </button>
+      </div>
 
-            <p className="text-xs text-slate-600">
-              전체 기관 검색과 내 주변 기관 찾기는
-              등록 학습자 전용입니다.
+      <h2 className="mt-4 text-[20px] font-black text-slate-900">
+        등록회원은 무료로 이용할 수 있어요!
+      </h2>
+
+      <p className="mt-2 break-keep text-[12px] leading-5 text-slate-500">
+        로그인하시면 전국 실습기관 목록과 실습비용,
+        내 주변 기관까지 확인하실 수 있습니다.
+      </p>
+
+      <div className="mt-4 space-y-3 rounded-2xl bg-emerald-50 p-4">
+        {[
+          "전국 실습기관 목록 무료 열람",
+          "기관별 실습비용 및 주소 확인",
+          "지도 기반 내 주변 실습기관 찾기",
+          "거리순 정렬 및 지역·주소 검색",
+        ].map((item) => (
+          <div key={item} className="flex items-center gap-2.5">
+            <ShieldCheck
+              size={17}
+              className="shrink-0 text-emerald-700"
+            />
+            <span className="text-[12px] font-semibold text-slate-700">
+              {item}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-5 border-t border-slate-100 pt-5">
+        <h3 className="text-[14px] font-extrabold text-slate-900">
+          이미 등록회원이신가요?
+        </h3>
+
+        <p className="mt-1 text-[11px] text-slate-500">
+          등록하신 이름과 휴대폰 번호를 입력해주세요.
+        </p>
+
+        <form onSubmit={submitLogin} className="mt-3 space-y-2.5">
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="이름"
+            autoComplete="name"
+            required
+            className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-[13px] outline-none focus:border-emerald-600"
+          />
+
+          <input
+            type="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="휴대폰 번호"
+            inputMode="tel"
+            autoComplete="tel"
+            required
+            className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-[13px] outline-none focus:border-emerald-600"
+          />
+
+          {loginError && (
+            <p role="alert" className="text-[12px] text-red-600">
+              {loginError}
             </p>
+          )}
 
-            <form
-              onSubmit={submitLogin}
-              className="space-y-3"
-            >
-              <input
-                className={inputStyle}
-                value={name}
-                onChange={e => setName(e.target.value)}
-                placeholder="이름"
-              />
+          <button
+            type="submit"
+            disabled={login.isPending}
+            className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 text-[14px] font-extrabold text-white disabled:opacity-50"
+          >
+            {login.isPending ? "로그인 확인 중..." : "등록회원 로그인"}
+            <ArrowRight size={16} />
+          </button>
+        </form>
+      </div>
 
-              <input
-                className={inputStyle}
-                value={phone}
-                onChange={e => setPhone(e.target.value)}
-                placeholder="휴대폰 번호"
-                inputMode="tel"
-              />
+      <div className="mt-5 border-t border-slate-100 pt-5">
+        <h3 className="text-center text-[13px] font-extrabold text-slate-900">
+          사회복지사 2급을 처음 알아보시나요?
+        </h3>
+
+        <a
+          href="/social-worker-guide"
+          className="mt-3 flex h-11 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 text-[12px] font-bold text-emerald-800"
+        >
+          사회복지사 2급 취득 가이드
+          <ArrowRight size={15} />
+        </a>
+
+        <a
+          href="/employment-center?section=consultation"
+          className="mt-2 flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-100 text-[12px] font-bold text-slate-700"
+        >
+          사회복지사 2급 상담 신청
+          <ArrowRight size={15} />
+        </a>
+      </div>
+    </div>
+  </div>
+)}
+
 
               {loginError && (
                 <p className="text-xs text-red-600">
