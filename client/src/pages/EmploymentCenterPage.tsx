@@ -414,25 +414,14 @@ const signout = async () => {
   {/* 가로 3단 구성 */}
   <div className="grid grid-cols-[1.35fr_1fr_1.1fr] gap-2">
 
-    {/* 왼쪽: 센터 소개 */}
-    <div className="min-w-0 pr-2">
-      <div className="flex items-center gap-1">
-        <img
-          src={CENTER_LOGO}
-          alt="사회복지 통합지원센터"
-          className="h-7 w-7 shrink-0 object-contain"
-        />
-        <h3 className="text-[10px] font-black tracking-tight text-slate-900">
-          사회복지 통합지원센터
-        </h3>
-      </div>
-
-      <p className="mt-2 break-keep text-[9px] leading-[1.6] text-slate-500">
-        사회복지사의 취득부터 취업까지,
-        <br />
-        필요한 정보를 한곳에서 제공합니다.
-      </p>
-    </div>
+   {/* 왼쪽: 센터 로고 */}
+<div className="flex min-w-0 items-start pr-2">
+  <img
+    src={CENTER_LOGO}
+    alt="사회복지 통합지원센터"
+    className="h-auto w-full max-w-[160px] object-contain"
+  />
+</div>
 
     {/* 가운데: 서비스 */}
     <div className="min-w-0 border-l border-slate-200 pl-3">
