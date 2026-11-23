@@ -101,7 +101,7 @@ type Section = "home" | "jobs" | "funds" | "certificate" | "practice" | "resume"
 const SECTION_LABEL: Record<Section,string> = {
   home: "사회복지 통합지원센터", jobs: "일자리 찾기", funds: "지원금 찾기",
   certificate: "자격증 신청 예상일", practice: "실습기관 찾기", resume: "이력서·자기소개서",
-  consultation: "학습설계 상담 신청", compare: "학습관리 서비스 비교",
+  consultation: "사회복지사 2급 상담 신청", compare: "학습관리 서비스 비교",
 };
 const CARDS = [
   {key:"certificate" as Section, icon:CalendarDays, title:"자격증 신청 예상일", sub:"내 상황에 맞춰 확인", tint:"bg-indigo-50 text-indigo-600"},
@@ -109,7 +109,7 @@ const CARDS = [
   {key:"practice" as Section, icon:MapPinned, title:"실습기관 찾기", sub:"지역별 기관 탐색", tint:"bg-teal-50 text-teal-600"},
   {key:"funds" as Section, icon:Wallet, title:"지원금 찾기", sub:"관련 지원제도 확인", tint:"bg-amber-50 text-amber-600"},
   {key:"resume" as Section, icon:FileText, title:"이력서·자기소개서", sub:"모바일 작성 도구", tint:"bg-purple-50 text-purple-600"},
-  {key:"consultation" as Section, icon:MessageCircle, title:"학습설계 상담 신청", sub:"개인별 학습계획 문의", tint:"bg-rose-50 text-rose-600"},
+  {key:"consultation" as Section, icon:MessageCircle, title:"무료 상담 신청하기", sub:"사회복지사 2급 취득 상담", tint:"bg-rose-50 text-rose-600"},
 ];
 const CONSULTATION_TOKEN = (import.meta.env.VITE_SUPPORT_CONSULTATION_TOKEN || "").trim();
 const todayKorea = () => new Intl.DateTimeFormat("en-CA", {timeZone:"Asia/Seoul",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
@@ -148,13 +148,316 @@ function ResumeEditor(){
  const draft=`이름: ${person}\n\n경험 및 강점\n${experience}\n\n지원동기 및 입사 후 포부\n${motivation}`;
  return <SectionShell><div className="rounded-xl bg-purple-50 p-4 text-sm text-slate-700">휴대폰에서 기본 내용을 작성하고 복사할 수 있습니다. 내용은 서버에 저장되지 않으며 화면을 닫으면 사라집니다.</div><Field label="이름"><input className={inputStyle} value={person} onChange={e=>setPerson(e.target.value)}/></Field><Field label="경험 및 강점"><textarea className={inputStyle} rows={5} value={experience} onChange={e=>setExperience(e.target.value)} placeholder="실습, 봉사, 직무 경험 등을 입력해 주세요"/></Field><Field label="지원동기 및 포부"><textarea className={inputStyle} rows={5} value={motivation} onChange={e=>setMotivation(e.target.value)}/></Field><button onClick={()=>navigator.clipboard.writeText(draft).then(()=>alert("작성 내용을 복사했습니다.")).catch(()=>alert("복사에 실패했습니다."))} className="w-full rounded-xl bg-blue-600 py-3 text-sm font-bold text-white">작성 내용 복사하기</button></SectionShell>;
 }
-function ConsultationForm(){
- const [clientName,setClientName]=useState("");const [phone,setPhone]=useState("");const [finalEducation,setFinalEducation]=useState("");const [desiredCourse,setDesiredCourse]=useState("사회복지사 2급");const [preferredContactTime,setPreferredContactTime]=useState("");const [notes,setNotes]=useState("");const [agree,setAgree]=useState(false);const [submitted,setSubmitted]=useState(false);const [error,setError]=useState("");
- const submit=trpc.staffProfile.public.submitConsultation.useMutation();
- async function handleSubmit(e:React.FormEvent){e.preventDefault();setError("");if(!agree)return setError("개인정보 수집·이용 동의가 필요합니다.");if(!CONSULTATION_TOKEN)return setError("상담 접수 설정이 아직 완료되지 않았습니다.");try{await submit.mutateAsync({publicToken:CONSULTATION_TOKEN,clientName:clientName.trim(),phone:phone.replace(/\D/g,""),finalEducation,desiredCourse,preferredContactTime:preferredContactTime||null,notes:`[사회복지 통합지원센터 유입]\n${notes}`.slice(0,500)});setSubmitted(true)}catch(e:any){setError(e?.message||"상담 접수에 실패했습니다.")}}
- if(submitted)return <SectionShell><div className="rounded-2xl border bg-white p-8 text-center"><ShieldCheck className="mx-auto h-12 w-12 text-emerald-600"/><h2 className="mt-4 text-xl font-black">상담 신청이 접수되었습니다.</h2><p className="mt-2 text-sm text-slate-500">담당자가 확인 후 연락드리겠습니다.</p></div></SectionShell>;
- return <SectionShell><div className="rounded-xl bg-blue-50 p-4 text-sm text-slate-700">개인별 사회복지사 2급 취득과정을 상담받을 수 있습니다. 상담 담당자의 개인 프로필은 공개되지 않습니다.</div><form className="space-y-4" onSubmit={handleSubmit}><Field label="이름 *"><input className={inputStyle} value={clientName} onChange={e=>setClientName(e.target.value)} required maxLength={100}/></Field><Field label="연락처 *"><input className={inputStyle} type="tel" inputMode="tel" value={phone} onChange={e=>setPhone(e.target.value)} required placeholder="010-1234-5678"/></Field><Field label="최종학력 *"><select className={inputStyle} value={finalEducation} onChange={e=>setFinalEducation(e.target.value)} required><option value="">선택해주세요</option>{["고등학교 졸업","전문대 졸업","4년제 대학교 졸업","대학원 졸업","기타"].map(v=><option key={v}>{v}</option>)}</select></Field><Field label="희망과정 *"><select className={inputStyle} value={desiredCourse} onChange={e=>setDesiredCourse(e.target.value)}><option>사회복지사 2급</option><option>기타</option></select></Field><Field label="상담 가능 시간"><select className={inputStyle} value={preferredContactTime} onChange={e=>setPreferredContactTime(e.target.value)}><option value="">선택 안 함</option>{["언제든지","오전","오후","저녁"].map(v=><option key={v}>{v}</option>)}</select></Field><Field label="문의내용"><textarea className={inputStyle} rows={4} maxLength={460} value={notes} onChange={e=>setNotes(e.target.value)}/></Field><label className="flex items-start gap-2 rounded-xl border p-3 text-xs text-slate-600"><input type="checkbox" checked={agree} onChange={e=>setAgree(e.target.checked)}/><span>상담 연락을 위해 이름·전화번호·학력·문의내용을 수집·이용하는 데 동의합니다. 실제 개인정보 처리 주체 및 보유기간은 운영기관의 개인정보 처리방침을 확인해 주세요.</span></label>{error&&<p role="alert" className="text-xs text-red-600">{error}</p>}<button disabled={submit.isPending||!agree} className="w-full rounded-xl bg-blue-600 py-3.5 text-sm font-bold text-white disabled:opacity-40">{submit.isPending?"접수 중...":"상담 신청하기"}</button></form></SectionShell>;
+
+function ConsultationForm() {
+  const [clientName, setClientName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [finalEducation, setFinalEducation] = useState("");
+  const [preferredContactTime, setPreferredContactTime] = useState("");
+  const [customTime, setCustomTime] = useState("");
+  const [notes, setNotes] = useState("");
+  const [agree, setAgree] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = trpc.staffProfile.public.submitConsultation.useMutation();
+
+  const timeOptions = [
+    { value: "10~12시", label: "10~12시" },
+    { value: "12~14시", label: "12~14시" },
+    { value: "14~16시", label: "14~16시" },
+    { value: "16~18시", label: "16~18시" },
+    { value: "기타", label: "기타 시간" },
+  ];
+
+  const educationOptions = [
+    "고등학교 졸업",
+    "전문대 졸업",
+    "4년제 대학교 졸업",
+    "대학원 졸업",
+    "대학교 재학·중퇴",
+    "기타",
+  ];
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+
+    const digits = phone.replace(/\D/g, "");
+    if (clientName.trim().length < 2 || digits.length < 10 || digits.length > 11) {
+      setError("이름과 연락처를 정확히 입력해주세요.");
+      return;
+    }
+    if (!finalEducation) {
+      setError("최종학력을 선택해주세요.");
+      return;
+    }
+    if (!agree) {
+      setError("개인정보 수집 및 이용 동의가 필요합니다.");
+      return;
+    }
+    if (!CONSULTATION_TOKEN) {
+      setError("상담 접수 설정이 아직 완료되지 않았습니다.");
+      return;
+    }
+
+    const selectedTime =
+      preferredContactTime === "기타"
+        ? customTime.trim()
+        : preferredContactTime;
+
+    const consultationNotes = [
+  "[사회복지 통합지원센터 유입]",
+  `걱정되는 점: ${notes.trim() || "작성 안 함"}`,
+].join("\n");
+
+    try {
+      await submit.mutateAsync({
+        publicToken: CONSULTATION_TOKEN,
+        clientName: clientName.trim(),
+        phone: digits,
+        finalEducation,
+        desiredCourse: "사회복지사 2급",
+        preferredContactTime: selectedTime || null,
+        notes: consultationNotes.slice(0, 500),
+      });
+      setSubmitted(true);
+    } catch (err: any) {
+      setError(err?.message || "상담 접수에 실패했습니다.");
+    }
+  }
+
+  if (submitted) {
+    return (
+      <div className="px-4 py-12">
+        <div className="rounded-[24px] bg-[#101410] p-8 text-center text-white">
+          <ShieldCheck className="mx-auto h-12 w-12 text-[#b7ff00]" />
+          <h2 className="mt-5 text-xl font-black">
+            상담 신청이 완료되었습니다
+          </h2>
+          <p className="mt-3 text-sm leading-6 text-slate-400">
+            남겨주신 내용을 확인한 후
+            <br />
+            담당자가 연락드리겠습니다.
+          </p>
+          <p className="mt-5 text-xs text-[#b7ff00]">
+            위드원교육 · 사회복지 통합지원센터
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const fieldClass =
+    "h-12 w-full min-w-0 rounded-xl border border-[#343b35] bg-[#202520] px-3 text-[13px] text-white outline-none placeholder:text-[#889188] focus:border-[#b7ff00]";
+
+  return (
+    <div className="bg-[#080b08] px-3 pb-28 pt-5 text-white">
+      <div className="overflow-hidden rounded-[25px] border border-[#242a24] bg-[#111511] px-4 pb-6 pt-6 shadow-[0_15px_45px_rgba(0,0,0,.15)]">
+
+        {/* 브랜드 */}
+        <div className="flex items-center gap-3">
+          <img
+            src={CENTER_LOGO}
+            alt="사회복지 통합지원센터"
+            className="h-12 w-12 rounded-xl bg-white object-contain p-1"
+          />
+          <div>
+            <p className="text-[13px] font-extrabold">
+              사회복지 통합지원센터
+            </p>
+            <p className="mt-1 text-[10px] text-slate-400">
+              위드원교육 운영 · 사회복지사 2급 전문 상담
+            </p>
+          </div>
+        </div>
+
+        {/* 메인 문구 */}
+        <div className="mt-7">
+          <span className="rounded-full border border-[#35462a] bg-[#202b19] px-3 py-1.5 text-[10px] font-bold text-[#b7ff00]">
+            SOCIAL WORKER CONSULTATION
+          </span>
+          <h1 className="mt-4 text-[25px] font-black leading-[1.3] tracking-tight">
+            사회복지사 2급
+            <br />
+            <span className="text-[#b7ff00]">무료 상담 신청</span>
+          </h1>
+          <p className="mt-3 text-[12px] leading-5 text-slate-400">
+            취득기간부터 실습, 학사일정까지
+            <br />
+            궁금한 내용을 편하게 상담받아보세요.
+          </p>
+        </div>
+
+        <div className="my-6 h-px bg-[#2b322b]" />
+
+        <form onSubmit={handleSubmit} className="space-y-5">
+
+          {/* 이름 · 연락처 */}
+          <div className="grid grid-cols-2 gap-2.5">
+            <label className="min-w-0">
+              <span className="mb-2 block text-[11px] font-bold">
+                이름 <span className="text-[#b7ff00]">*</span>
+              </span>
+              <input
+                className={fieldClass}
+                value={clientName}
+                onChange={(e) => setClientName(e.target.value)}
+                placeholder="이름"
+                autoComplete="name"
+                maxLength={100}
+                required
+              />
+            </label>
+
+            <label className="min-w-0">
+              <span className="mb-2 block text-[11px] font-bold">
+                연락처 <span className="text-[#b7ff00]">*</span>
+              </span>
+              <input
+                className={fieldClass}
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="010-0000-0000"
+                required
+              />
+            </label>
+          </div>
+
+          {/* 최종학력 */}
+          <label className="block">
+            <span className="mb-2 block text-[11px] font-bold">
+              최종학력 <span className="text-[#b7ff00]">*</span>
+            </span>
+            <select
+              className={fieldClass}
+              value={finalEducation}
+              onChange={(e) => setFinalEducation(e.target.value)}
+              required
+            >
+              <option value="">최종학력 선택</option>
+              {educationOptions.map((item) => (
+                <option key={item} value={item}>{item}</option>
+              ))}
+            </select>
+          </label>
+
+          {/* 상담 가능 시간 */}
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-[11px] font-bold">
+                상담 가능 시간
+              </span>
+              <span className="text-[10px] text-slate-500">
+                선택사항
+              </span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              {timeOptions.map((item) => {
+                const selected = preferredContactTime === item.value;
+                return (
+                  <button
+                    key={item.value}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => {
+                      setPreferredContactTime(
+                        selected ? "" : item.value
+                      );
+                    }}
+                    className={`min-h-11 rounded-xl border px-1 text-[12px] font-bold transition-colors ${
+                      selected
+                        ? "border-[#b7ff00] bg-[#b7ff00] text-black"
+                        : "border-[#343b35] bg-[#202520] text-slate-300"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {preferredContactTime === "기타" && (
+              <input
+                className={`${fieldClass} mt-2`}
+                value={customTime}
+                onChange={(e) => setCustomTime(e.target.value)}
+                placeholder="희망하시는 시간을 입력해주세요"
+                maxLength={80}
+              />
+            )}
+          </div>
+
+          {/* 걱정되는 점 */}
+          <label className="block">
+            <span className="mb-2 flex items-center justify-between">
+              <span className="text-[11px] font-bold">
+                걱정되는 점
+              </span>
+              <span className="text-[10px] text-slate-500">
+                선택사항
+              </span>
+            </span>
+            <textarea
+              className="min-h-[100px] w-full resize-none rounded-xl border border-[#343b35] bg-[#202520] p-3 text-[13px] leading-6 text-white outline-none placeholder:text-[#889188] focus:border-[#b7ff00]"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              maxLength={350}
+              placeholder="취득기간, 실습, 수업 등 걱정되거나 궁금한 점을 남겨주세요."
+            />
+            <span className="mt-1 block text-right text-[10px] text-slate-500">
+              {notes.length} / 350
+            </span>
+          </label>
+
+          {/* 개인정보 동의 */}
+          <label className="flex cursor-pointer items-start gap-3 rounded-xl bg-[#1b201b] p-3">
+            <input
+              type="checkbox"
+              checked={agree}
+              onChange={(e) => setAgree(e.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-[#b7ff00]"
+            />
+            <span className="text-[11px] leading-5 text-slate-300">
+              <b>개인정보 수집 및 이용에 동의합니다. (필수)</b>
+              <span className="mt-1 block text-[10px] text-slate-500">
+                위드원교육에서 상담 연락을 위해 이름, 연락처,
+                최종학력 및 작성하신 상담 내용을 수집합니다.
+                보유기간 등은 개인정보 처리방침을 확인해주세요.
+              </span>
+            </span>
+          </label>
+
+          {error && (
+            <p role="alert" className="text-[12px] text-red-400">
+              {error}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={submit.isPending || !agree}
+            className="h-[54px] w-full rounded-xl bg-[#b7ff00] text-[15px] font-black text-black shadow-[0_8px_22px_rgba(183,255,0,.18)] transition-opacity disabled:opacity-40"
+          >
+            {submit.isPending
+              ? "상담 접수 중..."
+              : "무료 상담 신청하기"}
+          </button>
+
+          <div className="flex items-center justify-center gap-1.5 text-[10px] text-slate-500">
+            <ShieldCheck size={13} className="text-[#b7ff00]" />
+            입력하신 정보는 상담 안내 목적으로 사용됩니다.
+          </div>
+        </form>
+      </div>
+    </div>
+  );
 }
+
 function PracticePage(){const [region,setRegion]=useState("");return <SectionShell><div className="rounded-xl bg-teal-50 p-4"><h2 className="font-bold">사회복지현장실습 기관 찾기</h2><p className="mt-2 text-xs leading-5 text-slate-600">실습기관은 보건복지부 지정 여부와 교육기관의 실습 인정 요건을 확인해야 합니다. 현재 공개 기관 검색 API는 연결되지 않았습니다.</p></div><Field label="희망 실습 지역"><input className={inputStyle} value={region} onChange={e=>setRegion(e.target.value)} placeholder="예: 서울 도봉구"/></Field><a href="https://www.welfare.net" target="_blank" rel="noreferrer" className="block rounded-xl border p-4 text-sm font-bold text-blue-600">한국사회복지사협회 공식 안내 확인 ↗</a><p className="text-xs text-slate-500">지역별 실습기관 자동 추천은 기관 검색 데이터 연동 후 활성화할 예정입니다.</p></SectionShell>}
 function ComparePage(){return <SectionShell><p className="text-sm text-slate-600">학습관리 서비스를 선택할 때 확인해야 할 항목입니다. 특정 기관의 실제 제공 여부는 상담 전에 확인하세요.</p>{[["학사일정","개인별 수업·실습·행정 일정 확인"],["과목 누락 예방","필수·선택 과목 및 기존 이수내역 검토"],["실습 준비","선이수 요건·실습기관·실습 예정월 확인"],["행정절차","학습자등록·학점인정·학위신청 안내"],["자격증 신청","예상 신청시기와 협회 신청절차 확인"],["학생 포털","학생이 직접 진행상황을 조회할 수 있는지"]].map(([a,b])=><div key={a} className="rounded-xl border bg-white p-4"><p className="font-bold">{a}</p><p className="mt-1 text-xs text-slate-500">{b}</p></div>)}</SectionShell>}
 export default function EmploymentCenterPage(){
@@ -1320,40 +1623,9 @@ if (!activeToken) {
 
   return <div className="min-h-screen bg-[#edf3fa] text-slate-900">
     <div className="relative mx-auto flex min-h-screen max-w-[560px] flex-col bg-white shadow-[0_0_40px_rgba(18,48,88,.09)]">
-      <header className="z-20 bg-white px-5 pb-4 pt-5 shadow-sm">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white">
-    <BriefcaseBusiness size={23} />
-  </div>
+      
+<header className="z-20 bg-white px-5 pb-4 pt-2">
 
-  <div className="min-w-0">
-    <p className="text-[12px] font-bold text-blue-600">
-      사회복지 통합지원센터
-    </p>
-    <h1 className="text-[21px] font-black tracking-tight text-[#10223f]">
-      일자리 찾기
-    </h1>
-  </div>
-</div>
-          <div className="flex items-center gap-2">
-  <a
-    href={STUDENT_PORTAL_URL}
-    className="flex items-center gap-1 rounded-xl bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700"
-  >
-    <ArrowLeft size={14} />
-    학사관리시스템
-  </a>
-
-  <button
-    type="button"
-    onClick={onBack}
-    className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-500"
-  >
-    돌아가기
-  </button>
-</div>
-        </div>
         <form onSubmit={searchPlace} className="mt-5 flex gap-2"><div className="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3.5"><MapPin size={19} className="shrink-0 text-blue-600"/><input value={draftAddress} onChange={e=>setDraftAddress(e.target.value)} placeholder="지역·주소 검색 (예: 서울 노원구)" className="min-w-0 flex-1 bg-transparent py-3.5 text-sm outline-none"/></div><button className="rounded-2xl bg-[#0967f6] px-4 text-sm font-bold text-white">검색</button><button type="button" onClick={findCurrentLocation} aria-label="현재 위치" className="rounded-2xl border border-slate-200 px-3 text-blue-600"><LocateFixed size={20}/></button></form>
       </header>
 
