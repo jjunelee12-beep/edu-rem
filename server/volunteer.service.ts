@@ -2,6 +2,7 @@ import { XMLParser } from "fast-xml-parser";
 import { TRPCError } from "@trpc/server";
 
 export type VolunteerSearchParams = {
+  activeOnly?: boolean;
   pageNo?: number;
   numOfRows?: number;
   keyword?: string;
@@ -228,17 +229,66 @@ async function requestVolunteerApi(
   }
 }
 
-export async function getVolunteerList(
-  params: VolunteerSearchParams = {}
-) {
-  return requestVolunteerApi(
-    "getVltrSearchWordList",
-    {
-      ...params,
-      pageNo: params.pageNo ?? 1,
-      numOfRows: params.numOfRows ?? 20,
+// Cache complete filtered results independently of the requested page.
+const activeCache = new Map<string, { expiresAt: number; items: any[] }>();
+const activePending = new Map<string, Promise<any[]>>();
+const ACTIVE_SCAN_LIMIT = 200;
+
+function koreaDate() {
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(new Date()).replace(/-/g, "");
+}
+
+export async function getVolunteerList(params: VolunteerSearchParams = {}) {
+  const { activeOnly, pageNo = 1, numOfRows = 20, ...search } = params;
+  if (!activeOnly) {
+    return requestVolunteerApi("getVltrSearchWordList", { ...search, pageNo, numOfRows });
+  }
+  const { noticeBgnde, noticeEndde, ...criteria } = search;
+  const today = koreaDate();
+  const key = JSON.stringify([today, Object.entries(criteria).filter(([,v]) => v !== undefined && v !== "").sort(([a],[b]) => a.localeCompare(b))]);
+  let rows = activeCache.get(key);
+  if (!rows || rows.expiresAt <= Date.now()) {
+    let pending = activePending.get(key);
+    if (!pending) {
+      if (activePending.size >= 2) {
+        throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "모집 공고 검색이 진행 중입니다. 잠시 후 다시 시도해 주세요." });
+      }
+      pending = (async () => {
+        const first = await requestVolunteerApi("getVltrSearchWordList", { ...criteria, pageNo: 1, numOfRows: 100 });
+        const size = Number(first.numOfRows);
+        const total = Number(first.totalCount);
+        if (!Number.isFinite(total) || total < 0 || !Number.isFinite(size) || size < 1) {
+          if (total === 0) return [];
+          throw new TRPCError({ code: "BAD_GATEWAY", message: "봉사활동 페이지 정보를 확인할 수 없습니다." });
+        }
+        const pages = Math.ceil(total / size);
+        if (pages > ACTIVE_SCAN_LIMIT) throw new TRPCError({ code: "BAD_REQUEST", message: "검색 범위가 너무 넓습니다. 지역 또는 검색어를 선택해 주세요." });
+        const found = new Map<string, any>();
+        const collect = (items: any[]) => {
+          for (const item of items) {
+            const start = String(item.noticeBgnde ?? "").trim();
+            const end = String(item.noticeEndde ?? "").trim();
+            const id = String(item.progrmRegistNo ?? "");
+            if (id && String(item.progrmSttusSe).trim() === "2" && /^\d{8}$/.test(start) && /^\d{8}$/.test(end) && start <= today && today <= end) found.set(id, item);
+          }
+        };
+        collect(first.items);
+        for (let p = 2; p <= pages; p += 5) {
+          const batch = await Promise.all(Array.from({ length: Math.min(5, pages - p + 1) }, (_, i) => requestVolunteerApi("getVltrSearchWordList", { ...criteria, pageNo: p + i, numOfRows: size })));
+          for (const result of batch) collect(result.items);
+        }
+        const items = [...found.values()];
+        if (activeCache.size >= 20) activeCache.delete(activeCache.keys().next().value!);
+        activeCache.set(key, { expiresAt: Date.now() + CACHE_TTL_MS, items });
+        return items;
+      })().finally(() => activePending.delete(key));
+      activePending.set(key, pending);
     }
-  );
+    rows = { expiresAt: Date.now() + CACHE_TTL_MS, items: await pending };
+  }
+  return { items: rows.items.slice((pageNo - 1) * numOfRows, pageNo * numOfRows), pageNo, numOfRows, totalCount: rows.items.length };
 }
 
 export async function getVolunteerDetail(

@@ -42,6 +42,7 @@ export const volunteerRouter = router({
           .max(100)
           .default(20),
 
+        activeOnly: z.boolean().optional(),
         keyword: optionalText,
         schCateGu: optionalText,
 

@@ -69,8 +69,7 @@ type SearchFilters = {
 schSign1?: string;
 upperClCode?: string;
 nanmClCode?: string;
-  noticeBgnde?: string;
-  noticeEndde?: string;
+  activeOnly?: boolean;
 };
 
 const REGIONS = [
@@ -609,8 +608,7 @@ const [activeOnly, setActiveOnly] = useState(true);
 
 const [filters, setFilters] =
   useState<SearchFilters>(() => ({
-    noticeBgnde: todayKorea(),
-    noticeEndde: todayKorea(),
+    activeOnly: true,
   }));
 
   const [pageNo, setPageNo] = useState(1);
@@ -882,11 +880,7 @@ const applyLocation = async (point: Point) => {
 
   schSido: region || undefined,
 
-  noticeBgnde:
-    activeOnly ? todayKorea() : undefined,
-
-  noticeEndde:
-    activeOnly ? todayKorea() : undefined,
+  activeOnly,
 
       progrmBgnde:
         startDate.replace(/-/g, "") ||
@@ -913,9 +907,8 @@ const applyLocation = async (point: Point) => {
   setActiveOnly(true);
 
   setFilters({
-    noticeBgnde: todayKorea(),
-    noticeEndde: todayKorea(),
-  });
+  activeOnly: true,
+});
 
   setPageNo(1);
   setSearchError("");
@@ -1121,11 +1114,11 @@ const applyLocation = async (point: Point) => {
 
   <div>
     <p className="text-xs font-bold text-blue-700">
-      현재 모집기간인 공고 검색
+      현재 모집 중인 공고 검색
     </p>
 
     <p className="mt-1 text-[11px] text-slate-500">
-      오늘 날짜를 기준으로 모집기간 검색
+      모집기간에 오늘이 포함된 모집 중 공고만 표시
     </p>
   </div>
 </label>
