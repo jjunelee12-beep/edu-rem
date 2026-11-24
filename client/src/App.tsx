@@ -88,6 +88,7 @@ import AppToastHost from "@/components/notifications/AppToastHost";
 import MessengerRealtimeBridge from "@/components/notifications/MessengerRealtimeBridge";
 import AppRealtimeBridge from "@/components/notifications/AppRealtimeBridge";
 import SocialWorkerGuide from "@/pages/SocialWorkerGuide";
+import SocialWorkerIntroPage from "@/pages/SocialWorkerIntroPage";
 
 function SuperhostRoute({
   component: Component,
@@ -247,6 +248,12 @@ function PublicRouter() {
   component={PublicStaffTeamPage}
 />
 <Route path="/withone" component={WithOneLanding} />
+
+<Route
+  path="/intro"
+  component={SocialWorkerIntroPage}
+/>
+
 <Route
   path="/social-worker-guide"
   component={SocialWorkerGuide}
@@ -575,8 +582,12 @@ function AppContent() {
     const matchesPath = (base: string) =>
       path === base || path.startsWith(`${base}/`);
 
-    if (isWelfareDomain || matchesPath("/employment-center")) {
-      document.title = "사회복지통합지원센터";
+    if (
+  isWelfareDomain ||
+  matchesPath("/employment-center") ||
+  matchesPath("/intro")
+) {
+  document.title = "사회복지통합지원센터";
     } else if (matchesPath("/portal/with-one")) {
       document.title = "학사관리시스템";
     } else if (matchesPath("/team/with-one")) {
@@ -594,8 +605,9 @@ function AppContent() {
 
   const isPublicPage =
   location === "/login" ||
-  location === "/withone" ||
+location === "/withone" ||
 location === "/social-worker-guide" ||
+location === "/intro" ||
 location === "/employment-center" ||
   location.startsWith("/form/") ||
   location.startsWith("/ad-form/") ||

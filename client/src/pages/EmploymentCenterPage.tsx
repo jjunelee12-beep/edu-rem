@@ -2770,7 +2770,40 @@ if (isConsultationEmbed) {
     </section>
 
     {/* 주요 서비스 */}
-    <section className="mt-7">
+    {/* 사회복지 알아보기 */}
+<section className="mt-7">
+  <h2 className="mb-3 flex items-center gap-2 text-[17px] font-black text-slate-900">
+    <span className="h-5 w-1 rounded-full bg-blue-600" />
+    사회복지 알아보기
+  </h2>
+
+  <a
+    href="/intro"
+    className="group flex min-h-[86px] items-center gap-3 rounded-[17px] border border-blue-100 bg-white px-4 py-3 shadow-[0_3px_12px_rgba(15,43,83,0.035)]"
+  >
+    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-blue-100 text-blue-600">
+      <BookOpen size={23} />
+    </span>
+
+    <span className="min-w-0 flex-1">
+      <b className="block text-[13px] font-extrabold text-slate-900">
+        사회복지사, 어떤 직업일까요?
+      </b>
+
+      <span className="mt-1 block text-[11px] text-slate-500">
+        직업 소개 · 자격요건 · 취업분야 · 급여
+      </span>
+    </span>
+
+    <ChevronRight
+      size={16}
+      className="shrink-0 text-slate-400"
+    />
+  </a>
+</section>
+
+{/* 주요 서비스 */}
+<section className="mt-7">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="flex items-center gap-2 text-[17px] font-black text-slate-900">
           <span className="h-5 w-1 rounded-full bg-blue-600" />
