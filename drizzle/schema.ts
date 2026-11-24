@@ -6901,8 +6901,10 @@ categoryId: int("categoryId"),
   categoryName: varchar("categoryName", { length: 100 }),
 
   name: varchar("name", { length: 255 }).notNull(),
-  representativeName: varchar("representativeName", { length: 100 }),
-  phone: varchar("phone", { length: 30 }),
+representativeName: varchar("representativeName", { length: 100 }),
+phone: varchar("phone", { length: 30 }),
+
+websiteUrl: varchar("websiteUrl", { length: 2048 }),
 
   address: varchar("address", { length: 255 }),
   detailAddress: varchar("detailAddress", { length: 255 }),

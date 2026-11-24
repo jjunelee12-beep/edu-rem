@@ -39,6 +39,7 @@ import {
   Trash2,
   UserCheck,
   Loader2,
+  ExternalLink,
 } from "lucide-react";
 
 import KakaoMapBase from "@/components/KakaoMap";
@@ -91,8 +92,9 @@ categoryId?: number;
   id: string | number;
   type: FinderItemType;
   name: string;
-  representativeName?: string;
+    representativeName?: string;
   phone?: string;
+  websiteUrl?: string | null;
   address?: string;
   price?: string;
   distanceKm?: string | number;
@@ -2274,10 +2276,11 @@ if (
  nextResults.push({
   id: item.id,
   categoryId: item.categoryId,
-    type: "education",
+        type: "education",
     name: item.name,
     representativeName: item.representativeName || "",
     phone: item.phone || "",
+    websiteUrl: item.websiteUrl || null,
     address: [item.address, item.detailAddress].filter(Boolean).join(" "),
     price:
   item.feeAmount !== undefined && item.feeAmount !== null && item.feeAmount !== ""
@@ -5792,6 +5795,21 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
         <div className="text-[10px] font-medium text-slate-500">
           금액: {selectedFinderItem.price}
         </div>
+      ) : null}
+
+      {selectedFinderItem.type === "education" &&
+      selectedFinderItem.websiteUrl &&
+      /^https?:\/\//i.test(selectedFinderItem.websiteUrl.trim()) ? (
+        <a
+          href={selectedFinderItem.websiteUrl.trim()}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="flex h-9 w-full items-center justify-center gap-2 rounded-md border border-blue-200 bg-blue-50 text-xs font-bold text-blue-700 transition-colors hover:bg-blue-100"
+        >
+          <ExternalLink className="h-4 w-4" />
+          홈페이지 바로가기
+        </a>
       ) : null}
 
       {hasFinderInactiveConfig(selectedFinderItem) ? (

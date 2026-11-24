@@ -532,6 +532,8 @@ async function startServer() {
     "https://edu-crm-home.vercel.app",
     "https://edu-crm.kr",
     "https://www.edu-crm.kr",
+    "https://welfareon.kr",
+    "https://www.welfareon.kr",
     process.env.FRONTEND_URL,
   ].filter(Boolean) as string[];
 
@@ -5823,9 +5825,12 @@ app.get("/og/practice-apply/:slug", (req, res) => {
 });
 
 // 사회복지 통합지원센터 카카오톡 OG
-app.get("/og/employment-center", (_req, res) => {
-  const targetUrl =
-    "https://edu-crm-five.vercel.app/employment-center";
+app.get("/og/employment-center", (req, res) => {
+  const isWelfareDomain = req.query.site === "welfareon";
+
+  const targetUrl = isWelfareDomain
+    ? "https://welfareon.kr"
+    : "https://edu-crm-five.vercel.app/employment-center";
 
   const imageUrl =
     "https://edu-crm-five.vercel.app/images/employment-center/social-welfare-og.png";

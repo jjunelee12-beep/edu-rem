@@ -1,6 +1,21 @@
 {
   "rewrites": [
     {
+  "source": "/",
+  "has": [
+    {
+      "type": "host",
+      "value": "(www\\.)?welfareon\\.kr"
+    },
+    {
+      "type": "header",
+      "key": "user-agent",
+      "value": ".*(kakaotalk-scrap|facebookexternalhit|Twitterbot|Slackbot).*"
+    }
+  ],
+  "destination": "https://edu-crm-api-production.up.railway.app/og/employment-center?site=welfareon"
+},
+    {
       "source": "/employment-center",
       "has": [
         {

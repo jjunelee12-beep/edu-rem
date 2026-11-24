@@ -564,6 +564,14 @@ function PrivateRouter() {
 function AppContent() {
   const [location] = useLocation();
 
+  const isWelfareDomain =
+    window.location.hostname === "welfareon.kr" ||
+    window.location.hostname === "www.welfareon.kr";
+
+  if (isWelfareDomain && location === "/") {
+    return <EmploymentCenterPage />;
+  }
+
   const isPublicPage =
   location === "/login" ||
   location === "/withone" ||

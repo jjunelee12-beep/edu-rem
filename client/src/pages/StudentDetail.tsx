@@ -5722,7 +5722,7 @@ disabled={isReadOnly}
 >
                               <td className="px-2 py-1">
   <Input
-    key={`plan-name-${row.id}`}
+    key={`plan-name-${row.id}-${row.subjectName || ""}`}
     ref={(el) => {
       planFieldRefs.current[`plan-name-${group.semesterNo}-${rowIndex}`] = el;
     }}
