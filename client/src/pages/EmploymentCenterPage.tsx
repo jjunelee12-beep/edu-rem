@@ -30,8 +30,9 @@ import {
   ShieldCheck,
   MessageCircle,
      MapPinned,
-  HeartHandshake,
+    HeartHandshake,
   Calculator,
+  Sparkles,
 } from "lucide-react";
 
 
@@ -118,14 +119,16 @@ type Section =
   | "consultation"
   | "compare"
   | "volunteer"
-  | "salary";
+  | "salary"
+  | "careerTest";
 const SECTION_LABEL: Record<Section,string> = {
   home: "사회복지 통합지원센터", jobs: "일자리 찾기", funds: "지원금 찾기",
   certificate: "자격증 신청 예상일", practice: "실습기관 찾기", resume: "이력서·자기소개서",
   consultation: "사회복지사 2급 상담 신청",
   compare: "학습관리 서비스 비교",
-  volunteer: "봉사활동 찾기",
+    volunteer: "봉사활동 찾기",
   salary: "급여·호봉 정보",
+  careerTest: "사회복지사 진로·성향 테스트",
 };
 const CARDS = [
   {key:"certificate" as Section, icon:CalendarDays, title:"자격증 신청 예상일", sub:"내 상황에 맞춰 확인", tint:"bg-indigo-50 text-indigo-600"},
@@ -145,6 +148,13 @@ const CARDS = [
   title: "급여·호봉 정보",
   sub: "급여표 및 예상 월급 확인",
   tint: "bg-emerald-50 text-emerald-600",
+},
+{
+  key: "careerTest" as Section,
+  icon: Sparkles,
+  title: "진로·성향 테스트",
+  sub: "재미로 보는 나의 사회복지사 유형",
+  tint: "bg-violet-50 text-violet-600",
 },
   {key:"funds" as Section, icon:Wallet, title:"지원금 찾기", sub:"관련 지원제도 확인", tint:"bg-amber-50 text-amber-600"},
   {key:"resume" as Section, icon:FileText, title:"이력서·자기소개서 (개발 중)", sub:"서비스 준비 중입니다", tint:"bg-purple-50 text-purple-600"},
@@ -2651,8 +2661,13 @@ useEffect(() => {
     return;
   }
 
-  if (next === "salary") {
+   if (next === "salary") {
     window.location.href = "/salary-calculator";
+    return;
+  }
+
+  if (next === "careerTest") {
+    window.location.href = "/career-test";
     return;
   }
 

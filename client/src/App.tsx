@@ -91,6 +91,7 @@ import SocialWorkerGuide from "@/pages/SocialWorkerGuide";
 import SocialWorkerIntroPage from "@/pages/SocialWorkerIntroPage";
 import VolunteerFinderPage from "@/pages/VolunteerFinderPage";
 import SalaryCalculatorPage from "@/pages/SalaryCalculatorPage";
+import SocialWorkerCareerTestPage from "@/pages/SocialWorkerCareerTestPage";
 
 function SuperhostRoute({
   component: Component,
@@ -264,6 +265,11 @@ function PublicRouter() {
 <Route
   path="/salary-calculator"
   component={SalaryCalculatorPage}
+/>
+
+<Route
+  path="/career-test"
+  component={SocialWorkerCareerTestPage}
 />
 
 <Route
@@ -594,7 +600,10 @@ function AppContent() {
     const matchesPath = (base: string) =>
       path === base || path.startsWith(`${base}/`);
 
-   if (matchesPath("/salary-calculator")) {
+   if (matchesPath("/career-test")) {
+  document.title =
+    "사회복지사 진로·성향 테스트 | 사회복지통합지원센터";
+} else if (matchesPath("/salary-calculator")) {
   document.title =
     "사회복지사 급여·호봉 정보 | 사회복지통합지원센터";
 } else if (
@@ -628,9 +637,10 @@ function AppContent() {
   location === "/withone" ||
   location === "/social-worker-guide" ||
   location === "/intro" ||
-  location === "/volunteer" ||
-  location === "/salary-calculator" ||
-  location === "/employment-center" ||
+location === "/volunteer" ||
+location === "/salary-calculator" ||
+location === "/career-test" ||
+location === "/employment-center" ||
   location.startsWith("/form/") ||
   location.startsWith("/ad-form/") ||
 location.startsWith("/kakao-ai/staff-auth/") ||
