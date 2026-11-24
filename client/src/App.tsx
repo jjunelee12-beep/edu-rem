@@ -1,4 +1,5 @@
 import type React from "react";
+import { useEffect } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
@@ -567,6 +568,25 @@ function AppContent() {
   const isWelfareDomain =
     window.location.hostname === "welfareon.kr" ||
     window.location.hostname === "www.welfareon.kr";
+
+  useEffect(() => {
+    const path = location.replace(/\/+$/, "") || "/";
+
+    const matchesPath = (base: string) =>
+      path === base || path.startsWith(`${base}/`);
+
+    if (isWelfareDomain || matchesPath("/employment-center")) {
+      document.title = "사회복지통합지원센터";
+    } else if (matchesPath("/portal/with-one")) {
+      document.title = "학사관리시스템";
+    } else if (matchesPath("/team/with-one")) {
+      document.title = "위드원교육";
+    } else if (matchesPath("/with-one")) {
+      document.title = "위드원교육 CRM";
+    } else {
+      document.title = "교육원 CRM 관리 시스템";
+    }
+  }, [location, isWelfareDomain]);
 
   if (isWelfareDomain && location === "/") {
     return <EmploymentCenterPage />;
