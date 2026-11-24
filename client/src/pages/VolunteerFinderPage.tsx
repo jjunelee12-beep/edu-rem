@@ -26,7 +26,7 @@ import {
   ExternalLink,
   ChevronLeft,
   ChevronRight,
-  Map,
+   Map as MapIcon,
   List,
   X,
 } from "lucide-react";
@@ -923,7 +923,7 @@ export default function VolunteerFinderPage() {
                   : "text-slate-500"
               }`}
             >
-              <Map size={16} />
+              <MapIcon size={16} />
               지도 보기
             </button>
 
