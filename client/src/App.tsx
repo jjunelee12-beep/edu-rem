@@ -90,6 +90,7 @@ import AppRealtimeBridge from "@/components/notifications/AppRealtimeBridge";
 import SocialWorkerGuide from "@/pages/SocialWorkerGuide";
 import SocialWorkerIntroPage from "@/pages/SocialWorkerIntroPage";
 import VolunteerFinderPage from "@/pages/VolunteerFinderPage";
+import SalaryCalculatorPage from "@/pages/SalaryCalculatorPage";
 
 function SuperhostRoute({
   component: Component,
@@ -258,6 +259,11 @@ function PublicRouter() {
 <Route
   path="/volunteer"
   component={VolunteerFinderPage}
+/>
+
+<Route
+  path="/salary-calculator"
+  component={SalaryCalculatorPage}
 />
 
 <Route
@@ -588,7 +594,10 @@ function AppContent() {
     const matchesPath = (base: string) =>
       path === base || path.startsWith(`${base}/`);
 
-    if (
+   if (matchesPath("/salary-calculator")) {
+  document.title =
+    "사회복지사 급여·호봉 정보 | 사회복지통합지원센터";
+} else if (
   matchesPath("/volunteer")
 ) {
   document.title =
@@ -616,11 +625,12 @@ function AppContent() {
 
   const isPublicPage =
   location === "/login" ||
-location === "/withone" ||
-location === "/social-worker-guide" ||
-location === "/intro" ||
-location === "/volunteer" ||
-location === "/employment-center" ||
+  location === "/withone" ||
+  location === "/social-worker-guide" ||
+  location === "/intro" ||
+  location === "/volunteer" ||
+  location === "/salary-calculator" ||
+  location === "/employment-center" ||
   location.startsWith("/form/") ||
   location.startsWith("/ad-form/") ||
 location.startsWith("/kakao-ai/staff-auth/") ||
