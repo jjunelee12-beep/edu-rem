@@ -65,7 +65,34 @@ type SearchFilters = {
   progrmEndde?: string;
   adultPosblAt?: "Y";
   yngbgsPosblAt?: "Y";
+  schSido?: string;
+schSign1?: string;
+upperClCode?: string;
+nanmClCode?: string;
+  noticeBgnde?: string;
+  noticeEndde?: string;
 };
+
+const REGIONS = [
+  { code: "", name: "전국" },
+  { code: "6110000", name: "서울" },
+  { code: "6260000", name: "부산" },
+  { code: "6270000", name: "대구" },
+  { code: "6280000", name: "인천" },
+  { code: "6290000", name: "광주" },
+  { code: "6300000", name: "대전" },
+  { code: "6310000", name: "울산" },
+  { code: "5690000", name: "세종" },
+  { code: "6410000", name: "경기" },
+  { code: "6530000", name: "강원" },
+  { code: "6430000", name: "충북" },
+  { code: "6440000", name: "충남" },
+  { code: "6540000", name: "전북" },
+  { code: "6460000", name: "전남" },
+  { code: "6470000", name: "경북" },
+  { code: "6480000", name: "경남" },
+  { code: "6500000", name: "제주" },
+];
 
 const inputClass =
   "w-full min-w-0 rounded-xl border border-slate-200 " +
@@ -73,6 +100,84 @@ const inputClass =
   "focus:border-blue-500";
 
 const geocodeCache = new Map<string, Point>();
+
+function todayKorea() {
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date()).replace(/-/g, "");
+}
+
+function getRecruitmentStatus(item: VolunteerItem) {
+  const today = todayKorea();
+
+  const start = String(item.noticeBgnde || "");
+  const end = String(item.noticeEndde || "");
+  const status = String(item.progrmSttusSe || "");
+
+  if (end && end < today) {
+    return "closed";
+  }
+
+  if (status === "3") {
+    return "closed";
+  }
+
+  if (start && start > today) {
+    return "upcoming";
+  }
+
+  if (
+    status === "2" &&
+    start &&
+    end &&
+    start <= today &&
+    today <= end
+  ) {
+    return "open";
+  }
+
+  return "unknown";
+}
+
+function RecruitmentBadge({
+  item,
+}: {
+  item: VolunteerItem;
+}) {
+  const status = getRecruitmentStatus(item);
+
+  const styles = {
+    open: {
+      label: "모집 중 (API 기준)",
+      color: "bg-emerald-50 text-emerald-700",
+    },
+    upcoming: {
+      label: "모집 예정",
+      color: "bg-blue-50 text-blue-700",
+    },
+    closed: {
+      label: "모집 종료",
+      color: "bg-slate-100 text-slate-500",
+    },
+    unknown: {
+      label: "모집 여부 확인",
+      color: "bg-amber-50 text-amber-700",
+    },
+  };
+
+  const current = styles[status];
+
+  return (
+    <span
+      className={`rounded-md px-2 py-1 text-[11px] font-bold ${current.color}`}
+    >
+      {current.label}
+    </span>
+  );
+}
 
 function formatDate(value?: string) {
   const raw = String(value ?? "").trim();
@@ -114,7 +219,9 @@ function getHomeUrl() {
 
 function getOfficialUrl(value?: string) {
   try {
-    const url = new URL(String(value || ""));
+    const url = new URL(
+  String(value || "").replace(/&amp;/g, "&")
+);
 
     const allowed =
       url.hostname === "1365.go.kr" ||
@@ -154,57 +261,151 @@ function distanceKm(a: Point, b: Point) {
 }
 
 async function geocodeAddress(
-  address: string
+  address: string,
+  allowKeyword = true
 ): Promise<Point | null> {
   const text = address.trim();
 
   if (!text) return null;
 
-  const cached = geocodeCache.get(text);
+  const cacheKey = `${allowKeyword}:${text}`;
+  const cached = geocodeCache.get(cacheKey);
 
   if (cached) return cached;
 
   const kakao = await loadKakao();
 
-  if (!kakao.maps.services?.Geocoder) {
+  if (!kakao.maps.services) {
     return null;
   }
 
-  return new Promise((resolve) => {
-    const geocoder =
-      new kakao.maps.services.Geocoder();
+  const geocoder =
+    new kakao.maps.services.Geocoder();
 
-    geocoder.addressSearch(
-      text,
+  const places =
+    new kakao.maps.services.Places();
+
+  const toPoint = (row: any): Point | null => {
+    const lat = Number(row?.y);
+    const lng = Number(row?.x);
+
+    if (
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng) ||
+      lat < 33 ||
+      lat > 39 ||
+      lng < 124 ||
+      lng > 132
+    ) {
+      return null;
+    }
+
+    return { lat, lng };
+  };
+
+  const addressSearch = (
+    value: string
+  ): Promise<Point | null> =>
+    new Promise((resolve) => {
+      geocoder.addressSearch(
+        value,
+        (result: any[], status: string) => {
+          resolve(
+            status === kakao.maps.services.Status.OK
+              ? toPoint(result?.[0])
+              : null
+          );
+        }
+      );
+    });
+
+  const keywordSearch = (
+    value: string
+  ): Promise<Point | null> =>
+    new Promise((resolve) => {
+      places.keywordSearch(
+        value,
+        (result: any[], status: string) => {
+          resolve(
+            status === kakao.maps.services.Status.OK &&
+            result?.length === 1
+              ? toPoint(result[0])
+              : null
+          );
+        }
+      );
+    });
+
+  const candidates = [
+    text,
+    ...Array.from(
+      text.matchAll(/\(([^()]+)\)/g),
+      (match) => match[1].trim()
+    ),
+    text.split("/").pop()?.trim() || "",
+    text.replace(/\([^()]*\)/g, "").trim(),
+  ].filter(Boolean);
+
+  let point: Point | null = null;
+
+  for (const candidate of new Set(candidates)) {
+    point = await addressSearch(candidate);
+
+    if (point) break;
+  }
+
+  if (!point && allowKeyword) {
+    point = await keywordSearch(text);
+  }
+
+  if (point) {
+    if (geocodeCache.size >= 500) {
+      geocodeCache.clear();
+    }
+
+    geocodeCache.set(cacheKey, point);
+  }
+
+  return point;
+}
+
+async function getRegionFromPoint(
+  point: Point
+): Promise<string> {
+  const kakao = await loadKakao();
+
+  const geocoder =
+    new kakao.maps.services.Geocoder();
+
+  return new Promise((resolve) => {
+    geocoder.coord2RegionCode(
+      point.lng,
+      point.lat,
       (result: any[], status: string) => {
         if (
-          status !==
-            kakao.maps.services.Status.OK ||
-          !result?.[0]
+          status !== kakao.maps.services.Status.OK ||
+          !result?.length
         ) {
-          resolve(null);
+          resolve("");
           return;
         }
 
-        const point = {
-          lat: Number(result[0].y),
-          lng: Number(result[0].x),
-        };
+        const region =
+          result.find(
+            (row) => row.region_type === "H"
+          ) || result[0];
 
-        if (
-          !Number.isFinite(point.lat) ||
-          !Number.isFinite(point.lng)
-        ) {
-          resolve(null);
-          return;
-        }
+        const name = String(
+          region.region_1depth_name || ""
+        );
 
-        if (geocodeCache.size >= 500) {
-          geocodeCache.clear();
-        }
+        const matched = REGIONS.find(
+          (row) =>
+            row.code &&
+            name.startsWith(row.name)
+        );
 
-        geocodeCache.set(text, point);
-        resolve(point);
+        resolve(matched?.code || "");
       }
     );
   });
@@ -236,6 +437,16 @@ function VolunteerDetail({
   const fields = [
     ["모집기관", data.nanmmbyNm],
     ["활동장소", data.actPlace],
+[
+  "상세주소",
+  [
+    data.areaAddress1,
+    data.areaAddress2,
+    data.areaAddress3,
+  ]
+    .filter(Boolean)
+    .join(" ") || "별도 확인",
+],
     [
       "활동기간",
       `${formatDate(data.progrmBgnde)} ~ ${formatDate(data.progrmEndde)}`,
@@ -278,9 +489,13 @@ function VolunteerDetail({
           </button>
         </div>
 
-        <h3 className="text-lg font-black leading-7 text-slate-900">
-          {data.progrmSj}
-        </h3>
+        <div className="mb-3">
+  <RecruitmentBadge item={data} />
+</div>
+
+<h3 className="text-lg font-black leading-7 text-slate-900">
+  {data.progrmSj}
+</h3>
 
         <p className="mt-1 text-xs text-slate-500">
           프로그램 번호: {item.progrmRegistNo}
@@ -360,7 +575,7 @@ function VolunteerDetail({
         )}
 
         <a
-          href={getOfficialUrl(item.url)}
+          href={getOfficialUrl(data.url || item.url)}
           target="_blank"
           rel="noopener noreferrer"
           className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-4 text-sm font-bold text-white"
@@ -389,8 +604,14 @@ export default function VolunteerFinderPage() {
     "all" | "adult" | "youth"
   >("all");
 
-  const [filters, setFilters] =
-    useState<SearchFilters>({});
+  const [region, setRegion] = useState("");
+const [activeOnly, setActiveOnly] = useState(true);
+
+const [filters, setFilters] =
+  useState<SearchFilters>(() => ({
+    noticeBgnde: todayKorea(),
+    noticeEndde: todayKorea(),
+  }));
 
   const [pageNo, setPageNo] = useState(1);
 
@@ -540,6 +761,35 @@ export default function VolunteerFinderPage() {
     );
   }, [items, sort, origin, distanceMap]);
 
+const applyLocation = async (point: Point) => {
+  setOrigin(point);
+  setSort("distance");
+
+  try {
+    const regionCode =
+      await getRegionFromPoint(point);
+
+    if (regionCode) {
+      setRegion(regionCode);
+      setPageNo(1);
+      setSelectedId(null);
+
+      setFilters((prev) => ({
+        ...prev,
+        schSido: regionCode,
+      }));
+    } else {
+      setLocationError(
+        "기준 위치는 설정되었으나 검색 지역은 직접 선택해 주세요."
+      );
+    }
+  } catch {
+    setLocationError(
+      "기준 위치는 설정되었으나 검색 지역은 직접 선택해 주세요."
+    );
+  }
+};
+
   const searchAddress = async () => {
     if (!address.trim()) {
       setLocationError("주소를 입력해 주세요.");
@@ -555,13 +805,12 @@ export default function VolunteerFinderPage() {
 
       if (!point) {
         setLocationError(
-          "주소를 찾지 못했습니다. 도로명 주소로 검색해 주세요."
+          "주소를 찾지 못했습니다. 정확한 도로명 주소 또는 기관명을 입력해 주세요."
         );
         return;
       }
 
-      setOrigin(point);
-      setSort("distance");
+      await applyLocation(point);
     } catch {
       setLocationError(
         "주소 검색 중 오류가 발생했습니다."
@@ -584,16 +833,18 @@ export default function VolunteerFinderPage() {
     setLocating(true);
 
     navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setOrigin({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-        });
+      async (position) => {
+  try {
+    setAddress("현재 위치");
 
-        setAddress("현재 위치");
-        setSort("distance");
-        setLocating(false);
-      },
+    await applyLocation({
+      lat: position.coords.latitude,
+      lng: position.coords.longitude,
+    });
+  } finally {
+    setLocating(false);
+  }
+},
       () => {
         setLocationError(
           "위치 확인에 실패했습니다. 위치 권한을 확인해 주세요."
@@ -627,7 +878,15 @@ export default function VolunteerFinderPage() {
     setSelectedId(null);
 
     setFilters({
-      keyword: keyword.trim() || undefined,
+  keyword: keyword.trim() || undefined,
+
+  schSido: region || undefined,
+
+  noticeBgnde:
+    activeOnly ? todayKorea() : undefined,
+
+  noticeEndde:
+    activeOnly ? todayKorea() : undefined,
 
       progrmBgnde:
         startDate.replace(/-/g, "") ||
@@ -646,15 +905,22 @@ export default function VolunteerFinderPage() {
   };
 
   const resetSearch = () => {
-    setKeyword("");
-    setStartDate("");
-    setEndDate("");
-    setTarget("all");
-    setFilters({});
-    setPageNo(1);
-    setSearchError("");
-    setSelectedId(null);
-  };
+  setKeyword("");
+  setStartDate("");
+  setEndDate("");
+  setTarget("all");
+  setRegion("");
+  setActiveOnly(true);
+
+  setFilters({
+    noticeBgnde: todayKorea(),
+    noticeEndde: todayKorea(),
+  });
+
+  setPageNo(1);
+  setSearchError("");
+  setSelectedId(null);
+};
 
   const changePage = (next: number) => {
     setPageNo(next);
@@ -751,7 +1017,7 @@ export default function VolunteerFinderPage() {
             <div className="flex gap-2">
               <input
                 className={inputClass}
-                placeholder="도로명 주소를 입력하세요"
+                placeholder="주소, 지역명 또는 기관명 검색"
                 value={address}
                 onChange={(e) =>
                   setAddress(e.target.value)
@@ -792,8 +1058,8 @@ export default function VolunteerFinderPage() {
             )}
 
             <p className="text-[11px] leading-5 text-slate-500">
-              기준 위치는 지도 표시와 현재 검색 결과의
-              거리순 정렬에 사용됩니다.
+              기준 위치에 따라 검색 지역이 자동 설정되며,
+현재 검색 결과를 가까운 거리순으로 확인할 수 있습니다.
             </p>
           </section>
 
@@ -821,6 +1087,48 @@ export default function VolunteerFinderPage() {
               placeholder="봉사활동 검색어 입력"
               maxLength={100}
             />
+
+<label className="block">
+  <span className="mb-2 block text-xs font-bold text-slate-700">
+    봉사활동 지역
+  </span>
+
+  <select
+    className={inputClass}
+    value={region}
+    onChange={(e) => setRegion(e.target.value)}
+  >
+    {REGIONS.map((item) => (
+      <option
+        key={item.code}
+        value={item.code}
+      >
+        {item.name}
+      </option>
+    ))}
+  </select>
+</label>
+
+<label className="flex cursor-pointer items-center gap-3 rounded-xl border border-blue-100 bg-blue-50 p-3">
+  <input
+    type="checkbox"
+    checked={activeOnly}
+    onChange={(e) =>
+      setActiveOnly(e.target.checked)
+    }
+    className="h-4 w-4 accent-blue-600"
+  />
+
+  <div>
+    <p className="text-xs font-bold text-blue-700">
+      현재 모집기간인 공고 검색
+    </p>
+
+    <p className="mt-1 text-[11px] text-slate-500">
+      오늘 날짜를 기준으로 모집기간 검색
+    </p>
+  </div>
+</label>
 
             <div>
               <p className="mb-2 text-xs font-bold text-slate-700">
@@ -1063,9 +1371,13 @@ export default function VolunteerFinderPage() {
                   }`}
                 >
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-md bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-700">
-                      봉사활동
-                    </span>
+                    <RecruitmentBadge item={item} />
+
+{item.srvcClCode && (
+  <span className="rounded-md bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-700">
+    {item.srvcClCode}
+  </span>
+)}
 
                     {item.adultPosblAt === "Y" && (
                       <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] text-slate-600">
@@ -1097,6 +1409,21 @@ export default function VolunteerFinderPage() {
                   </p>
 
                   <div className="space-y-2 text-xs leading-5 text-slate-600">
+<p className="flex gap-2">
+  <CalendarDays
+    size={15}
+    className="mt-0.5 shrink-0 text-blue-600"
+  />
+
+  <span>
+    <b className="text-slate-700">
+      모집기간
+    </b>{" "}
+    {formatDate(item.noticeBgnde)}
+    {" ~ "}
+    {formatDate(item.noticeEndde)}
+  </span>
+</p>
                     <p className="flex gap-2">
                       <MapPin
                         size={15}
