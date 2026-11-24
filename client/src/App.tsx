@@ -89,6 +89,7 @@ import MessengerRealtimeBridge from "@/components/notifications/MessengerRealtim
 import AppRealtimeBridge from "@/components/notifications/AppRealtimeBridge";
 import SocialWorkerGuide from "@/pages/SocialWorkerGuide";
 import SocialWorkerIntroPage from "@/pages/SocialWorkerIntroPage";
+import VolunteerFinderPage from "@/pages/VolunteerFinderPage";
 
 function SuperhostRoute({
   component: Component,
@@ -252,6 +253,11 @@ function PublicRouter() {
 <Route
   path="/intro"
   component={SocialWorkerIntroPage}
+/>
+
+<Route
+  path="/volunteer"
+  component={VolunteerFinderPage}
 />
 
 <Route
@@ -583,6 +589,11 @@ function AppContent() {
       path === base || path.startsWith(`${base}/`);
 
     if (
+  matchesPath("/volunteer")
+) {
+  document.title =
+    "봉사활동 찾기 | 사회복지통합지원센터";
+} else if (
   isWelfareDomain ||
   matchesPath("/employment-center") ||
   matchesPath("/intro")
@@ -608,6 +619,7 @@ function AppContent() {
 location === "/withone" ||
 location === "/social-worker-guide" ||
 location === "/intro" ||
+location === "/volunteer" ||
 location === "/employment-center" ||
   location.startsWith("/form/") ||
   location.startsWith("/ad-form/") ||

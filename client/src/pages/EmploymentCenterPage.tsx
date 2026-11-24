@@ -29,7 +29,8 @@ import {
   BookOpen,
   ShieldCheck,
   MessageCircle,
-  MapPinned,
+   MapPinned,
+  HeartHandshake,
 } from "lucide-react";
 
 
@@ -106,16 +107,35 @@ function readSession(): {token:string; expiresAt:number}|null {
 }
 function shortDate(value?: string) { if (!value) return "미정"; const s=String(value); return s.length===8 && /^\d{8}$/.test(s)?`${s.slice(0,4)}.${s.slice(4,6)}.${s.slice(6,8)}`:s; }
 
-type Section = "home" | "jobs" | "funds" | "certificate" | "practice" | "resume" | "consultation" | "compare";
+type Section =
+  | "home"
+  | "jobs"
+  | "funds"
+  | "certificate"
+  | "practice"
+  | "resume"
+  | "consultation"
+  | "compare"
+  | "volunteer";
 const SECTION_LABEL: Record<Section,string> = {
   home: "사회복지 통합지원센터", jobs: "일자리 찾기", funds: "지원금 찾기",
   certificate: "자격증 신청 예상일", practice: "실습기관 찾기", resume: "이력서·자기소개서",
-  consultation: "사회복지사 2급 상담 신청", compare: "학습관리 서비스 비교",
+    consultation: "사회복지사 2급 상담 신청",
+  compare: "학습관리 서비스 비교",
+  volunteer: "봉사활동 찾기",
 };
 const CARDS = [
   {key:"certificate" as Section, icon:CalendarDays, title:"자격증 신청 예상일", sub:"내 상황에 맞춰 확인", tint:"bg-indigo-50 text-indigo-600"},
   {key:"jobs" as Section, icon:BriefcaseBusiness, title:"일자리 찾기", sub:"GPS로 내 주변 채용공고", tint:"bg-blue-50 text-blue-600"},
   {key:"practice" as Section, icon:MapPinned, title:"실습기관 찾기", sub:"지역별 기관 탐색", tint:"bg-teal-50 text-teal-600"},
+
+{
+  key: "volunteer" as Section,
+  icon: HeartHandshake,
+  title: "봉사활동 찾기",
+  sub: "나에게 맞는 봉사활동",
+  tint: "bg-rose-50 text-rose-600",
+},
   {key:"funds" as Section, icon:Wallet, title:"지원금 찾기", sub:"관련 지원제도 확인", tint:"bg-amber-50 text-amber-600"},
   {key:"resume" as Section, icon:FileText, title:"이력서·자기소개서 (개발 중)", sub:"서비스 준비 중입니다", tint:"bg-purple-50 text-purple-600"},
   {key:"consultation" as Section, icon:MessageCircle, title:"무료 상담 신청하기", sub:"사회복지사 2급 취득 상담", tint:"bg-rose-50 text-rose-600"},
@@ -2616,9 +2636,17 @@ useEffect(() => {
  const go = (next: Section) => {
   if (next === "resume") return;
 
+  if (next === "volunteer") {
+    window.location.href = "/volunteer";
+    return;
+  }
+
   setSection(next);
   setMenu(false);
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  window.scrollTo({
+    top: 0,
+    behavior: "smooth",
+  });
 };
 const portalLogout =
   trpc.studentPortal.logout.useMutation();
@@ -2811,7 +2839,7 @@ if (isConsultationEmbed) {
         </h2>
 
         <span className="rounded-full bg-blue-50 px-3 py-1 text-[11px] font-semibold text-blue-700">
-          6개 서비스
+          {CARDS.length}개 서비스
         </span>
       </div>
 

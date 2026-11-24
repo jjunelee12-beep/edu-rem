@@ -25,6 +25,7 @@ import { buildOrganizationExcelExport } from "./_core/organization-excel-export"
 import { emitLiveNotification } from "./_core/live-notifications";
 import { publicLeadRouter } from "./publicLead.router";
 import { gov24Router } from "./gov24.router";
+import { volunteerRouter } from "./volunteer.router";
 import bcrypt from "bcryptjs";
 import { smsRouter } from "./_core/sms.router";
 import Tesseract from "tesseract.js";
@@ -3997,7 +3998,8 @@ return {
   leadForm: publicLeadRouter,
   sms: smsRouter,
   saas: saasRouter,
-  gov24: gov24Router,
+    gov24: gov24Router,
+  volunteer: volunteerRouter,
   
   // ─── 사회복지사 2급 공개 취득가이드 ───────────────────
   socialWorkerGuide: router({
