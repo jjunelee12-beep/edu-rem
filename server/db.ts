@@ -46140,15 +46140,27 @@ isInactive: override?.isInactive ?? false,
     );
 
   return [
-    ...masterRows,
-    ...customRows.map((row: any) => ({
+  ...masterRows,
+  ...customRows.map((row: any) => {
+    const matchedMaster = rows.find(
+      (item: any) =>
+        Number(item.master.categoryId) === Number(row.categoryId) &&
+        String(item.master.name || "").trim() ===
+          String(row.name || "").trim() &&
+        String(item.master.address || "").trim() ===
+          String(row.address || "").trim()
+    )?.master;
+
+    return {
       ...row,
+      websiteUrl: matchedMaster?.websiteUrl ?? null,
       sourceType: "organization",
       masterId: null,
       overrideId: null,
       isCustomized: true,
-    })),
-  ];
+    };
+  }),
+];
 }
 
 export async function getPracticeEducationCenter(
