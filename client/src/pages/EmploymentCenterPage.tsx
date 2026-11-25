@@ -1294,10 +1294,9 @@ const openStudyConsultation = () => {
                 <button
   type="button"
   onClick={openStudyConsultation}
-  className="flex min-h-[54px] w-full items-center justify-center gap-2 rounded-xl bg-[#b7ff00] px-4 py-3 text-sm font-black text-[#101410] shadow-sm transition-colors hover:bg-[#a8eb00]"
+  className="min-h-[54px] w-full rounded-xl bg-[#2458cc] px-4 py-3 text-[15px] font-bold text-white transition-colors hover:bg-[#1d4bb5]"
 >
-  나에게 맞는 취득과정 안내받기
-  <ChevronRight size={18} />
+  나에게 맞는 취득 과정 안내받기
 </button>
 
                 <a
@@ -1330,8 +1329,8 @@ const openStudyConsultation = () => {
         onOpenChange={setConsultationOpen}
       >
         <DialogContent
-          className="max-h-[90dvh] w-[calc(100%_-_24px)] max-w-[440px] overflow-y-auto overscroll-contain rounded-[24px] border border-[#303930] bg-[#111511] p-0 text-white shadow-2xl"
-        >
+  className="max-h-[92dvh] w-[calc(100%_-_24px)] max-w-[460px] overflow-y-auto overscroll-contain rounded-[24px] border border-[#5478ad]/40 bg-[#0c2043] p-0 text-white shadow-[0_24px_80px_rgba(0,0,0,0.4)]"
+>
           <DialogHeader className="sr-only">
             <DialogTitle>
               사회복지사 2급 취득과정 상담
@@ -2453,210 +2452,107 @@ isPreStudyConsultation,
     }
   }
 
-  if (submitted) {
+const consultationBackground =
+  "bg-[radial-gradient(ellipse_at_top_right,#326cc0_0%,transparent_48%),linear-gradient(150deg,#0c2043_0%,#142e61_55%,#091a35_100%)]";
+
+    if (submitted) {
     return (
-      <div className="px-4 py-12">
-        <div className="rounded-[24px] bg-[#101410] p-8 text-center text-white">
-          <ShieldCheck className="mx-auto h-12 w-12 text-[#b7ff00]" />
-          <h2 className="mt-5 text-xl font-black">
-            상담 신청이 완료되었습니다
-          </h2>
-          <p className="mt-3 text-sm leading-6 text-slate-400">
-            남겨주신 내용을 확인한 후
-            <br />
-            담당자가 연락드리겠습니다.
-          </p>
-          <p className="mt-5 text-xs text-[#b7ff00]">
-            사회복지 통합지원센터
-          </p>
-        </div>
+      <div
+  className={`${consultationBackground} px-5 py-12 text-center text-white`}
+>
+        <img
+          src={CENTER_LOGO}
+          alt="사회복지 통합지원센터"
+          className="mx-auto w-full max-w-[270px] rounded-lg bg-white object-contain p-3"
+        />
+
+        <h2 className="mt-8 text-[23px] font-bold text-white">
+          상담 신청이 완료되었습니다.
+        </h2>
+
+        <p className="mt-4 text-[14px] leading-7 text-[#c5d2e8]">
+          남겨주신 내용을 확인한 후
+          <br />
+          담당자가 연락드리겠습니다.
+        </p>
       </div>
     );
   }
 
   const fieldClass =
-  "h-12 w-full min-w-0 rounded-xl border border-[#d1d5db] bg-white px-3 text-[13px] font-semibold text-black outline-none placeholder:text-gray-400 focus:border-[#b7ff00] focus:ring-1 focus:ring-[#b7ff00]";
+  "h-[50px] w-full min-w-0 rounded-[10px] border border-[#d8e3f0] bg-[#f9fbff] px-3 text-[16px] font-medium text-[#172c48] outline-none placeholder:text-[#64748b] transition-all focus:border-[#80b9ff] focus:ring-2 focus:ring-[#80b9ff]/30";
 
   return (
+  <div
+    className={`${consultationBackground} text-white ${
+      dialogMode
+        ? ""
+        : `min-h-screen px-4 pt-5 ${
+            new URLSearchParams(window.location.search)
+              .get("embed") === "1"
+              ? "pb-5"
+              : "pb-28"
+          }`
+    }`}
+  >
     <div
-  className={
-    dialogMode
-      ? "bg-[#111511] text-white"
-      : `bg-[#080b08] px-3 pt-5 text-white ${
-          new URLSearchParams(window.location.search)
-            .get("embed") === "1"
-            ? "pb-5"
-            : "pb-28"
-        }`
-  }
->
-      <div
-  className={
-    dialogMode
-      ? "overflow-hidden px-4 pb-5 pt-5"
-      : "overflow-hidden rounded-[25px] border border-[#242a24] bg-[#111511] px-4 pb-6 pt-6 shadow-[0_15px_45px_rgba(0,0,0,.15)]"
-  }
->
+      className={`mx-auto w-full max-w-[460px] ${
+        dialogMode
+          ? "px-4 pb-6 pt-9"
+          : "px-1 pb-8 pt-4"
+      }`}
+    >
+        {/* 상단 정식 로고 */}
+        <div className="flex justify-center">
+  <img
+    src={CENTER_LOGO}
+    alt="사회복지 통합지원센터"
+    className="w-full max-w-[290px] rounded-xl bg-white object-contain px-4 py-3 shadow-[0_8px_25px_rgba(0,0,0,0.12)]"
+  />
+</div>
 
-        {dialogMode ? (
-  <>
-    <p className="pr-8 text-[11px] font-bold tracking-tight text-[#b7ff00]">
-      사회복지통합지원센터
-    </p>
+        {/* 상담 신청 제목 */}
+<div className="mb-7 mt-7 text-center">
+  <p className="text-[11px] font-semibold tracking-[0.18em] text-[#a7d5ff]">
+    SOCIAL WELFARE CONSULTING
+  </p>
 
-    <h2 className="mt-3 text-[23px] font-black leading-[1.4] tracking-[-0.045em] text-white">
-      사회복지사 2급,
-      <br />
-      내 취득과정을 한눈에 확인하며
-      <br />
-      <span className="text-[#b7ff00]">
-        안전하게 준비하세요!
-      </span>
-    </h2>
+  <p className="mt-4 text-[14px] font-medium text-[#c1d8ff]">
+    사회복지사 2급 무료 상담
+  </p>
 
-    {/* 취득 주의사항 */}
-    <div className="mt-4 rounded-xl border border-red-400/20 bg-red-500/[0.07] p-3">
-      <div className="flex items-center gap-1.5">
-        <span className="text-[13px] font-black text-red-400">
-          ⚠ 반드시 주의하세요!
-        </span>
-      </div>
+  <h2 className="mt-2 text-[28px] font-extrabold leading-[1.4] tracking-[-0.05em] text-white">
+    나에게 맞는
+    <br />
+    <span className="text-[#a3e1ff]">
+      취득 과정
+    </span>{" "}
+    안내받기
+  </h2>
 
-      <p className="mt-2 text-[13px] font-bold leading-5 text-white">
-        수업만 끝난다고 자격증이
-        나오는 것이 아닙니다.
-      </p>
+  <p className="mt-3 text-[14px] leading-6 text-[#d0ddf0]">
+    내 상황에 맞는 취득 과정과 학습일정을
+    <br />
+    전문 상담사가 안내해 드립니다.
+  </p>
+</div>
 
-      <p className="mt-2 text-[12px] leading-[1.7] text-slate-300">
-        보건복지부 소관 국가자격증으로
-        모든 교육원에 동일한 취득 기준이
-        적용됩니다.
-      </p>
-
-      <p className="mt-2 text-[12px] font-bold leading-[1.7] text-red-300">
-        최단기간 취득을 위해서는 정확한 학습설계와
-        내 학사일정을 직접 확인할 수 있는
-        관리 시스템이 중요합니다.
-      </p>
-    </div>
-
-    {/* 통합 지원 서비스 */}
-    <div className="mt-4 rounded-xl border border-[#303b29] bg-[#1a2216] p-3">
-      <p className="text-[12px] font-black text-[#b7ff00]">
-        시작부터 취업 준비까지 통합 지원
-      </p>
-
-      <div className="mt-3 space-y-3">
-        <div className="flex items-center gap-2">
-          <ShieldCheck
-            size={18}
-            className="shrink-0 text-[#b7ff00]"
-          />
-
-          <span className="text-[12px] font-bold text-white">
-            자체 개발 학생안전 학사관리시스템
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <MapPin
-            size={18}
-            className="shrink-0 text-[#b7ff00]"
-          />
-
-          <span className="text-[12px] font-bold leading-5 text-white">
-            내 주변 실습기관 찾기 및
-            실습배정지원센터 운영
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <BriefcaseBusiness
-            size={18}
-            className="shrink-0 text-[#b7ff00]"
-          />
-
-          <span className="text-[12px] font-bold text-white">
-            사회복지 일자리 직접 확인
-          </span>
-        </div>
-      </div>
-
-      <p className="mt-3 text-[10px] leading-4 text-slate-400">
-        일부 학사관리 및 취업지원 서비스는
-        등록 회원에게 제공됩니다.
-      </p>
-    </div>
-
-    <div className="my-4 h-px bg-[#303930]" />
-
-    <h3 className="text-[17px] font-black tracking-tight">
-      나에게 맞는 취득과정 안내받기
-    </h3>
-
-    <p className="mb-4 mt-1.5 text-[11px] leading-5 text-slate-400">
-      계산 결과를 바탕으로 전문 상담사가
-      정확한 취득요건과 학습일정을 안내해 드립니다.
-    </p>
-  </>
-) : (
-  <>
-    <div className="flex items-center gap-3">
-      <img
-        src={CENTER_SYMBOL}
-        alt="사회복지 통합지원센터"
-        className="h-12 w-12 rounded-xl bg-white object-contain p-1"
-      />
-
-      <div>
-        <p className="text-[13px] font-extrabold">
-          사회복지 통합지원센터
-        </p>
-
-        <p className="mt-1 text-[11px] text-slate-400">
-          사회복지사 2급 취득 전문 상담
-        </p>
-      </div>
-    </div>
-
-    <div className="mt-7">
-      <span className="rounded-full border border-[#35462a] bg-[#202b19] px-3 py-1.5 text-[10px] font-bold text-[#b7ff00]">
-        SOCIAL WORKER CONSULTATION
-      </span>
-
-      <h1 className="mt-4 text-[25px] font-black leading-[1.3] tracking-tight">
-        사회복지사 2급
-        <br />
-        <span className="text-[#b7ff00]">
-          무료 상담 신청
-        </span>
-      </h1>
-
-      <p className="mt-3 text-[12px] leading-5 text-slate-400">
-        취득기간부터 실습, 학사일정까지
-        <br />
-        궁금한 내용을 편하게 상담받아보세요.
-      </p>
-    </div>
-
-    <div className="my-6 h-px bg-[#2b322b]" />
-  </>
-)}
         <form
   onSubmit={handleSubmit}
-  className={dialogMode ? "space-y-3.5" : "space-y-5"}
+  className="space-y-5 rounded-[20px] border border-white/15 bg-white/[0.06] p-4 shadow-[0_8px_24px_rgba(0,0,0,0.12)] backdrop-blur-sm sm:p-5"
 >
-
-          {/* 이름 · 연락처 */}
-          <div className="grid grid-cols-2 gap-2.5">
+          {/* 이름 및 연락처 */}
+          <div className="grid grid-cols-2 gap-3">
             <label className="min-w-0">
-              <span className="mb-2 block text-[11px] font-bold">
-                이름 <span className="text-[#b7ff00]">*</span>
+              <span className="mb-2 block text-[13px] font-semibold text-white">
+                이름
+                <span className="ml-1 text-[#a8c5ff]">*</span>
               </span>
+
               <input
                 className={fieldClass}
                 value={clientName}
-                onChange={(e) => setClientName(e.target.value)}
+                onChange={e => setClientName(e.target.value)}
                 placeholder="이름"
                 autoComplete="name"
                 maxLength={100}
@@ -2665,79 +2561,82 @@ isPreStudyConsultation,
             </label>
 
             <label className="min-w-0">
-              <span className="mb-2 block text-[11px] font-bold">
-                연락처 <span className="text-[#b7ff00]">*</span>
+              <span className="mb-2 block text-[13px] font-semibold text-white">
+                연락처
+                <span className="ml-1 text-[#a8c5ff]">*</span>
               </span>
+
               <input
                 className={fieldClass}
                 type="tel"
                 inputMode="tel"
                 autoComplete="tel"
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                onChange={e => setPhone(e.target.value)}
                 placeholder="010-0000-0000"
                 required
               />
             </label>
           </div>
 
-          {/* 최종학력 */}
-{!isPreStudyConsultation && (
-  <label className="block">
-    <span className="mb-2 block text-[11px] font-bold">
-      최종학력
-      <span className="text-[#b7ff00]"> *</span>
-    </span>
+          {/* 일반 상담에서만 최종학력 표시 */}
+          {!isPreStudyConsultation && (
+            <label className="block">
+              <span className="mb-2 block text-[13px] font-semibold text-white">
+                최종학력
+                <span className="ml-1 text-[#a8c5ff]">*</span>
+              </span>
 
-    <select
-      className={fieldClass}
-      value={finalEducation}
-      onChange={(e) =>
-        setFinalEducation(e.target.value)
-      }
-      required
-    >
-      <option value="">
-        최종학력 선택
-      </option>
+              <select
+                className={fieldClass}
+                value={finalEducation}
+                onChange={e =>
+                  setFinalEducation(e.target.value)
+                }
+                required
+              >
+                <option value="">최종학력 선택</option>
 
-      {educationOptions.map(item => (
-        <option key={item} value={item}>
-          {item}
-        </option>
-      ))}
-    </select>
-  </label>
-)}
+                {educationOptions.map(item => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
 
-          {/* 상담 가능 시간 */}
+          {/* 희망 상담 시간대 */}
           <div>
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-[11px] font-bold">
+              <span className="text-[13px] font-semibold text-white">
                 희망 상담 시간대
               </span>
-              <span className="text-[10px] text-slate-500">
+
+              <span className="text-[11px] text-[#a8b8d0]">
                 선택사항
               </span>
             </div>
 
             <div className="grid grid-cols-3 gap-2">
-              {timeOptions.map((item) => {
-                const selected = preferredContactTime === item.value;
+              {timeOptions.map(item => {
+                const selected =
+                  preferredContactTime === item.value;
+
                 return (
                   <button
                     key={item.value}
                     type="button"
                     aria-pressed={selected}
-                    onClick={() => {
+                    onClick={() =>
                       setPreferredContactTime(
                         selected ? "" : item.value
-                      );
-                    }}
-                    className={`min-h-11 rounded-xl border px-1 text-[12px] font-bold transition-colors ${
+                      )
+                    }
+                    className={`min-h-[44px] rounded-[10px] border px-1 text-[13px] font-semibold transition-all ${
   selected
-    ? "border-[#b7ff00] bg-[#b7ff00] text-black"
-    : "border-[#d1d5db] bg-white text-gray-400"
+    ? "border-[#80b9ff] bg-gradient-to-br from-[#408de9] to-[#2455c8] text-white shadow-[0_3px_12px_rgba(36,85,200,0.35)]"
+    : "border-white/20 bg-white/[0.08] text-[#e5eeff] hover:border-white/40 hover:bg-white/15"
 }`}
                   >
                     {item.label}
@@ -2750,139 +2649,145 @@ isPreStudyConsultation,
               <input
                 className={`${fieldClass} mt-2`}
                 value={customTime}
-                onChange={(e) => setCustomTime(e.target.value)}
-                placeholder="희망하시는 시간을 입력해주세요"
+                onChange={e =>
+                  setCustomTime(e.target.value)
+                }
+                placeholder="희망하시는 시간을 입력해주세요."
                 maxLength={80}
               />
             )}
           </div>
 
-          {/* 걱정되거나 궁금하신 점 */}
-<label className="block">
-  <span className="mb-2 flex items-center justify-between gap-2">
-    <span className="text-[11px] font-bold">
-      진행하시면서 걱정되거나 궁금하신 점
-    </span>
+          {/* 문의내용 */}
+          <label className="block">
+            <span className="mb-2 flex items-center justify-between gap-2">
+              <span className="text-[13px] font-semibold leading-5 text-white">
+                진행하시면서 걱정되시거나 궁금하신 점
+              </span>
 
-    <span className="shrink-0 text-[10px] text-slate-500">
-      선택사항
-    </span>
-  </span>
+              <span className="shrink-0 text-[11px] text-[#a8b8d0]">
+                선택사항
+              </span>
+            </span>
 
-  <textarea
-    className={`${
-      dialogMode
-        ? "min-h-[72px]"
-        : "min-h-[100px]"
-    } w-full resize-none rounded-xl border border-[#343b35] bg-[#202520] p-3 text-[13px] leading-5 text-white outline-none placeholder:text-[#889188] focus:border-[#b7ff00]`}
-    value={notes}
-    onChange={(e) => setNotes(e.target.value)}
-    maxLength={350}
-    placeholder="직장 병행, 학습 부담, 실습, 취업 등 자유롭게 작성해 주세요."
-  />
+            <textarea
+           className="min-h-[100px] w-full resize-none rounded-[10px] border border-[#d8e3f0] bg-[#f9fbff] p-3.5 text-[16px] leading-6 text-[#172c48] outline-none placeholder:text-[#64748b] transition-all focus:border-[#80b9ff] focus:ring-2 focus:ring-[#80b9ff]/30"
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              maxLength={350}
+              placeholder="직장 병행, 학습 부담, 실습, 취업 등 자유롭게 작성해 주세요."
+            />
 
-  <span className="mt-1 block text-right text-[10px] text-slate-500">
-    {notes.length} / 350
-  </span>
-</label>
+            <span className="mt-1 block text-right text-[11px] text-[#a8b8d0]">
+              {notes.length} / 350
+            </span>
+          </label>
 
-          
-{/* 개인정보 동의 */}
-<div className="rounded-xl bg-[#1b201b] p-4">
-  <div className="flex items-center gap-3">
-    <input
-      id="consultation-privacy"
-      type="checkbox"
-      checked={agree}
-      onChange={(e) => setAgree(e.target.checked)}
-      className="h-4 w-4 shrink-0 accent-[#b7ff00]"
-    />
+          {/* 개인정보 동의 */}
+          <div className="border-t border-white/15 pt-4">
+            <div className="flex items-center gap-2.5">
+              <input
+                id="consultation-privacy"
+                type="checkbox"
+                checked={agree}
+                onChange={e => setAgree(e.target.checked)}
+                className="h-[18px] w-[18px] shrink-0 accent-[#2458cc]"
+              />
 
-    <label
-      htmlFor="consultation-privacy"
-      className="min-w-0 flex-1 cursor-pointer"
-    >
-      <span className="block text-[12px] font-bold text-white">
-        개인정보 수집 및 이용 동의 (필수)
-      </span>
-      <span className="mt-1 block text-[10px] text-slate-400">
-        사회복지 통합지원센터 상담 신청
-      </span>
-    </label>
+              <label
+                htmlFor="consultation-privacy"
+                className="min-w-0 flex-1 cursor-pointer text-[12px] font-semibold leading-5 text-white"
+              >
+                개인정보 수집·이용 동의 (필수)
+              </label>
 
-    <button
-      type="button"
-      onClick={() => setPrivacyExpanded(v => !v)}
-      aria-expanded={privacyExpanded}
-      className="shrink-0 rounded-lg border border-[#414a41] px-2.5 py-2 text-[10px] font-bold text-slate-200"
-    >
-      {privacyExpanded ? "접기 ▲" : "자세히 보기 ▼"}
-    </button>
-  </div>
+              <button
+                type="button"
+                onClick={() =>
+                  setPrivacyExpanded(v => !v)
+                }
+                aria-expanded={privacyExpanded}
+                className="shrink-0 text-[12px] font-medium text-[#c5d2e8] underline underline-offset-4"
+              >
+                {privacyExpanded ? "접기" : "자세히 보기"}
+              </button>
+            </div>
 
-  {privacyExpanded && (
-    <div className="mt-4 space-y-3 border-t border-[#343b35] pt-4 text-[11px] leading-5 text-slate-300">
-      <div>
-        <b className="text-white">개인정보 수집·이용 주체</b>
-        <p>위드원교육 (사회복지 통합지원센터 운영 사업자)</p>
-      </div>
+            {privacyExpanded && (
+              <div className="mt-4 space-y-3 rounded-lg border border-[#344968] bg-[#102341] p-4 text-[12px] leading-6 text-[#c5d2e8]">
+                <div>
+                  <b className="text-white">
+                    개인정보 수집·이용 주체
+                  </b>
+                  <p>
+                    위드원교육 (사회복지 통합지원센터 운영 사업자)
+                  </p>
+                </div>
 
-      <div>
-        <b className="text-white">수집 항목</b>
-        <p>
-  {isPreStudyConsultation
-    ? "이름, 연락처, 최종학력, 상담 희망시간, 문의내용, 기존 이수과목 및 이수연도, 보유학점, 학습설계 계산 결과"
-    : "이름, 연락처, 최종학력, 상담 희망시간, 문의내용"}
-</p>
-      </div>
+                <div>
+                  <b className="text-white">
+                    수집 항목
+                  </b>
 
-      <div>
-        <b className="text-white">수집 및 이용 목적</b>
-        <p>사회복지사 2급 상담 신청 접수 및 상담 안내</p>
-      </div>
+                  <p>
+                    {isPreStudyConsultation
+                      ? "이름, 연락처, 최종학력, 상담 희망시간, 문의내용, 기존 이수과목 및 이수연도, 보유학점, 학습설계 계산 결과"
+                      : "이름, 연락처, 최종학력, 상담 희망시간, 문의내용"}
+                  </p>
+                </div>
 
-      <div>
-        <b className="text-white">보유 및 이용 기간</b>
-        <p>수집일로부터 1년</p>
-      </div>
+                <div>
+                  <b className="text-white">
+                    수집 및 이용 목적
+                  </b>
 
-      <p className="text-[10px] text-slate-400">
-        개인정보 수집 및 이용에 동의하지 않을 권리가 있으며,
-        동의하지 않을 경우 상담 신청이 제한됩니다.
-      </p>
-    </div>
-  )}
-</div>
+                  <p>
+                    사회복지사 2급 상담 신청 접수 및 상담 안내
+                  </p>
+                </div>
 
+                <div>
+                  <b className="text-white">
+                    보유 및 이용 기간
+                  </b>
 
+                  <p>수집일로부터 1년</p>
+                </div>
+
+                <p className="text-[11px] text-[#a8b8d0]">
+                  개인정보 수집 및 이용에 동의하지 않을 권리가 있으며,
+                  동의하지 않을 경우 상담 신청이 제한됩니다.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* 오류 안내 */}
           {error && (
-            <p role="alert" className="text-[12px] text-red-400">
+            <p
+              role="alert"
+              className="rounded-lg border border-red-400/30 bg-[#392235] p-3 text-[13px] leading-5 text-[#ffc5c5]"
+            >
               {error}
             </p>
           )}
 
+          {/* 상담 신청 버튼 */}
           <button
             type="submit"
             disabled={submit.isPending || !agree}
-            className="h-[54px] w-full rounded-xl bg-[#b7ff00] text-[15px] font-black text-black shadow-[0_8px_22px_rgba(183,255,0,.18)] transition-opacity disabled:opacity-40"
+            className="h-[56px] w-full rounded-xl border border-white/15 bg-gradient-to-r from-[#397fe9] via-[#2458d3] to-[#214ab7] text-[16px] font-extrabold text-white shadow-[0_5px_18px_rgba(40,116,235,0.35)] transition-all hover:brightness-110 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submit.isPending
-  ? "상담 접수 중..."
-  : dialogMode
-    ? "상담 접수하기"
-    : "무료 상담 신청하기"}
+              ? "상담 접수 중..."
+              : "무료 상담 신청하기"}
           </button>
 
-{dialogMode && (
-  <p className="text-center text-[10px] leading-4 text-slate-400">
-    상담 신청은 교육과정 등록과 별개입니다.
-  </p>
-)}
-
-          <div className="flex items-center justify-center gap-1.5 text-[10px] text-slate-500">
-            <ShieldCheck size={13} className="text-[#b7ff00]" />
+          <p className="text-center text-[11px] leading-5 text-[#a8b8d0]">
+            상담 신청은 교육과정 등록과 별개입니다.
+            <br />
             입력하신 정보는 상담 안내 목적으로 사용됩니다.
-          </div>
+          </p>
         </form>
       </div>
     </div>
