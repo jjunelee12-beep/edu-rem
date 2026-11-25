@@ -9,16 +9,22 @@ import {
 } from "./ai/risk-rules/subject-equivalence-resolver";
 
 import {
+  resolveSocialWorkerLaw,
+} from "./ai/risk-rules/social-worker-law-resolver";
+
+import {
   resolveDegreeRequirement,
 } from "./ai/risk-rules/degree-requirement-resolver";
 
 import {
   analyzeDegreeCredits,
+  type DegreeCreditRecognizedSubject,
 } from "./ai/risk-rules/degree-credit-analyzer";
 
 import {
   analyzeQualificationRisk,
   type QualificationRiskMasterItem,
+  type QualificationRecognizedSubject,
 } from "./ai/risk-rules/qualification-risk-analyzer";
 
 import {
@@ -101,6 +107,74 @@ export async function loadSocialWorkerGuideCatalog(
   };
 }
 
+export async function getSocialWorkerGuideSubjectOptions(
+  organizationId: number
+) {
+  const catalog =
+    await loadSocialWorkerGuideCatalog(
+      organizationId
+    );
+
+  const seenKeys = new Set<string>();
+
+  const requiredSubjects: Array<{
+    subjectName: string;
+    credits: number;
+  }> = [];
+
+  const electiveSubjects: Array<{
+    subjectName: string;
+    credits: number;
+  }> = [];
+
+  for (const item of catalog.masterItems) {
+    const subjectName = String(
+      item.subjectName ?? ""
+    ).trim();
+
+    const key =
+      getConfirmedSubjectEquivalenceKey(
+        subjectName
+      );
+
+    const requirementType = String(
+      item.requirementType ?? ""
+    ).trim();
+
+    if (!subjectName || !key) continue;
+
+    if (seenKeys.has(key)) continue;
+
+    if (
+      requirementType !== "전공필수" &&
+      requirementType !== "전공선택"
+    ) {
+      continue;
+    }
+
+    seenKeys.add(key);
+
+    const subject = {
+      subjectName,
+      credits: Number(item.credits ?? 3),
+    };
+
+    if (requirementType === "전공필수") {
+      requiredSubjects.push(subject);
+    } else {
+      electiveSubjects.push(subject);
+    }
+  }
+
+  return {
+    requiredSubjects,
+    electiveSubjects,
+    requiredSubjectCount:
+      requiredSubjects.length,
+    electiveSubjectCount:
+      electiveSubjects.length,
+  };
+}
 
 export async function buildSocialWorkerGuideNileClassification(
   params: {
@@ -120,7 +194,12 @@ export async function buildSocialWorkerGuideNileClassification(
   }
 ) {
   const classificationMap =
-    new Map<string, DegreeSubjectClassification>();
+  new Map<
+    string,
+    DegreeSubjectClassification & {
+      isLiberalCompatible?: boolean;
+    }
+  >();
 
   // 전문대졸 이상: 신규 학위 불필요
   if (!params.degreeRequirement.requiresNewDegreeTrack) {
@@ -213,9 +292,15 @@ export async function buildSocialWorkerGuideNileClassification(
     }
 
     classificationMap.set(key, {
-      category,
-      requirementType,
-    });
+  category,
+  requirementType,
+
+  isLiberalCompatible:
+    subject.nileClassificationSource ===
+      "major_liberal_compatible" &&
+    category === "전공" &&
+    requirementType === "전공선택",
+});
   }
 
   if (classificationMap.size === 0) {
@@ -233,10 +318,266 @@ type EducationGroup =
   | "college_or_higher"
   | "high_school";
 
+export type SocialWorkerGuidePersonalInput = {
+  educationGroup: EducationGroup;
+
+  previousStudy:
+    | "none"
+    | "yes"
+    | "unknown";
+
+  completedSubjects: Array<{
+    subjectName: string;
+    completionYear: number | null;
+  }>;
+
+  existingCredits: {
+    major: number;
+    liberal: number;
+    general: number;
+  };
+
+  creditStatus:
+    | "none"
+    | "known"
+    | "unknown";
+};
+
+
+function buildSocialWorkerGuideRecognizedSubjects(params: {
+  masterItems: QualificationRiskMasterItem[];
+  personalInput?: SocialWorkerGuidePersonalInput;
+}) {
+  const recognizedSubjects: QualificationRecognizedSubject[] = [];
+
+  const transferSubjects: Array<{
+    subjectName: string;
+    completionYear: number | null;
+  }> = [];
+
+  const unmatchedSubjects: string[] = [];
+
+  const seenKeys = new Set<string>();
+
+  const input = params.personalInput;
+
+  if (input?.previousStudy === "yes") {
+    for (const subject of input.completedSubjects) {
+      const key = getConfirmedSubjectEquivalenceKey(
+        subject.subjectName
+      );
+
+      if (!key) continue;
+
+      const master = params.masterItems.find(
+        item =>
+          getConfirmedSubjectEquivalenceKey(
+            item.subjectName
+          ) === key
+      );
+
+      if (!master) {
+        unmatchedSubjects.push(subject.subjectName);
+        continue;
+      }
+
+      // 동일과목이 여러 번 입력되어도
+      // 법규 판정에는 이수연도 정보를 보존
+      transferSubjects.push({
+        subjectName: master.subjectName,
+        completionYear: subject.completionYear,
+      });
+
+      // 인정과목은 한 번만 계산
+      if (seenKeys.has(key)) continue;
+
+      seenKeys.add(key);
+
+      recognizedSubjects.push({
+        subjectName: master.subjectName,
+        requirementType: master.requirementType,
+        category: master.category,
+        credits: Number(master.credits ?? 0),
+        source: "transfer",
+      });
+    }
+  }
+
+  const lawResolution = resolveSocialWorkerLaw({
+    masterItems: params.masterItems,
+    transferSubjects,
+  });
+
+  const lawVersion =
+    lawResolution.effectiveLawVersion ?? "current";
+
+  const requiresReview =
+    input?.previousStudy === "unknown" ||
+    input?.creditStatus === "unknown" ||
+    (
+      input?.previousStudy === "yes" &&
+      recognizedSubjects.length === 0
+    ) ||
+    unmatchedSubjects.length > 0 ||
+    lawResolution.requiresReview;
+
+  return {
+    recognizedSubjects,
+    transferSubjects,
+    unmatchedSubjects,
+    lawResolution,
+    lawVersion,
+    requiresReview,
+  };
+}
+
+function buildSocialWorkerGuideDegreeSubjects(params: {
+  personalInput?: SocialWorkerGuidePersonalInput;
+
+  recognizedSubjects: QualificationRecognizedSubject[];
+
+  degreeClassificationBySubjectKey?: Map<
+    string,
+    DegreeSubjectClassification
+  >;
+}) {
+  const input = params.personalInput;
+
+  const subjects: DegreeCreditRecognizedSubject[] = [];
+
+  let requiresReview = false;
+
+  if (!input || input.educationGroup !== "high_school") {
+    return {
+      subjects,
+      requiresReview,
+    };
+  }
+
+  // 기존 사회복지 과목을 공식 학위분류로 변환
+  for (const subject of params.recognizedSubjects) {
+    const key = getConfirmedSubjectEquivalenceKey(
+      subject.subjectName
+    );
+
+    const classification =
+      params.degreeClassificationBySubjectKey?.get(key);
+
+    if (!classification) {
+      requiresReview = true;
+      continue;
+    }
+
+    subjects.push({
+      ...subject,
+      category: classification.category,
+      requirementType: classification.requirementType,
+    });
+  }
+
+  if (input.creditStatus !== "known") {
+    return {
+      subjects,
+      requiresReview:
+        requiresReview ||
+        input.creditStatus === "unknown",
+    };
+  }
+
+  // 기존 이수과목에 포함된 학점
+  const countedCredits = {
+    major: 0,
+    liberal: 0,
+    general: 0,
+  };
+
+  for (const subject of subjects) {
+    if (subject.category === "전공") {
+      countedCredits.major += subject.credits;
+    } else if (subject.category === "교양") {
+      countedCredits.liberal += subject.credits;
+    } else if (subject.category === "일반") {
+      countedCredits.general += subject.credits;
+    }
+  }
+
+  const creditGroups = [
+    {
+      key: "major",
+      category: "전공",
+      requirementType: "전공선택",
+    },
+    {
+      key: "liberal",
+      category: "교양",
+      requirementType: "교양",
+    },
+    {
+      key: "general",
+      category: "일반",
+      requirementType: "일반",
+    },
+  ] as const;
+
+  for (const group of creditGroups) {
+    const totalCredits = Number(
+      input.existingCredits[group.key]
+    );
+
+    if (
+      !Number.isSafeInteger(totalCredits) ||
+      totalCredits < 0 ||
+      totalCredits > 140
+    ) {
+      throw new Error(
+        "기존 보유학점을 정확하게 입력해 주세요."
+      );
+    }
+
+   const remainingCredits =
+  totalCredits - countedCredits[group.key];
+
+if (remainingCredits < 0) {
+  throw new Error(
+    "입력한 보유학점과 기존 사회복지 이수과목의 학점이 일치하지 않습니다."
+  );
+}
+
+    if (remainingCredits === 0) continue;
+
+    // 개인별 예상일 계산에만 사용하는 집계 학점
+    subjects.push({
+      subjectName:
+        `사전설계보유학점_${group.key}`,
+
+      category: group.category,
+
+      requirementType: group.requirementType,
+
+      credits: remainingCredits,
+
+      source: "transfer",
+    });
+  }
+
+  // 성적증명서 확인 전에는 확정학점이 아님
+  requiresReview = true;
+
+  return {
+    subjects,
+    requiresReview,
+  };
+}
 
 export function buildSocialWorkerGuideRequirements(params: {
   educationGroup: EducationGroup;
   masterItems: QualificationRiskMasterItem[];
+  personalInput?: SocialWorkerGuidePersonalInput;
+
+  degreeClassificationBySubjectKey?: Map<
+    string,
+    DegreeSubjectClassification
+  >;
 }) {
   const finalEducation =
     params.educationGroup === "high_school"
@@ -250,24 +591,48 @@ export function buildSocialWorkerGuideRequirements(params: {
       finalEducation,
     });
 
-  // 2. 기존 학위학점 분석 엔진
-  // 신규 학습자이므로 기존 이수학점 없음
-  const degreeCreditAnalysis =
-    analyzeDegreeCredits({
-      degreeRequirement,
-      recognizedSubjects: [],
+  // 2. 기존 이수과목 및 구법·신법 판정
+  const previousStudyAnalysis =
+    buildSocialWorkerGuideRecognizedSubjects({
+      masterItems: params.masterItems,
+      personalInput: params.personalInput,
     });
 
-  // 3. 기존 자격증 과목요건 분석 엔진
+  // 3. 기존 보유학점 및 공식 학위분류 반영
+const previousDegreeAnalysis =
+  buildSocialWorkerGuideDegreeSubjects({
+    personalInput: params.personalInput,
+
+    recognizedSubjects:
+      previousStudyAnalysis.recognizedSubjects,
+
+    degreeClassificationBySubjectKey:
+      params.degreeClassificationBySubjectKey,
+  });
+
+// 기존 공통 학위학점 분석 엔진
+const degreeCreditAnalysis =
+  analyzeDegreeCredits({
+    degreeRequirement,
+
+    recognizedSubjects:
+      previousDegreeAnalysis.subjects,
+  });
+
+  // 4. 기존 자격증 과목요건 분석 엔진
   const qualificationAnalysis =
     analyzeQualificationRisk({
       courseName: "사회복지사 2급",
       masterItems: params.masterItems,
-      recognizedSubjects: [],
-      socialWorkerLawVersion: "current",
+
+      recognizedSubjects:
+        previousStudyAnalysis.recognizedSubjects,
+
+      socialWorkerLawVersion:
+        previousStudyAnalysis.lawVersion,
     });
 
-  // 4. 기존 학위 + 자격증 통합 엔진
+  // 5. 기존 학위 + 자격증 통합 엔진
   const requirements =
     mergeQualificationRequirements({
       degreeRequirement,
@@ -276,11 +641,17 @@ export function buildSocialWorkerGuideRequirements(params: {
     });
 
   return {
-    degreeRequirement,
-    degreeCreditAnalysis,
-    qualificationAnalysis,
-    requirements,
-  };
+  degreeRequirement,
+  degreeCreditAnalysis,
+  qualificationAnalysis,
+  requirements,
+  previousStudyAnalysis,
+  previousDegreeAnalysis,
+
+  requiresReview:
+    previousStudyAnalysis.requiresReview ||
+    previousDegreeAnalysis.requiresReview,
+};
 }
 
 
@@ -288,30 +659,36 @@ export function buildSocialWorkerGuideSubjectPlan(params: {
   educationGroup: EducationGroup;
   masterItems: QualificationRiskMasterItem[];
   degreeTemplates: DegreeFillTemplateItem[];
+
   degreeClassificationBySubjectKey: Map<
     string,
     DegreeSubjectClassification
   >;
+
+  personalInput?: SocialWorkerGuidePersonalInput;
 }) {
   // 기존 학위 및 자격요건 계산
-  const analysis = buildSocialWorkerGuideRequirements({
-    educationGroup: params.educationGroup,
-    masterItems: params.masterItems,
-  });
+ const analysis = buildSocialWorkerGuideRequirements({
+  educationGroup: params.educationGroup,
+  masterItems: params.masterItems,
+  personalInput: params.personalInput,
 
-  // 실제 CRM 과목 자동설계 엔진 호출
+  degreeClassificationBySubjectKey:
+    params.degreeClassificationBySubjectKey,
+});
+
+  // 기존 CRM 과목 자동설계 엔진 호출
   const subjectPlan = planQualificationSubjects({
     requirements: analysis.requirements,
     masterItems: params.masterItems,
 
-    // 신규 학습자: 인정과목 및 수강예정 과목 없음
-    recognizedSubjects: [],
+    recognizedSubjects:
+      analysis.previousStudyAnalysis.recognizedSubjects,
+
     occupiedSubjects: [],
 
-    // 기존 DB에서 가져온 학위용 과목 템플릿
     degreeTemplates: params.degreeTemplates,
 
-    // 기존 과목 분류 엔진의 판정 결과
     degreeClassificationBySubjectKey:
       params.degreeClassificationBySubjectKey,
   });
@@ -322,6 +699,185 @@ export function buildSocialWorkerGuideSubjectPlan(params: {
   };
 }
 
+function optimizeSocialWorkerGuideSubjectPlan(
+  params: Parameters<
+    typeof buildSocialWorkerGuideSubjectPlan
+  >[0] & {
+    startDate: string;
+  }
+) {
+  // 기본 전공 인정 방식으로 설계
+  const baseline =
+    buildSocialWorkerGuideSubjectPlan(params);
+
+  // 전문대졸 이상은 신규 학위설계 불필요
+  if (
+    !baseline.degreeRequirement.requiresNewDegreeTrack
+  ) {
+    return baseline;
+  }
+
+  // 이미 이수한 과목은 학점분류를 임의로 변경하지 않음
+  const recognizedKeys = new Set(
+    baseline.previousStudyAnalysis.recognizedSubjects.map(
+      subject =>
+        getConfirmedSubjectEquivalenceKey(
+          subject.subjectName
+        )
+    )
+  );
+
+  // 공식 NILE 전공·교양 호환과목 조회
+  const compatibleKeys = Array.from(
+    params.degreeClassificationBySubjectKey.entries()
+  )
+    .filter(([key, classification]) => {
+      const item = classification as
+        DegreeSubjectClassification & {
+          isLiberalCompatible?: boolean;
+        };
+
+      return (
+        item.isLiberalCompatible === true &&
+        item.category === "전공" &&
+        item.requirementType === "전공선택" &&
+        !recognizedKeys.has(key)
+      );
+    })
+    .map(([key]) => key);
+
+  if (compatibleKeys.length === 0) {
+    return baseline;
+  }
+
+  type Candidate = typeof baseline;
+
+  let best: Candidate = baseline;
+
+  function getApplicationDate(
+    candidate: Candidate
+  ): string | null {
+    if (!candidate.subjectPlan.canPlan) {
+      return null;
+    }
+
+    const calculation =
+      calculateSocialWorkerGuide({
+        startDate: params.startDate,
+        educationGroup: params.educationGroup,
+        requirements: candidate.requirements,
+        subjectPlan: candidate.subjectPlan,
+      });
+
+    return calculation.success &&
+      "applicationDate" in calculation
+      ? calculation.applicationDate ?? null
+      : null;
+  }
+
+  let bestDate = getApplicationDate(best);
+
+  function evaluate(keys: string[]) {
+    const classificationMap = new Map(
+      params.degreeClassificationBySubjectKey
+    );
+
+    // 자격증 과목 구분은 유지하고
+    // 학위 인정 구분만 교양으로 변경
+    for (const key of keys) {
+      classificationMap.set(key, {
+        category: "교양",
+        requirementType: "교양",
+      });
+    }
+
+    const candidate =
+      buildSocialWorkerGuideSubjectPlan({
+        ...params,
+
+        degreeClassificationBySubjectKey:
+          classificationMap,
+      });
+
+    if (!candidate.subjectPlan.canPlan) {
+      return;
+    }
+
+    const projected =
+      candidate.subjectPlan.projectedDegree;
+
+    // 학위요건 미충족 설계는 제외
+    if (
+      projected.remainingMajorCredits > 0 ||
+      projected.remainingLiberalCredits > 0 ||
+      projected.remainingTotalCredits > 0
+    ) {
+      return;
+    }
+
+    const candidateDate =
+      getApplicationDate(candidate);
+
+    if (!candidateDate) return;
+
+    const candidateCount =
+      candidate.subjectPlan.selectedSubjectCount;
+
+    const bestCount =
+      best.subjectPlan.selectedSubjectCount;
+
+    // 신청일 우선, 동일 신청일이면 최소 과목 우선
+    const isBetter =
+      !bestDate ||
+      candidateDate < bestDate ||
+      (
+        candidateDate === bestDate &&
+        candidateCount < bestCount
+      );
+
+    if (isBetter) {
+      best = candidate;
+      bestDate = candidateDate;
+    }
+  }
+
+  // 호환과목별 조합 비교
+  // 공개 API의 과도한 연산 방지
+  if (compatibleKeys.length <= 8) {
+    function search(
+      index: number,
+      selected: string[]
+    ) {
+      if (index === compatibleKeys.length) {
+        if (selected.length > 0) {
+          evaluate(selected);
+        }
+
+        return;
+      }
+
+      // 전공으로 인정
+      search(index + 1, selected);
+
+      // 교양으로 인정
+      search(index + 1, [
+        ...selected,
+        compatibleKeys[index],
+      ]);
+    }
+
+    search(0, []);
+  } else {
+    // 호환과목이 많을 경우 개별 및 전체 비교
+    for (const key of compatibleKeys) {
+      evaluate([key]);
+    }
+
+    evaluate(compatibleKeys);
+  }
+
+  return best;
+}
 
 export function calculateSocialWorkerGuide(params: {
   startDate: string;
@@ -330,10 +886,12 @@ export function calculateSocialWorkerGuide(params: {
   subjectPlan: QualificationSubjectPlannerResult;
 }) {
   const semesterPlan = planQualificationSemesters({
-    subjectPlan: params.subjectPlan,
-    existingSemesters: [],
-    baseDate: params.startDate,
-  });
+  subjectPlan: params.subjectPlan,
+  existingSemesters: [],
+  baseDate: params.startDate,
+
+  allowOverlappingSemesters: true,
+});
 
   if (!semesterPlan.canPlan) {
     return {
@@ -381,6 +939,7 @@ export async function runSocialWorkerGuideCalculation(params: {
   startDate: string;
   educationGroup: EducationGroup;
   organizationId: number;
+  personalInput?: SocialWorkerGuidePersonalInput;
 }) {
   // 1. 실제 CRM 과목마스터 조회
   const catalog = await loadSocialWorkerGuideCatalog(
@@ -418,19 +977,24 @@ console.log("[GUIDE TEMPLATE CHECK]", {
       isFaceToFace: Boolean(item.isFaceToFace),
     }));
 
-  // 3. 학위 및 자격요건 계산
-  const analysis = buildSocialWorkerGuideRequirements({
-    educationGroup: params.educationGroup,
-    masterItems,
+  // 3. 목표 학위요건 확인
+const degreeRequirement =
+  resolveDegreeRequirement({
+    courseKey: "social_worker_2",
+
+    finalEducation:
+      params.educationGroup === "high_school"
+        ? "고졸"
+        : "전문대졸",
   });
 
-  // 4. 고졸자에게 필요한 NILE 공식 과목 분류
-  const degreeClassificationBySubjectKey =
-    await buildSocialWorkerGuideNileClassification({
-      degreeRequirement: analysis.degreeRequirement,
-      masterItems,
-      degreeTemplates: catalog.degreeTemplates,
-    });
+// 4. NILE 공식 과목분류 우선 실행
+const degreeClassificationBySubjectKey =
+  await buildSocialWorkerGuideNileClassification({
+    degreeRequirement,
+    masterItems,
+    degreeTemplates: catalog.degreeTemplates,
+  });
 
   
   // 5. 기존 학위 템플릿 + CRM 과목마스터의 공식 교양과목 통합
@@ -541,12 +1105,15 @@ console.log("[GUIDE TEMPLATE CHECK]", {
   });
 
 
-  // 6. 실제 과목 자동설계
-  const subjectAnalysis = buildSocialWorkerGuideSubjectPlan({
+  // 6. 전공·교양 호환과목 최적화 설계
+const subjectAnalysis =
+  optimizeSocialWorkerGuideSubjectPlan({
+    startDate: params.startDate,
     educationGroup: params.educationGroup,
     masterItems,
     degreeTemplates,
     degreeClassificationBySubjectKey,
+    personalInput: params.personalInput,
   });
 
   // 7. 과목설계 실패 시 신청일 계산 중단
@@ -569,13 +1136,47 @@ console.log("[GUIDE TEMPLATE CHECK]", {
   });
 
   return {
-    success: calculation.success,
-    educationGroup: params.educationGroup,
-    reason: calculation.success
-      ? []
-      : calculation.semesterPlan.unresolvedReasons,
-    subjectPlan: subjectAnalysis.subjectPlan,
-    calculation,
-  };
+  success: calculation.success,
+  educationGroup: params.educationGroup,
+
+  reason: calculation.success
+    ? []
+    : calculation.semesterPlan.unresolvedReasons,
+
+  subjectPlan: subjectAnalysis.subjectPlan,
+
+  calculation,
+
+  personalAnalysis: {
+    lawVersion:
+      subjectAnalysis.previousStudyAnalysis.lawVersion,
+
+    lawResolution:
+      subjectAnalysis.previousStudyAnalysis.lawResolution,
+
+    recognizedSubjects:
+      subjectAnalysis.previousStudyAnalysis
+        .recognizedSubjects,
+
+    unmatchedSubjects:
+      subjectAnalysis.previousStudyAnalysis
+        .unmatchedSubjects,
+
+    degreeCreditAnalysis:
+      subjectAnalysis.degreeCreditAnalysis,
+
+    qualificationRequirements:
+      subjectAnalysis.requirements.qualification,
+
+    degreeRequirements:
+      subjectAnalysis.requirements.degree,
+
+    remainingSubjectCount:
+      subjectAnalysis.subjectPlan.selectedSubjectCount,
+
+    requiresReview:
+      subjectAnalysis.requiresReview,
+  },
+};
 }
 

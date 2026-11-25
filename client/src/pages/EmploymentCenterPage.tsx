@@ -9,6 +9,14 @@ import PracticeKakaoMap, {
 } from "@/components/PracticeKakaoMap";
 
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+
+import {
   ArrowLeft,
   ArrowRight,
   BriefcaseBusiness,
@@ -119,8 +127,9 @@ type Section =
   | "consultation"
   | "compare"
   | "volunteer"
-  | "salary"
-  | "careerTest";
+    | "salary"
+  | "careerTest"
+  | "benefits";
 const SECTION_LABEL: Record<Section,string> = {
   home: "사회복지 통합지원센터", jobs: "일자리 찾기", funds: "지원금 찾기",
   certificate: "자격증 신청 예상일", practice: "실습기관 찾기", resume: "이력서·자기소개서",
@@ -129,6 +138,7 @@ const SECTION_LABEL: Record<Section,string> = {
     volunteer: "봉사활동 찾기",
   salary: "급여·호봉 정보",
   careerTest: "사회복지사 진로·성향 테스트",
+benefits: "자격증 활용백과",
 };
 const CARDS = [
   {key:"certificate" as Section, icon:CalendarDays, title:"자격증 신청 예상일", sub:"내 상황에 맞춰 확인", tint:"bg-indigo-50 text-indigo-600"},
@@ -156,6 +166,13 @@ const CARDS = [
   sub: "재미로 보는 나의 사회복지사 유형",
   tint: "bg-violet-50 text-violet-600",
 },
+{
+  key: "benefits" as Section,
+  icon: BookOpen,
+  title: "자격증 활용백과",
+  sub: "교육 단축·추가 자격·창업 혜택",
+  tint: "bg-indigo-50 text-indigo-600",
+},
   {key:"funds" as Section, icon:Wallet, title:"지원금 찾기", sub:"관련 지원제도 확인", tint:"bg-amber-50 text-amber-600"},
   {key:"resume" as Section, icon:FileText, title:"이력서·자기소개서 (개발 중)", sub:"서비스 준비 중입니다", tint:"bg-purple-50 text-purple-600"},
   {key:"consultation" as Section, icon:MessageCircle, title:"무료 상담 신청하기", sub:"사회복지사 2급 취득 상담", tint:"bg-rose-50 text-rose-600"},
@@ -167,71 +184,492 @@ function Field({label,children}:{label:string;children:React.ReactNode}) { retur
 const inputStyle="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm outline-none focus:border-blue-500";
 
 
-function CertificateWizard({ onConsult }: { onConsult: () => void }) {
+type PreStudyConsultation = {
+  finalEducation: string;
+  notes: string;
+};
+
+function CertificateWizard() {
+    type Education =
+    | "중졸"
+    | "고졸"
+    | "중퇴"
+    | "2년제"
+    | "3년제"
+    | "4년제"
+    | "대학원";
+
+  type StudyStatus =
+    | "none"
+    | "yes"
+    | "unknown";
+
+  type CreditStatus =
+    | "none"
+    | "known"
+    | "unknown";
+
+  type CompletedSubject = {
+    subjectName: string;
+    completionYear: number | null;
+  };
+
   const [step, setStep] = useState(0);
-  const [education, setEducation] = useState("");
-  const [completed, setCompleted] = useState("");
-  const [startDate, setStartDate] = useState(todayKorea);
 
-  const isHighSchool = education === "고졸" || education === "중퇴";
-  const needsReview = completed !== "없음";
+const [consultationOpen, setConsultationOpen] =
+  useState(false);
 
-  const query = trpc.socialWorkerGuide.getCalculationBasis.useQuery(
-    { startDate },
-    {
-      enabled: step === 3 && /^\d{4}-\d{2}-\d{2}$/.test(startDate),
-      refetchOnWindowFocus: false,
-      retry: false,
-    }
-  );
+const [preStudyPlan, setPreStudyPlan] =
+  useState<PreStudyConsultation | null>(null);
 
-  const groups = query.data?.educationGroups || [];
-  const chosen =
-    groups.find((g) =>
-      isHighSchool
-        ? g.key === "high_school"
-        : g.key === "college_or_higher"
-    ) ||
-    groups.find((g) =>
-      isHighSchool ? g.requiresDegree : !g.requiresDegree
+  const [education, setEducation] =
+    useState<Education | "">("");
+
+  const [previousStudy, setPreviousStudy] =
+    useState<StudyStatus>("none");
+
+  const [completedSubjects, setCompletedSubjects] =
+    useState<CompletedSubject[]>([]);
+
+  const [hasOtherSubjects, setHasOtherSubjects] =
+    useState(false);
+
+  const [creditStatus, setCreditStatus] =
+    useState<CreditStatus>("none");
+
+  const [existingCredits, setExistingCredits] =
+    useState({
+      major: 0,
+      liberal: 0,
+      general: 0,
+    });
+
+  const [startDate, setStartDate] =
+    useState(todayKorea);
+
+  const isHighSchool =
+    education === "고졸" ||
+    education === "중퇴";
+
+  const subjectQuery =
+    trpc.socialWorkerGuide.getSubjectOptions.useQuery(
+      undefined,
+      {
+        enabled: step === 2,
+        retry: false,
+        refetchOnWindowFocus: false,
+      }
     );
 
-  const educationOptions = [
-    { value: "고졸", label: "고등학교 졸업" },
-    { value: "2년제", label: "2년제 전문대학 졸업" },
-    { value: "3년제", label: "3년제 전문대학 졸업" },
-    { value: "4년제", label: "4년제 대학교 졸업" },
-    { value: "대학원", label: "대학원 졸업" },
-    { value: "중퇴", label: "대학교 중퇴" },
+  const calculation =
+    trpc.socialWorkerGuide.calculatePersonal.useMutation();
+
+  const result = calculation.data;
+
+  const educationOptions: {
+    value: Education;
+    label: string;
+  }[] = [
+    {
+      value: "중졸",
+      label: "중학교 졸업 이하",
+    },
+    {
+      value: "고졸",
+      label: "고등학교 졸업 (검정고시 포함)",
+    },
+    {
+      value: "2년제",
+      label: "2년제 전문대학 졸업",
+    },
+    {
+      value: "3년제",
+      label: "3년제 전문대학 졸업",
+    },
+    {
+      value: "4년제",
+      label: "4년제 대학교 졸업",
+    },
+    {
+      value: "대학원",
+      label: "대학원 졸업",
+    },
+    {
+      value: "중퇴",
+      label: "대학교 중퇴",
+    },
   ];
 
   const titles = [
     "최종학력을 선택해 주세요",
-    isHighSchool
-      ? "이전에 취득한 대학 학점이 있으신가요?"
-      : "사회복지 관련 과목을 이수하셨나요?",
+    "사회복지사 2급 관련 과목을 수강하신 적이 있으실까요?",
+    "이수하신 과목을 선택해 주세요",
+    "기존에 취득한 학점이 있으실까요?",
     "언제부터 시작하실 예정인가요?",
     "자격증 신청 예상일",
   ];
 
-  const selectOption = (
-    value: string,
-    setter: (value: string) => void
-  ) => {
-    setter(value);
-    setStep((prev) => prev + 1);
-  };
-
-  const optionClass =
+    const optionClass =
     "flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left text-sm font-bold text-slate-900 transition-colors hover:border-blue-500 hover:bg-blue-50";
 
-  return (
+  const nextButtonClass =
+    "w-full rounded-xl bg-blue-600 py-3.5 text-sm font-bold text-white disabled:opacity-40";
+
+  const selectEducation = (value: Education) => {
+    setEducation(value);
+    setPreviousStudy("none");
+    setCompletedSubjects([]);
+    setHasOtherSubjects(false);
+    setCreditStatus("none");
+
+    setExistingCredits({
+      major: 0,
+      liberal: 0,
+      general: 0,
+    });
+
+    calculation.reset();
+
+    setStep(value === "중졸" ? 0 : 1);
+  };
+
+  const selectPreviousStudy = (
+    value: StudyStatus
+  ) => {
+    setPreviousStudy(value);
+    setCompletedSubjects([]);
+    setHasOtherSubjects(false);
+
+    if (value === "yes") {
+      setStep(2);
+    } else {
+      setStep(isHighSchool ? 3 : 4);
+    }
+  };
+
+  const toggleSubject = (subjectName: string) => {
+    setCompletedSubjects(prev =>
+      prev.some(s => s.subjectName === subjectName)
+        ? prev.filter(s => s.subjectName !== subjectName)
+        : [
+            ...prev,
+            {
+              subjectName,
+              completionYear: null,
+            },
+          ]
+    );
+  };
+
+  const updateCompletionYear = (
+    subjectName: string,
+    year: number | null
+  ) => {
+    setCompletedSubjects(prev =>
+      prev.map(subject =>
+        subject.subjectName === subjectName
+          ? {
+              ...subject,
+              completionYear: year,
+            }
+          : subject
+      )
+    );
+  };
+
+  const goBack = () => {
+    if (step === 5) {
+      calculation.reset();
+      setStep(4);
+    } else if (step === 4) {
+      setStep(
+        isHighSchool
+          ? 3
+          : previousStudy === "yes"
+            ? 2
+            : 1
+      );
+    } else if (step === 3) {
+      setStep(previousStudy === "yes" ? 2 : 1);
+    } else {
+      setStep(prev => Math.max(0, prev - 1));
+    }
+  };
+
+  const calculatePersonal = () => {
+    if (!education || education === "중졸") return;
+
+    calculation.reset();
+
+    setStep(5);
+
+    calculation.mutate({
+      startDate,
+      finalEducation: education,
+      previousStudy,
+      completedSubjects,
+      creditStatus: isHighSchool
+        ? creditStatus
+        : "none",
+      existingCredits:
+        isHighSchool && creditStatus === "known"
+          ? existingCredits
+          : {
+              major: 0,
+              liberal: 0,
+              general: 0,
+            },
+      hasOtherSubjects,
+    });
+  };
+
+  const needsDocumentReview =
+    previousStudy === "unknown" ||
+    creditStatus === "unknown" ||
+    hasOtherSubjects ||
+    completedSubjects.some(
+      subject => subject.completionYear === null
+    ) ||
+    Boolean(result?.requiresReview);
+
+const openStudyConsultation = () => {
+  if (!result || !education || education === "중졸") {
+    return;
+  }
+
+  const educationLabel =
+    educationOptions.find(
+      item => item.value === education
+    )?.label ?? education;
+
+  const lawLabel =
+    result.lawVersion === "old"
+      ? "구법"
+      : result.lawVersion === "current"
+        ? "신법"
+        : "확인 필요";
+
+  const previousStudyLabel =
+    previousStudy === "yes"
+      ? "있음"
+      : previousStudy === "unknown"
+        ? "잘 모르겠음"
+        : "없음";
+
+  const applicationDate =
+    result.success &&
+    result.expectedApplicationYear &&
+    result.expectedApplicationMonth
+      ? `${result.expectedApplicationYear}년 ${result.expectedApplicationMonth}월`
+      : "개별 확인 필요";
+
+  const subjects =
+    completedSubjects.map(subject =>
+      `${subject.subjectName}(${
+        subject.completionYear ?? "연도 미확인"
+      })`
+    ).join(", ");
+
+  const creditSummary =
+    creditStatus === "known"
+      ? `전공 ${existingCredits.major}, 교양 ${existingCredits.liberal}, 일반 ${existingCredits.general}학점`
+      : creditStatus === "unknown"
+        ? "잘 모르겠음"
+        : "없음";
+
+  const semesterSummary =
+    result.semesters.map(semester =>
+      `${semester.semesterLabel}: ${semester.startDate}~${semester.endDate} (${semester.subjectCount}과목)`
+    ).join("\n");
+
+  const planNotes = [
+    "[사회복지통합지원센터 사전 학습설계]",
+    `시작 예정일: ${startDate}`,
+    `적용 기준: ${lawLabel}`,
+    `기존 이수 여부: ${previousStudyLabel}`,
+    `이수과목: ${subjects || "선택 없음"}`,
+
+    ...(hasOtherSubjects
+      ? ["기타 이수과목 있음"]
+      : []),
+
+    ...(isHighSchool
+      ? [`보유학점: ${creditSummary}`]
+      : []),
+
+    `인정 예상과목: ${result.completedSubjectCount}과목`,
+    `남은 사회복지 과목: ${result.qualificationRemainingSubjectCount ?? "확인 필요"}`,
+    `전체 남은 과목: ${result.remainingSubjectCount ?? "확인 필요"}`,
+    `예상 학기: ${result.semesterCount ?? "확인 필요"}`,
+    `자격증 신청 예상일: ${applicationDate}`,
+
+    ...(semesterSummary
+      ? ["[학기별 일정]", semesterSummary]
+      : []),
+
+    ...(needsDocumentReview
+      ? ["※ 성적증명서 및 이수내역 확인 필요"]
+      : []),
+
+    "※ 회원 입력 기준 예상 설계",
+  ].join("\n");
+
+  setPreStudyPlan({
+    finalEducation: educationLabel,
+    notes: planNotes,
+  });
+
+  setConsultationOpen(true);
+};
+
+  const renderDocumentGuide = () => (
+    <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+      <p className="text-sm font-black text-amber-900">
+        기존 이수내역을 확인해 주세요!
+      </p>
+
+      <p className="text-xs leading-6 text-slate-700">
+        기존에 이수한 학점이나 과목에 따라
+        자격증 취득 기간이 단축될 수 있습니다.
+        정확한 학습설계를 위해 성적증명서를
+        미리 준비해 주세요.
+      </p>
+
+      <div className="rounded-xl bg-white p-3">
+        <p className="text-sm font-bold">
+          대학교에서 수강하신 경우
+        </p>
+
+        <p className="mt-2 text-xs leading-6 text-slate-600">
+          카카오톡 → 더보기 → 지갑 →
+          전자증명서 → 대학교 성적증명서
+        </p>
+
+        <p className="mt-1 text-xs text-slate-500">
+          전자증명서 발급 지원 대학에 한하며,
+          미지원 대학은 해당 대학에서 발급해 주세요.
+        </p>
+      </div>
+
+      <div className="rounded-xl bg-white p-3">
+        <p className="text-sm font-bold">
+          학점은행제로 수강하신 경우
+        </p>
+
+        <p className="mt-2 text-xs leading-6 text-slate-600">
+          국가평생교육진흥원 학점은행제 홈페이지
+          로그인 → MY학적부 → 인정학점 및
+          미신청학점내역 확인
+        </p>
+
+        <a
+          href="https://www.cb.or.kr/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-3 block rounded-xl bg-slate-100 p-3 text-center text-xs font-bold text-blue-700"
+        >
+          국가평생교육진흥원 학점은행제 바로가기
+        </a>
+      </div>
+    </div>
+  );
+
+  const renderSubjectOptions = (
+    title: string,
+    subjects: {
+      subjectName: string;
+      credits: number;
+    }[]
+  ) => (
+    <div className="space-y-2">
+      <h3 className="text-sm font-black text-slate-900">
+        {title}
+      </h3>
+
+      {subjects.map(subject => {
+        const selected = completedSubjects.find(
+          item => item.subjectName === subject.subjectName
+        );
+
+        return (
+          <div
+            key={subject.subjectName}
+            className={`rounded-xl border p-3 ${
+              selected
+                ? "border-blue-500 bg-blue-50"
+                : "border-slate-200 bg-white"
+            }`}
+          >
+            <label className="flex cursor-pointer items-center gap-3 text-sm font-semibold">
+              <input
+                type="checkbox"
+                checked={Boolean(selected)}
+                onChange={() =>
+                  toggleSubject(subject.subjectName)
+                }
+                className="h-4 w-4 accent-blue-600"
+              />
+
+              <span className="flex-1">
+                {subject.subjectName}
+              </span>
+
+              <span className="text-xs text-slate-500">
+                {subject.credits}학점
+              </span>
+            </label>
+
+            {selected && (
+              <div className="mt-3">
+                <select
+                  className={inputStyle}
+                  value={selected.completionYear ?? ""}
+                  onChange={e =>
+                    updateCompletionYear(
+                      subject.subjectName,
+                      e.target.value
+                        ? Number(e.target.value)
+                        : null
+                    )
+                  }
+                >
+                  <option value="">
+                    이수연도 선택 / 잘 모르겠어요
+                  </option>
+
+                  {Array.from(
+                    {
+                      length:
+                        new Date().getFullYear() - 1949,
+                    },
+                    (_, index) =>
+                      new Date().getFullYear() - index
+                  ).map(year => (
+                    <option key={year} value={year}>
+                      {year}년
+                      {year < 2020
+                        ? " (2020년 이전)"
+                        : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+
+    return (
     <SectionShell>
-      {/* 계산 기준 안내 */}
+
+      {/* 최초 안내 */}
       {step === 0 && (
         <div className="space-y-3 rounded-2xl border border-blue-100 bg-white p-4">
           <div className="flex items-center gap-2 text-blue-700">
             <ShieldCheck size={19} />
+
             <span className="text-sm font-black">
               자격증 신청 예상일 안내
             </span>
@@ -242,41 +680,26 @@ function CertificateWizard({ onConsult }: { onConsult: () => void }) {
           </p>
 
           <p className="text-xs leading-6 text-slate-600">
-            학점은행제 공통 학사기준과 한국사회복지사협회의
-            자격 신청 절차를 바탕으로 이론·실습 및 필요한
-            행정절차를 포함한 예상 시기를 안내합니다.
+            최종학력, 기존 이수과목 및 보유학점을
+            바탕으로 이론수업, 현장실습, 행정절차를
+            모두 포함한 자격증 신청 예상일을 계산합니다.
           </p>
-
-          <div className="rounded-xl bg-blue-50 p-3 text-xs leading-6 text-slate-700">
-            <b className="text-blue-700">
-              신규 학습자 기준 최단 일정 시뮬레이션
-            </b>
-            <p className="mt-1">
-              기존 인정학점 및 사회복지 관련 이수과목이
-              없는 경우를 기본으로 계산합니다.
-              실제 개강일, 과목 개설, 실습, 학점인정 및
-              학위신청 일정에 따라 달라질 수 있습니다.
-            </p>
-          </div>
         </div>
       )}
 
       {/* 진행 단계 */}
       <div className="rounded-2xl bg-blue-50 p-4">
-        <div className="flex items-center justify-between">
-          <p className="text-xs font-bold text-blue-600">
-            {step === 3 ? "계산 결과" : `질문 ${step + 1} / 3`}
-          </p>
-          <p className="text-xs text-slate-500">
-            {step === 3 ? "완료" : `${step + 1}단계`}
-          </p>
-        </div>
+        <p className="text-xs font-bold text-blue-600">
+          {step === 5
+            ? "개인별 계산 결과"
+            : "나에게 맞는 취득 일정 확인"}
+        </p>
 
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-blue-100">
           <div
             className="h-full bg-blue-600 transition-all"
             style={{
-              width: `${((step + 1) / 4) * 100}%`,
+              width: `${((step + 1) / 6) * 100}%`,
             }}
           />
         </div>
@@ -286,236 +709,652 @@ function CertificateWizard({ onConsult }: { onConsult: () => void }) {
         </h2>
       </div>
 
-      {/* 질문 1: 최종학력 */}
+      {/* 최종학력 */}
       {step === 0 && (
         <div className="grid gap-2">
-          {educationOptions.map((item) => (
-            <button
-              key={item.value}
-              type="button"
-              onClick={() => {
-                setCompleted("");
-                selectOption(item.value, setEducation);
-              }}
-              className={optionClass}
-            >
-              {item.label}
-              <ChevronRight size={18} className="text-slate-400" />
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* 질문 2: 기존 학점 및 과목 */}
-      {step === 1 && (
-        <div className="space-y-3">
-          <div className="rounded-xl bg-white p-4 text-xs leading-6 text-slate-600">
-            {isHighSchool ? (
-              <>
-                사회복지사 2급 취득에는 전문학사 이상 학력과
-                법정 교과목 이수가 필요합니다.
-                이전 대학교 중퇴 이력이나 학점은행제
-                이수학점이 있다면 학위과정에 활용할 수
-                있는지 확인이 필요합니다.
-              </>
-            ) : (
-              <>
-                사회복지학·아동학 등 관련 전공에서
-                수강한 과목이 있다면 일부 교과목을
-                인정받을 가능성이 있습니다.
-                다만 전공명만으로 인정되는 것은 아니며
-                실제 이수과목을 확인해야 합니다.
-              </>
-            )}
-          </div>
-
-          {[
-            { value: "없음", label: "없음 · 처음 시작합니다" },
-            { value: "있음", label: "있음 · 기존 학점 또는 과목 보유" },
-            { value: "모름", label: "잘 모르겠습니다" },
-          ].map((item) => (
+          {educationOptions.map(item => (
             <button
               key={item.value}
               type="button"
               onClick={() =>
-                selectOption(item.value, setCompleted)
+                selectEducation(item.value)
               }
-              className={optionClass}
+              className={`${optionClass} ${
+                education === item.value
+                  ? "border-blue-500 bg-blue-50"
+                  : ""
+              }`}
             >
               {item.label}
-              <ChevronRight size={18} className="text-slate-400" />
+
+              <ChevronRight
+                size={18}
+                className="text-slate-400"
+              />
             </button>
           ))}
-        </div>
-      )}
 
-      {/* 질문 3: 시작 예정일 */}
-      {step === 2 && (
-        <div className="space-y-4">
-          {needsReview && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-              <p className="text-sm font-bold text-amber-800">
-                개인별 이수내역 확인이 필요합니다.
+          {education === "중졸" && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <p className="text-sm font-black text-amber-900">
+                고등학교 졸업 이상의 학력이 필요합니다.
               </p>
-              <p className="mt-2 text-xs leading-5 text-amber-900">
-                기존 학점이나 이수과목이 있는 경우
-                실제 취득 일정이 달라질 수 있습니다.
-                우선 신규 시작자 기준 예상일을 확인해 주세요.
+
+              <p className="mt-2 text-sm leading-6 text-slate-700">
+                사회복지사 2급은 전문학사 이상의
+                학력과 필수 교과목 이수가 필요한
+                국가자격증입니다.
+                중학교 졸업 이하인 경우 고등학교
+                졸업학력 검정고시를 먼저 취득하신 후
+                학점은행제 대학과정을 진행하실 수 있습니다.
               </p>
             </div>
           )}
+        </div>
+      )}
+
+      {/* 기존 사회복지 과목 수강 여부 */}
+      {step === 1 && (
+        <div className="space-y-3">
+          <p className="rounded-xl bg-white p-4 text-xs leading-6 text-slate-600">
+            대학교 또는 학점은행제에서
+            사회복지사 2급 관련 과목을 수강하셨다면
+            기존 이수과목을 인정받아 수강과목과
+            취득 기간을 줄일 수 있습니다.
+          </p>
+
+          <button
+            type="button"
+            className={optionClass}
+            onClick={() => selectPreviousStudy("yes")}
+          >
+            네, 수강한 적이 있어요
+            <ChevronRight size={18} />
+          </button>
+
+          <button
+            type="button"
+            className={optionClass}
+            onClick={() => selectPreviousStudy("none")}
+          >
+            아니요, 처음 시작해요
+            <ChevronRight size={18} />
+          </button>
+
+          <button
+            type="button"
+            className={optionClass}
+            onClick={() => selectPreviousStudy("unknown")}
+          >
+            잘 모르겠어요
+            <ChevronRight size={18} />
+          </button>
+        </div>
+      )}
+
+      {/* 기존 이수과목 선택 */}
+      {step === 2 && (
+        <div className="space-y-4">
+
+          <div className="sticky top-0 z-10 rounded-xl border border-blue-100 bg-blue-50 p-3">
+            <p className="text-sm font-bold text-blue-800">
+              선택한 과목: {completedSubjects.length}과목
+            </p>
+
+            <p className="mt-1 text-xs text-slate-600">
+              이수한 과목을 모두 선택하고
+              과목별 이수연도를 입력해 주세요.
+            </p>
+          </div>
+
+          {subjectQuery.isLoading && (
+            <p className="p-4 text-sm text-slate-500">
+              과목 목록을 불러오고 있습니다...
+            </p>
+          )}
+
+          {subjectQuery.isError && (
+            <div className="rounded-xl bg-red-50 p-4">
+              <p className="text-sm text-red-700">
+                과목 목록을 불러오지 못했습니다.
+              </p>
+
+              <button
+                type="button"
+                onClick={() => subjectQuery.refetch()}
+                className="mt-2 text-sm font-bold text-red-700"
+              >
+                다시 불러오기
+              </button>
+            </div>
+          )}
+
+          {subjectQuery.data && (
+            <>
+              {renderSubjectOptions(
+                "사회복지사 2급 필수과목",
+                subjectQuery.data.requiredSubjects
+              )}
+
+              {renderSubjectOptions(
+                "사회복지사 2급 선택과목",
+                subjectQuery.data.electiveSubjects
+              )}
+            </>
+          )}
+
+          <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 text-sm font-bold">
+            <input
+              type="checkbox"
+              checked={hasOtherSubjects}
+              onChange={e =>
+                setHasOtherSubjects(e.target.checked)
+              }
+              className="h-4 w-4 accent-blue-600"
+            />
+
+            기타 과목 / 목록에 없는 과목
+          </label>
+
+          <button
+            type="button"
+            className={optionClass}
+            onClick={() =>
+              selectPreviousStudy("unknown")
+            }
+          >
+            어떤 과목을 들었는지 잘 모르겠어요
+          </button>
+
+          <button
+            type="button"
+            className={nextButtonClass}
+            disabled={
+              completedSubjects.length === 0 &&
+              !hasOtherSubjects
+            }
+            onClick={() =>
+              setStep(isHighSchool ? 3 : 4)
+            }
+          >
+            선택 완료
+          </button>
+        </div>
+      )}
+
+      {/* 고졸 및 중퇴자 보유학점 */}
+      {step === 3 && (
+        <div className="space-y-3">
+
+          <p className="rounded-xl bg-white p-4 text-xs leading-6 text-slate-600">
+            대학교 또는 학점은행제에서 취득한
+            학점이 있다면 사회복지 전문학사
+            학위과정에 활용할 수 있습니다.
+          </p>
+
+          <button
+            type="button"
+            className={optionClass}
+            onClick={() => {
+              setCreditStatus("known");
+            }}
+          >
+            네, 보유학점이 있어요
+            <ChevronRight size={18} />
+          </button>
+
+          <button
+            type="button"
+            className={optionClass}
+            onClick={() => {
+              setCreditStatus("none");
+              setStep(4);
+            }}
+          >
+            아니요, 없어요
+            <ChevronRight size={18} />
+          </button>
+
+          <button
+            type="button"
+            className={optionClass}
+            onClick={() => {
+              setCreditStatus("unknown");
+              setStep(4);
+            }}
+          >
+            잘 모르겠어요
+            <ChevronRight size={18} />
+          </button>
+
+          {creditStatus === "known" && (
+            <div className="space-y-3 rounded-2xl border border-blue-100 bg-white p-4">
+
+              <h3 className="text-sm font-black">
+                보유학점 입력
+              </h3>
+
+              <p className="text-xs leading-6 text-slate-600">
+                사회복지 전문학사 과정에서 인정 가능한
+                전공·교양·일반 학점을 입력해 주세요.
+                앞서 선택한 사회복지 이수과목의 학점도
+                포함한 전체 보유학점을 입력해야 합니다.
+              </p>
+
+              {([
+                ["major", "전공학점"],
+                ["liberal", "교양학점"],
+                ["general", "일반학점"],
+              ] as const).map(([key, label]) => (
+                <Field key={key} label={label}>
+                  <input
+                    type="number"
+                    min={0}
+                    max={140}
+                    step={1}
+                    className={inputStyle}
+                    value={existingCredits[key]}
+                    onChange={e =>
+                      setExistingCredits(prev => ({
+                        ...prev,
+                        [key]: Math.max(
+                          0,
+                          Math.min(
+                            140,
+                            Math.floor(
+                              Number(e.target.value) || 0
+                            )
+                          )
+                        ),
+                      }))
+                    }
+                  />
+                </Field>
+              ))}
+
+              <div className="rounded-xl bg-blue-50 p-3 text-sm font-bold text-blue-800">
+                총 보유학점: {
+                  existingCredits.major +
+                  existingCredits.liberal +
+                  existingCredits.general
+                }학점
+              </div>
+
+              <p className="text-xs leading-5 text-amber-700">
+                이전 대학의 전공학점이 사회복지 전공으로
+                모두 인정되는 것은 아닙니다.
+                정확한 학점 구분을 모르신다면
+                잘 모르겠어요를 선택해 주세요.
+              </p>
+
+              <button
+                type="button"
+                className={nextButtonClass}
+                onClick={() => setStep(4)}
+              >
+                다음
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 시작 예정일 */}
+      {step === 4 && (
+        <div className="space-y-4">
+
+          {needsDocumentReview &&
+            renderDocumentGuide()}
 
           <Field label="학습 시작 예정일">
             <input
               type="date"
               className={inputStyle}
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              onChange={e =>
+                setStartDate(e.target.value)
+              }
             />
           </Field>
 
           <p className="text-xs leading-5 text-slate-500">
-            선택한 날짜는 계산 기준일입니다.
-            해당 날짜에 실제 개강반이 있다는 뜻은 아닙니다.
+            선택한 날짜는 최단 일정 계산 기준일이며
+            실제 교육원 개강일과 다를 수 있습니다.
           </p>
 
           <button
             type="button"
-            onClick={() => setStep(3)}
-            disabled={!/^\d{4}-\d{2}-\d{2}$/.test(startDate)}
-            className="w-full rounded-xl bg-blue-600 py-3.5 text-sm font-bold text-white disabled:opacity-40"
+            className={nextButtonClass}
+            disabled={
+              !/^\d{4}-\d{2}-\d{2}$/.test(startDate)
+            }
+            onClick={calculatePersonal}
           >
             자격증 신청 예상일 확인하기
           </button>
         </div>
       )}
 
-      {/* 결과 화면 */}
-      {step === 3 && (
+      {/* 개인별 계산 결과 */}
+      {step === 5 && (
         <div className="space-y-4">
-          {needsReview && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-              <p className="text-sm font-bold text-amber-800">
-                개인별 학점 확인 필요
-              </p>
-              <p className="mt-2 text-xs leading-6 text-slate-700">
-                기존 학점이나 사회복지 관련 이수과목이
-                있는 경우 실제 신청 가능 시기가 달라질 수
-                있습니다. 아래 결과는 신규 학습자 기준의
-                참고 일정입니다.
-              </p>
-            </div>
-          )}
 
-          {query.isLoading && (
-            <p className="text-sm text-slate-600">
-              예상일을 계산하고 있습니다...
-            </p>
-          )}
+          {calculation.isPending && (
+            <div className="rounded-2xl bg-white p-8 text-center">
+              <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600" />
 
-          {query.isError && (
-            <p className="text-sm text-red-600">
-              계산 결과를 불러오지 못했습니다.
-              잠시 후 다시 시도해 주세요.
-            </p>
-          )}
-
-          {chosen && (
-            <div className="rounded-2xl border border-blue-100 bg-white p-5">
-              <p className="text-xs font-bold text-blue-600">
-                한국사회복지사협회 자격증 신청 예상시기
-              </p>
-
-              <p className="mt-3 text-3xl font-black text-slate-900">
-                {chosen.expectedApplicationYear &&
-                chosen.expectedApplicationMonth
-                  ? `${chosen.expectedApplicationYear}년 ${chosen.expectedApplicationMonth}월`
-                  : "별도 확인 필요"}
+              <p className="mt-4 text-sm font-bold">
+                개인별 학습설계를 분석하고 있습니다.
               </p>
 
               <p className="mt-2 text-xs text-slate-500">
-                {chosen.label} · 신규 이수자 기준
+                이수과목, 학위요건, 학기별 일정 및
+                행정절차를 계산하고 있습니다.
+              </p>
+            </div>
+          )}
+
+          {calculation.isError && (
+            <div className="rounded-xl bg-red-50 p-4">
+              <p className="text-sm font-bold text-red-700">
+                예상일 계산에 실패했습니다.
               </p>
 
-              <div className="mt-4 border-t border-slate-100 pt-4">
-                <p className="text-xs font-bold text-slate-800">
-                  계산에 포함된 절차
+              <p className="mt-2 text-xs text-red-600">
+                입력하신 과목과 학점을 다시 확인해 주세요.
+              </p>
+
+              <button
+                type="button"
+                className="mt-3 text-sm font-bold text-red-700"
+                onClick={goBack}
+              >
+                이전 단계로 돌아가기
+              </button>
+            </div>
+          )}
+
+          {result && (
+            <>
+              <div className="rounded-2xl border border-blue-100 bg-white p-5">
+
+                <p className="text-xs font-bold text-blue-600">
+                  한국사회복지사협회 기준
                 </p>
-                <p className="mt-2 text-xs leading-6 text-slate-600">
-                  이론과목 및 현장실습 이수, 필요한 학점인정·
-                  학위신청 등 행정절차를 고려한 예상 시기입니다.
+
+                <h3 className="mt-2 text-sm font-bold">
+                  사회복지사 2급 자격증 신청 예상일
+                </h3>
+
+                <p className="mt-3 text-3xl font-black text-blue-700">
+                  {result.success &&
+                  result.expectedApplicationYear &&
+                  result.expectedApplicationMonth
+                    ? `${result.expectedApplicationYear}년 ${result.expectedApplicationMonth}월`
+                    : "개별 학습설계 필요"}
+                </p>
+
+                <p className="mt-2 text-xs text-slate-500">
+                  이론수업 · 현장실습 · 행정절차 포함
+                </p>
+
+                <div className="mt-5 space-y-3 border-t border-slate-100 pt-4">
+
+                  {[
+                    [
+                      "최종학력",
+                      educationOptions.find(
+                        item => item.value === education
+                      )?.label ?? education,
+                    ],
+                    [
+                      "적용 기준",
+                      result.lawVersion === "old"
+                        ? "2020년 이전 구법"
+                        : result.lawVersion === "current"
+                          ? "2020년 이후 신법"
+                          : "별도 확인 필요",
+                    ],
+                    [
+                      "기존 이수과목",
+                      `${result.completedSubjectCount}과목`,
+                    ],
+                    [
+                      "남은 사회복지 과목",
+                      result.qualificationRemainingSubjectCount !== null
+                        ? `${result.qualificationRemainingSubjectCount}과목`
+                        : "확인 필요",
+                    ],
+                    [
+                      "전체 남은 수강과목",
+                      result.remainingSubjectCount !== null
+                        ? `${result.remainingSubjectCount}과목`
+                        : "확인 필요",
+                    ],
+                    [
+                      "예상 수강학기",
+                      result.semesterCount !== null
+                        ? `${result.semesterCount}학기`
+                        : "확인 필요",
+                    ],
+                    [
+                      "학위 취득",
+                      result.requiresDegree
+                        ? "사회복지 전문학사 과정 포함"
+                        : "기존 학위 활용",
+                    ],
+                  ].map(([label, value]) => (
+                    <div
+                      key={label}
+                      className="flex items-center justify-between gap-3 text-sm"
+                    >
+                      <span className="text-slate-500">
+                        {label}
+                      </span>
+
+                      <span className="text-right font-bold text-slate-900">
+                        {value}
+                      </span>
+                    </div>
+                  ))}
+
+                </div>
+
+                {!result.lawConfirmed && (
+                  <p className="mt-4 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-800">
+                    기존 과목의 이수연도 및 인정 여부에
+                    따라 적용 법규가 달라질 수 있습니다.
+                  </p>
+                )}
+              </div>
+
+              {/* 학기별 수강 일정 */}
+              {result.semesters.length > 0 && (
+                <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
+
+                  <h3 className="text-sm font-black">
+                    학기별 예상 수강일정
+                  </h3>
+
+                  {result.semesters.map(
+                    (semester, index) => (
+                      <div
+                        key={`${semester.semesterLabel}-${index}`}
+                        className="rounded-xl bg-slate-50 p-3"
+                      >
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-bold">
+                            {index + 1}번째 수강학기
+                          </p>
+
+                          <p className="text-sm font-bold text-blue-700">
+                            {semester.subjectCount}과목
+                          </p>
+                        </div>
+
+                        <p className="mt-1 text-xs text-slate-500">
+                          {semester.semesterLabel}
+                          {" · "}
+                          {semester.credits}학점
+                        </p>
+
+                        <p className="mt-2 text-xs font-semibold text-slate-700">
+                          {semester.startDate ?? "미정"}
+                          {" ~ "}
+                          {semester.endDate ?? "미정"}
+                        </p>
+                      </div>
+                    )
+                  )}
+                </div>
+              )}
+
+              {/* 성적증명서 안내 */}
+              {needsDocumentReview &&
+                renderDocumentGuide()}
+
+              {/* 필수 주의사항 */}
+              <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+
+                <div className="flex items-center gap-2 text-amber-900">
+                  <ShieldCheck size={21} />
+
+                  <h3 className="text-sm font-black">
+                    반드시 확인해 주세요!
+                  </h3>
+                </div>
+
+                <p className="text-sm leading-6 text-slate-700">
+                  안내된 예상일은 학점은행제 제도 및
+                  한국사회복지사협회 자격증 신청 기준에 따라
+                  이론수업, 현장실습, 행정절차 등
+                  모든 과정이 누락 없이 정상적으로
+                  완료되는 경우를 기준으로 산정한 일정입니다.
+                </p>
+
+                <p className="text-sm leading-6 text-slate-700">
+                  단순히 교육과정을 시작한다고 해서
+                  해당 시기에 자격증 신청이
+                  보장되는 것은 아닙니다.
+                </p>
+
+                <p className="text-sm leading-6 text-slate-700">
+                  학습설계 오류, 과목 누락, 실습 지연,
+                  행정절차 미신청 등이 발생하면
+                  자격증 신청 시기가 늦어질 수 있습니다.
+                </p>
+
+                <p className="text-sm font-black leading-6 text-amber-900">
+                  빠른 시작만큼 중요한 것은
+                  정확한 학습설계와 누락 없는 학사관리입니다.
+                </p>
+
+                <p className="text-xs leading-6 text-slate-600">
+                  교육과정을 선택하기 전 본인의 취득요건과
+                  전체 학사일정, 학사관리 체계를
+                  반드시 확인하시기 바랍니다.
+                  실제 개강일과 실습 선이수 조건은
+                  별도로 확인해야 합니다.
                 </p>
               </div>
-            </div>
+
+              {/* 1급 응시 안내 유지 */}
+              {(education === "4년제" ||
+                education === "대학원") && (
+                <div className="rounded-xl border border-slate-200 bg-white p-4">
+
+                  <p className="text-sm font-bold">
+                    사회복지사 1급 국가시험 안내
+                  </p>
+
+                  <p className="mt-2 text-xs leading-6 text-slate-600">
+                    학사학위 이상 소지자는 사회복지사 2급
+                    관련 교과목 이수 및 국가시험 응시요건을
+                    충족하면 사회복지사 1급 시험에
+                    응시할 수 있습니다.
+                    정확한 응시 가능 여부는 해당 연도
+                    시행계획을 확인해야 합니다.
+                  </p>
+                </div>
+              )}
+
+              {/* 상담 신청 */}
+              <div className="space-y-3 rounded-2xl border border-blue-100 bg-white p-5">
+
+                <h3 className="text-base font-black text-slate-900">
+                  나에게 맞는 정확한 학습설계가 필요하신가요?
+                </h3>
+
+                <p className="text-xs leading-6 text-slate-600">
+                  기존 이수과목과 보유학점을 확인하여
+                  개인별 취득요건과 누락 없는
+                  학습설계를 안내해 드립니다.
+                </p>
+
+                <button
+  type="button"
+  onClick={openStudyConsultation}
+  className="flex min-h-[54px] w-full items-center justify-center gap-2 rounded-xl bg-[#b7ff00] px-4 py-3 text-sm font-black text-[#101410] shadow-sm transition-colors hover:bg-[#a8eb00]"
+>
+  나에게 맞는 취득과정 안내받기
+  <ChevronRight size={18} />
+</button>
+
+                <a
+                  href="/social-worker-guide"
+                  className="block rounded-xl border border-blue-200 py-3 text-center text-sm font-bold text-blue-700"
+                >
+                  사회복지사 2급 취득 가이드 확인
+                </a>
+              </div>
+            </>
           )}
-
-          <div className="rounded-xl bg-blue-50 p-4">
-            <p className="text-xs font-bold text-blue-800">
-              예상일 확인 시 유의사항
-            </p>
-            <p className="mt-2 text-xs leading-6 text-slate-600">
-              본 결과는 학점은행제 공통 학사기준 및
-              한국사회복지사협회 자격 신청 절차를
-              기반으로 산정한 예상 시기입니다.
-              모든 과정을 일정에 맞게 이수하고
-              필요한 행정절차를 완료하는 경우를
-              가정합니다.
-            </p>
-            <p className="mt-2 text-xs leading-6 text-slate-600">
-              실제 개강일, 전적대 학점, 기존 이수과목,
-              실습 및 학점인정 일정에 따라 달라질 수
-              있으며 자격증 발급일을 의미하지 않습니다.
-            </p>
-          </div>
-
-          {(education === "4년제" || education === "대학원") && (
-            <div className="rounded-xl border border-slate-200 bg-white p-4">
-              <p className="text-sm font-bold text-slate-900">
-                사회복지사 1급 국가시험 안내
-              </p>
-              <p className="mt-2 text-xs leading-6 text-slate-600">
-                학사학위 이상 소지자는 사회복지사 2급
-                관련 교과목 이수 및 국가시험 응시요건을
-                충족하면 사회복지사 1급 시험에 응시할
-                수 있습니다. 정확한 응시 가능 여부는
-                해당 연도 시행계획을 확인해야 합니다.
-              </p>
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-2">
-            <a
-              href="/social-worker-guide"
-              className="flex min-h-12 items-center justify-center rounded-xl border border-blue-200 bg-white px-2 text-sm font-bold text-blue-700"
-            >
-              취득 가이드
-            </a>
-
-            <button
-              type="button"
-              onClick={onConsult}
-              className="min-h-12 rounded-xl bg-blue-600 px-2 text-sm font-bold text-white"
-            >
-              상담받기
-            </button>
-          </div>
         </div>
       )}
 
+      {/* 이전 질문 */}
       {step > 0 && (
         <button
           type="button"
-          onClick={() => setStep((prev) => prev - 1)}
-          className="flex items-center gap-1 text-sm font-semibold text-slate-500"
+          onClick={goBack}
+          disabled={calculation.isPending}
+          className="flex items-center gap-1 text-sm font-semibold text-slate-500 disabled:opacity-40"
         >
           <ChevronLeft size={16} />
-          이전 {step === 3 ? "단계" : "질문"}
+          이전 단계
         </button>
       )}
+
+          <Dialog
+        open={consultationOpen}
+        onOpenChange={setConsultationOpen}
+      >
+        <DialogContent
+          className="max-h-[90dvh] w-[calc(100%_-_24px)] max-w-[440px] overflow-y-auto overscroll-contain rounded-[24px] border border-[#303930] bg-[#111511] p-0 text-white shadow-2xl"
+        >
+          <DialogHeader className="sr-only">
+            <DialogTitle>
+              사회복지사 2급 취득과정 상담
+            </DialogTitle>
+
+            <DialogDescription>
+              개인별 자격증 신청 예상일을 바탕으로
+              정확한 취득과정을 안내합니다.
+            </DialogDescription>
+          </DialogHeader>
+
+          {consultationOpen && preStudyPlan && (
+            <ConsultationForm
+              preStudyPlan={preStudyPlan}
+              dialogMode
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
     </SectionShell>
   );
 }
-
 
 
 function FundServiceDetail({
@@ -1513,10 +2352,20 @@ function ResumeEditor(){
  return <SectionShell><div className="rounded-xl bg-purple-50 p-4 text-sm text-slate-700">휴대폰에서 기본 내용을 작성하고 복사할 수 있습니다. 내용은 서버에 저장되지 않으며 화면을 닫으면 사라집니다.</div><Field label="이름"><input className={inputStyle} value={person} onChange={e=>setPerson(e.target.value)}/></Field><Field label="경험 및 강점"><textarea className={inputStyle} rows={5} value={experience} onChange={e=>setExperience(e.target.value)} placeholder="실습, 봉사, 직무 경험 등을 입력해 주세요"/></Field><Field label="지원동기 및 포부"><textarea className={inputStyle} rows={5} value={motivation} onChange={e=>setMotivation(e.target.value)}/></Field><button onClick={()=>navigator.clipboard.writeText(draft).then(()=>alert("작성 내용을 복사했습니다.")).catch(()=>alert("복사에 실패했습니다."))} className="w-full rounded-xl bg-blue-600 py-3 text-sm font-bold text-white">작성 내용 복사하기</button></SectionShell>;
 }
 
-function ConsultationForm() {
+function ConsultationForm({
+  preStudyPlan = null,
+  dialogMode = false,
+}: {
+  preStudyPlan?: PreStudyConsultation | null;
+  dialogMode?: boolean;
+}) {
   const [clientName, setClientName] = useState("");
   const [phone, setPhone] = useState("");
-  const [finalEducation, setFinalEducation] = useState("");
+  const [finalEducation, setFinalEducation] =
+  useState(preStudyPlan?.finalEducation ?? "");
+
+const isPreStudyConsultation =
+  Boolean(preStudyPlan);
   const [preferredContactTime, setPreferredContactTime] = useState("");
   const [customTime, setCustomTime] = useState("");
   const [notes, setNotes] = useState("");
@@ -1528,12 +2377,13 @@ const [privacyExpanded, setPrivacyExpanded] = useState(false);
   const submit = trpc.staffProfile.public.submitConsultation.useMutation();
 
   const timeOptions = [
-    { value: "10~12시", label: "10~12시" },
-    { value: "12~14시", label: "12~14시" },
-    { value: "14~16시", label: "14~16시" },
-    { value: "16~18시", label: "16~18시" },
-    { value: "기타", label: "기타 시간" },
-  ];
+  { value: "10~12시", label: "10~12시" },
+  { value: "12~14시", label: "12~14시" },
+  { value: "14~16시", label: "14~16시" },
+  { value: "16~18시", label: "16~18시" },
+  { value: "시간 무관", label: "시간 무관" },
+  { value: "기타", label: "기타 시간" },
+];
 
   const educationOptions = [
     "고등학교 졸업",
@@ -1571,10 +2421,17 @@ const [privacyExpanded, setPrivacyExpanded] = useState(false);
         ? customTime.trim()
         : preferredContactTime;
 
-    const consultationNotes = [
-  "[사회복지 통합지원센터 유입]",
-  `걱정되는 점: ${notes.trim() || "작성 안 함"}`,
-].join("\n");
+    const consultationNotes = preStudyPlan
+  ? [
+      preStudyPlan.notes,
+      "",
+      "[회원 문의내용]",
+      notes.trim() || "작성 안 함",
+    ].join("\n")
+  : [
+      "[사회복지 통합지원센터 유입]",
+      `걱정되는 점: ${notes.trim() || "작성 안 함"}`,
+    ].join("\n");
 
     try {
       await submit.mutateAsync({
@@ -1584,7 +2441,11 @@ const [privacyExpanded, setPrivacyExpanded] = useState(false);
         finalEducation,
         desiredCourse: "사회복지사 2급",
         preferredContactTime: selectedTime || null,
-        notes: consultationNotes.slice(0, 500),
+        notes: isPreStudyConsultation
+  ? consultationNotes
+  : consultationNotes.slice(0, 500),
+
+isPreStudyConsultation,
       });
       setSubmitted(true);
     } catch (err: any) {
@@ -1618,51 +2479,173 @@ const [privacyExpanded, setPrivacyExpanded] = useState(false);
 
   return (
     <div
-  className={`bg-[#080b08] px-3 pt-5 text-white ${
-    new URLSearchParams(window.location.search).get("embed") === "1"
-      ? "pb-5"
-      : "pb-28"
-  }`}
+  className={
+    dialogMode
+      ? "bg-[#111511] text-white"
+      : `bg-[#080b08] px-3 pt-5 text-white ${
+          new URLSearchParams(window.location.search)
+            .get("embed") === "1"
+            ? "pb-5"
+            : "pb-28"
+        }`
+  }
 >
-      <div className="overflow-hidden rounded-[25px] border border-[#242a24] bg-[#111511] px-4 pb-6 pt-6 shadow-[0_15px_45px_rgba(0,0,0,.15)]">
+      <div
+  className={
+    dialogMode
+      ? "overflow-hidden px-4 pb-5 pt-5"
+      : "overflow-hidden rounded-[25px] border border-[#242a24] bg-[#111511] px-4 pb-6 pt-6 shadow-[0_15px_45px_rgba(0,0,0,.15)]"
+  }
+>
 
-        {/* 브랜드 */}
-        <div className="flex items-center gap-3">
-          <img
-            src={CENTER_SYMBOL}
-            alt="사회복지 통합지원센터"
-            className="h-12 w-12 rounded-xl bg-white object-contain p-1"
+        {dialogMode ? (
+  <>
+    <p className="pr-8 text-[11px] font-bold tracking-tight text-[#b7ff00]">
+      사회복지통합지원센터
+    </p>
+
+    <h2 className="mt-3 text-[23px] font-black leading-[1.4] tracking-[-0.045em] text-white">
+      사회복지사 2급,
+      <br />
+      내 취득과정을 한눈에 확인하며
+      <br />
+      <span className="text-[#b7ff00]">
+        안전하게 준비하세요!
+      </span>
+    </h2>
+
+    {/* 취득 주의사항 */}
+    <div className="mt-4 rounded-xl border border-red-400/20 bg-red-500/[0.07] p-3">
+      <div className="flex items-center gap-1.5">
+        <span className="text-[13px] font-black text-red-400">
+          ⚠ 반드시 주의하세요!
+        </span>
+      </div>
+
+      <p className="mt-2 text-[13px] font-bold leading-5 text-white">
+        수업만 끝난다고 자격증이
+        나오는 것이 아닙니다.
+      </p>
+
+      <p className="mt-2 text-[12px] leading-[1.7] text-slate-300">
+        보건복지부 소관 국가자격증으로
+        모든 교육원에 동일한 취득 기준이
+        적용됩니다.
+      </p>
+
+      <p className="mt-2 text-[12px] font-bold leading-[1.7] text-red-300">
+        최단기간 취득을 위해서는 정확한 학습설계와
+        내 학사일정을 직접 확인할 수 있는
+        관리 시스템이 중요합니다.
+      </p>
+    </div>
+
+    {/* 통합 지원 서비스 */}
+    <div className="mt-4 rounded-xl border border-[#303b29] bg-[#1a2216] p-3">
+      <p className="text-[12px] font-black text-[#b7ff00]">
+        시작부터 취업 준비까지 통합 지원
+      </p>
+
+      <div className="mt-3 space-y-3">
+        <div className="flex items-center gap-2">
+          <ShieldCheck
+            size={18}
+            className="shrink-0 text-[#b7ff00]"
           />
-          <div>
-            <p className="text-[13px] font-extrabold">
-              사회복지 통합지원센터
-            </p>
-            <p className="mt-1 text-[11px] text-slate-400">
-  사회복지사 2급 취득 전문 상담
-</p>
-          </div>
-        </div>
 
-        {/* 메인 문구 */}
-        <div className="mt-7">
-          <span className="rounded-full border border-[#35462a] bg-[#202b19] px-3 py-1.5 text-[10px] font-bold text-[#b7ff00]">
-            SOCIAL WORKER CONSULTATION
+          <span className="text-[12px] font-bold text-white">
+            자체 개발 학생안전 학사관리시스템
           </span>
-          <h1 className="mt-4 text-[25px] font-black leading-[1.3] tracking-tight">
-            사회복지사 2급
-            <br />
-            <span className="text-[#b7ff00]">무료 상담 신청</span>
-          </h1>
-          <p className="mt-3 text-[12px] leading-5 text-slate-400">
-            취득기간부터 실습, 학사일정까지
-            <br />
-            궁금한 내용을 편하게 상담받아보세요.
-          </p>
         </div>
 
-        <div className="my-6 h-px bg-[#2b322b]" />
+        <div className="flex items-center gap-2">
+          <MapPin
+            size={18}
+            className="shrink-0 text-[#b7ff00]"
+          />
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+          <span className="text-[12px] font-bold leading-5 text-white">
+            내 주변 실습기관 찾기 및
+            실습배정지원센터 운영
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <BriefcaseBusiness
+            size={18}
+            className="shrink-0 text-[#b7ff00]"
+          />
+
+          <span className="text-[12px] font-bold text-white">
+            사회복지 일자리 직접 확인
+          </span>
+        </div>
+      </div>
+
+      <p className="mt-3 text-[10px] leading-4 text-slate-400">
+        일부 학사관리 및 취업지원 서비스는
+        등록 회원에게 제공됩니다.
+      </p>
+    </div>
+
+    <div className="my-4 h-px bg-[#303930]" />
+
+    <h3 className="text-[17px] font-black tracking-tight">
+      나에게 맞는 취득과정 안내받기
+    </h3>
+
+    <p className="mb-4 mt-1.5 text-[11px] leading-5 text-slate-400">
+      계산 결과를 바탕으로 전문 상담사가
+      정확한 취득요건과 학습일정을 안내해 드립니다.
+    </p>
+  </>
+) : (
+  <>
+    <div className="flex items-center gap-3">
+      <img
+        src={CENTER_SYMBOL}
+        alt="사회복지 통합지원센터"
+        className="h-12 w-12 rounded-xl bg-white object-contain p-1"
+      />
+
+      <div>
+        <p className="text-[13px] font-extrabold">
+          사회복지 통합지원센터
+        </p>
+
+        <p className="mt-1 text-[11px] text-slate-400">
+          사회복지사 2급 취득 전문 상담
+        </p>
+      </div>
+    </div>
+
+    <div className="mt-7">
+      <span className="rounded-full border border-[#35462a] bg-[#202b19] px-3 py-1.5 text-[10px] font-bold text-[#b7ff00]">
+        SOCIAL WORKER CONSULTATION
+      </span>
+
+      <h1 className="mt-4 text-[25px] font-black leading-[1.3] tracking-tight">
+        사회복지사 2급
+        <br />
+        <span className="text-[#b7ff00]">
+          무료 상담 신청
+        </span>
+      </h1>
+
+      <p className="mt-3 text-[12px] leading-5 text-slate-400">
+        취득기간부터 실습, 학사일정까지
+        <br />
+        궁금한 내용을 편하게 상담받아보세요.
+      </p>
+    </div>
+
+    <div className="my-6 h-px bg-[#2b322b]" />
+  </>
+)}
+        <form
+  onSubmit={handleSubmit}
+  className={dialogMode ? "space-y-3.5" : "space-y-5"}
+>
 
           {/* 이름 · 연락처 */}
           <div className="grid grid-cols-2 gap-2.5">
@@ -1699,28 +2682,39 @@ const [privacyExpanded, setPrivacyExpanded] = useState(false);
           </div>
 
           {/* 최종학력 */}
-          <label className="block">
-            <span className="mb-2 block text-[11px] font-bold">
-              최종학력 <span className="text-[#b7ff00]">*</span>
-            </span>
-            <select
-              className={fieldClass}
-              value={finalEducation}
-              onChange={(e) => setFinalEducation(e.target.value)}
-              required
-            >
-              <option value="">최종학력 선택</option>
-              {educationOptions.map((item) => (
-                <option key={item} value={item}>{item}</option>
-              ))}
-            </select>
-          </label>
+{!isPreStudyConsultation && (
+  <label className="block">
+    <span className="mb-2 block text-[11px] font-bold">
+      최종학력
+      <span className="text-[#b7ff00]"> *</span>
+    </span>
+
+    <select
+      className={fieldClass}
+      value={finalEducation}
+      onChange={(e) =>
+        setFinalEducation(e.target.value)
+      }
+      required
+    >
+      <option value="">
+        최종학력 선택
+      </option>
+
+      {educationOptions.map(item => (
+        <option key={item} value={item}>
+          {item}
+        </option>
+      ))}
+    </select>
+  </label>
+)}
 
           {/* 상담 가능 시간 */}
           <div>
             <div className="mb-2 flex items-center justify-between">
               <span className="text-[11px] font-bold">
-                상담 가능 시간
+                희망 상담 시간대
               </span>
               <span className="text-[10px] text-slate-500">
                 선택사항
@@ -1763,27 +2757,34 @@ const [privacyExpanded, setPrivacyExpanded] = useState(false);
             )}
           </div>
 
-          {/* 걱정되는 점 */}
-          <label className="block">
-            <span className="mb-2 flex items-center justify-between">
-              <span className="text-[11px] font-bold">
-                걱정되는 점
-              </span>
-              <span className="text-[10px] text-slate-500">
-                선택사항
-              </span>
-            </span>
-            <textarea
-              className="min-h-[100px] w-full resize-none rounded-xl border border-[#343b35] bg-[#202520] p-3 text-[13px] leading-6 text-white outline-none placeholder:text-[#889188] focus:border-[#b7ff00]"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              maxLength={350}
-              placeholder="취득기간, 실습, 수업 등 걱정되거나 궁금한 점을 남겨주세요."
-            />
-            <span className="mt-1 block text-right text-[10px] text-slate-500">
-              {notes.length} / 350
-            </span>
-          </label>
+          {/* 걱정되거나 궁금하신 점 */}
+<label className="block">
+  <span className="mb-2 flex items-center justify-between gap-2">
+    <span className="text-[11px] font-bold">
+      진행하시면서 걱정되거나 궁금하신 점
+    </span>
+
+    <span className="shrink-0 text-[10px] text-slate-500">
+      선택사항
+    </span>
+  </span>
+
+  <textarea
+    className={`${
+      dialogMode
+        ? "min-h-[72px]"
+        : "min-h-[100px]"
+    } w-full resize-none rounded-xl border border-[#343b35] bg-[#202520] p-3 text-[13px] leading-5 text-white outline-none placeholder:text-[#889188] focus:border-[#b7ff00]`}
+    value={notes}
+    onChange={(e) => setNotes(e.target.value)}
+    maxLength={350}
+    placeholder="직장 병행, 학습 부담, 실습, 취업 등 자유롭게 작성해 주세요."
+  />
+
+  <span className="mt-1 block text-right text-[10px] text-slate-500">
+    {notes.length} / 350
+  </span>
+</label>
 
           
 {/* 개인정보 동의 */}
@@ -1828,7 +2829,11 @@ const [privacyExpanded, setPrivacyExpanded] = useState(false);
 
       <div>
         <b className="text-white">수집 항목</b>
-        <p>이름, 연락처, 최종학력, 상담 희망시간, 문의내용</p>
+        <p>
+  {isPreStudyConsultation
+    ? "이름, 연락처, 최종학력, 상담 희망시간, 문의내용, 기존 이수과목 및 이수연도, 보유학점, 학습설계 계산 결과"
+    : "이름, 연락처, 최종학력, 상담 희망시간, 문의내용"}
+</p>
       </div>
 
       <div>
@@ -1862,9 +2867,17 @@ const [privacyExpanded, setPrivacyExpanded] = useState(false);
             className="h-[54px] w-full rounded-xl bg-[#b7ff00] text-[15px] font-black text-black shadow-[0_8px_22px_rgba(183,255,0,.18)] transition-opacity disabled:opacity-40"
           >
             {submit.isPending
-              ? "상담 접수 중..."
-              : "무료 상담 신청하기"}
+  ? "상담 접수 중..."
+  : dialogMode
+    ? "상담 접수하기"
+    : "무료 상담 신청하기"}
           </button>
+
+{dialogMode && (
+  <p className="text-center text-[10px] leading-4 text-slate-400">
+    상담 신청은 교육과정 등록과 별개입니다.
+  </p>
+)}
 
           <div className="flex items-center justify-center gap-1.5 text-[10px] text-slate-500">
             <ShieldCheck size={13} className="text-[#b7ff00]" />
@@ -2648,6 +3661,10 @@ useEffect(() => {
     return "consultation";
   }
 
+  if (requested === "certificate") {
+    return "certificate";
+  }
+
   return "home";
 });
  const [menu,setMenu]=useState(false);
@@ -2670,6 +3687,10 @@ useEffect(() => {
     window.location.href = "/career-test";
     return;
   }
+if (next === "benefits") {
+  window.location.href = "/social-worker-benefits";
+  return;
+}
 
   setSection(next);
   setMenu(false);
@@ -2984,7 +4005,9 @@ data-support-consultation={
   />
 )}
  {section==="funds"&&<FundWizard/>}
- {section==="certificate"&&<CertificateWizard onConsult={()=>go("consultation")}/>}
+ {section === "certificate" && (
+  <CertificateWizard />
+)}
  {section === "practice" && (
   <PracticePage
     portalToken={isPortalLoggedIn ? portalToken : ""}

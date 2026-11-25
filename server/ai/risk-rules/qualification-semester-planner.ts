@@ -1378,6 +1378,62 @@ function sortSubjectsForSemesterPlanning(
   );
 }
 
+function resolvePublicGuideSemesterLabel(
+  dateValue: string
+): string {
+  const date = parseBaseDate(dateValue);
+
+  const { year, month, day } = date;
+
+  if (
+    month < 5 ||
+    (month === 5 && day <= 15)
+  ) {
+    return `${year}년 1학기`;
+  }
+
+  if (
+    month < 11 ||
+    (month === 11 && day <= 15)
+  ) {
+    return `${year}년 2학기`;
+  }
+
+  return `${year + 1}년 1학기`;
+}
+
+function resolvePublicGuideSemesterStartDate(
+  params: {
+    candidateDate: string;
+    semesterLabel: string;
+  }
+): string | null {
+  const target = parseSemesterLabel(
+    params.semesterLabel
+  );
+
+  if (!target) return null;
+
+  const earliestDate =
+    target.semesterHalf === 1
+      ? `${target.year - 1}-11-16`
+      : `${target.year}-05-16`;
+
+  const startDate =
+    params.candidateDate > earliestDate
+      ? params.candidateDate
+      : earliestDate;
+
+  if (
+    resolvePublicGuideSemesterLabel(startDate) !==
+    params.semesterLabel
+  ) {
+    return null;
+  }
+
+  return startDate;
+}
+
 export function planQualificationSemesters(
   params: {
     subjectPlan:
@@ -1408,6 +1464,9 @@ export function planQualificationSemesters(
  */
 baseDate?:
   string | null;
+
+// 공개 자격증 예상일 계산 전용
+allowOverlappingSemesters?: boolean;
   }
 ): QualificationSemesterPlannerResult {
  const today =
@@ -1415,17 +1474,23 @@ baseDate?:
     params.baseDate
   );
 
+const usePublicGuideShortestSchedule =
+  params.allowOverlappingSemesters === true &&
+  params.existingSemesters.length === 0;
+
+const resolvePlanningSemesterStartDate =
+  usePublicGuideShortestSchedule
+    ? resolvePublicGuideSemesterStartDate
+    : resolveEarliestStartDateForSemester;
+
 const baseDateSemesterLabel =
-  resolveSemesterLabelFromDate({
-    year:
-      today.year,
-
-    month:
-      today.month,
-
-    day:
-      today.day,
-  });
+  usePublicGuideShortestSchedule
+    ? resolvePublicGuideSemesterLabel(today.date)
+    : resolveSemesterLabelFromDate({
+        year: today.year,
+        month: today.month,
+        day: today.day,
+      });
 
   const warnings:
     string[] =
@@ -2242,16 +2307,7 @@ startBasis =
      * 첫 귀속학기를 추정한다.
      */
     firstSemesterLabel =
-      resolveSemesterLabelFromDate({
-        year:
-          today.year,
-
-        month:
-          today.month,
-
-        day:
-          today.day,
-      });
+  baseDateSemesterLabel;
 
     nextSemesterOrder =
       1;
@@ -2432,7 +2488,7 @@ if (
  * → 2026-10-01
  */
 const resolvedFirstSemesterStartDate =
-  resolveEarliestStartDateForSemester({
+  resolvePlanningSemesterStartDate({
     candidateDate:
   firstSemesterCandidateDate,
 
@@ -2573,7 +2629,7 @@ let currentSemesterStartDate =
       }
 
       const skippedSemesterStartDate =
-        resolveEarliestStartDateForSemester({
+        resolvePlanningSemesterStartDate({
           candidateDate:
             currentSemesterStartDate,
 
@@ -2772,7 +2828,7 @@ const nextExistingActualStartDate =
   ).trim();
 
 const calculatedNextSemesterStartDate =
-  resolveEarliestStartDateForSemester({
+  resolvePlanningSemesterStartDate({
     candidateDate:
       currentSemesterStartDate,
 
@@ -2886,6 +2942,15 @@ estimatedEndDate:
   currentSemesterEndDate,
     });
 
+    // 공개 계산기에서 모든 과목 배정이 완료되면
+    // 불필요한 다음 학기 시작일 계산을 하지 않음
+    if (
+      usePublicGuideShortestSchedule &&
+      subjectIndex >= subjects.length
+    ) {
+      break;
+    }
+
     const nextLabel =
       getNextSemesterLabel(
         currentSemesterLabel
@@ -2936,10 +3001,83 @@ const nextExistingActualStartDate =
     ""
   ).trim();
 
+// 다음 귀속학기 정보
+const nextSemesterInfo =
+  parseSemesterLabel(nextLabel);
+
+// 현재 학기 배정 후 남은 과목
+const remainingSubjects =
+  subjects.slice(subjectIndex);
+
+// 남은 과목의 전체 학점
+const remainingSubjectCredits =
+  remainingSubjects.reduce(
+    (sum, subject) =>
+      sum + normalizeCredits(subject.credits),
+    0
+  );
+
+// 다음 귀속연도에 이미 배정된 학점
+const nextYearUsedCredits =
+  nextSemesterInfo
+    ? annualCreditMap.get(
+        nextSemesterInfo.year
+      ) ?? 0
+    : annualMaximumCredits;
+
+// 다음 귀속연도에 수강 가능한 학점
+const nextYearRemainingCredits =
+  Math.max(
+    annualMaximumCredits -
+      nextYearUsedCredits,
+    0
+  );
+
+// 다음 학기에 이미 등록된 학점
+const nextExistingSemesterCredits =
+  nextExistingSemester
+    ? getExistingSemesterCredits(
+        nextExistingSemester
+      ).credits
+    : 0;
+
+// 다음 학기에 실제로 배정 가능한 최대 학점
+const nextSemesterAvailableCredits =
+  Math.min(
+    Math.max(
+      semesterMaximumCredits -
+        nextExistingSemesterCredits,
+      0
+    ),
+    nextYearRemainingCredits
+  );
+
+// 남은 과목 전체를 다음 학기에 배정할 수 있다면
+// 다음 학기가 마지막 수강학기임
+const isNextSemesterFinal =
+  nextSemesterInfo !== null &&
+  remainingSubjects.length > 0 &&
+  remainingSubjects.every(
+    subject =>
+      normalizeCredits(subject.credits) > 0
+  ) &&
+  remainingSubjectCredits <=
+    nextSemesterAvailableCredits;
+
+// 공개 계산기에서 마지막 학기만 중복 배정 허용
+const allowNextSemesterOverlap =
+  usePublicGuideShortestSchedule &&
+  isNextSemesterFinal;
+
 const calculatedNextSemesterStartDate =
-  resolveEarliestStartDateForSemester({
+  resolvePlanningSemesterStartDate({
     candidateDate:
-      nextSemesterCandidateDate,
+      allowNextSemesterOverlap
+        ? addDaysToDate(
+            currentSemesterStartDate,
+            1
+          )
+        : nextSemesterCandidateDate,
 
     semesterLabel:
       nextLabel,

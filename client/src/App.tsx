@@ -92,6 +92,7 @@ import SocialWorkerIntroPage from "@/pages/SocialWorkerIntroPage";
 import VolunteerFinderPage from "@/pages/VolunteerFinderPage";
 import SalaryCalculatorPage from "@/pages/SalaryCalculatorPage";
 import SocialWorkerCareerTestPage from "@/pages/SocialWorkerCareerTestPage";
+import SocialWorkerBenefitsPage from "@/pages/SocialWorkerBenefitsPage";
 
 function SuperhostRoute({
   component: Component,
@@ -270,6 +271,11 @@ function PublicRouter() {
 <Route
   path="/career-test"
   component={SocialWorkerCareerTestPage}
+/>
+
+<Route
+  path="/social-worker-benefits"
+  component={SocialWorkerBenefitsPage}
 />
 
 <Route
@@ -600,7 +606,10 @@ function AppContent() {
     const matchesPath = (base: string) =>
       path === base || path.startsWith(`${base}/`);
 
-   if (matchesPath("/career-test")) {
+   if (matchesPath("/social-worker-benefits")) {
+  document.title =
+    "자격증 활용백과 | 사회복지통합지원센터";
+} else if (matchesPath("/career-test")) {
   document.title =
     "사회복지사 진로·성향 테스트 | 사회복지통합지원센터";
 } else if (matchesPath("/salary-calculator")) {
@@ -640,6 +649,7 @@ function AppContent() {
 location === "/volunteer" ||
 location === "/salary-calculator" ||
 location === "/career-test" ||
+location === "/social-worker-benefits" ||
 location === "/employment-center" ||
   location.startsWith("/form/") ||
   location.startsWith("/ad-form/") ||

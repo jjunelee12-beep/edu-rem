@@ -60559,6 +60559,8 @@ export async function createPublicStaffConsultation(
 
     preferredContactTime?: string | null;
     notes?: string | null;
+
+isPreStudyConsultation?: boolean;
   }
 ) {
   const db =
@@ -60798,8 +60800,10 @@ const notes =
 
     consultDate,
 
-    channel:
-      "public_profile",
+   channel:
+  params.isPreStudyConsultation
+    ? "사회복지통합지원센터"
+    : "public_profile",
 
     clientName,
     phone,

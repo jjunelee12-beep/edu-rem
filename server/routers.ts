@@ -13,6 +13,8 @@ import { z } from "zod";
 import * as db from "./db";
 import {
   runSocialWorkerGuideCalculation,
+  getSocialWorkerGuideSubjectOptions,
+  type SocialWorkerGuidePersonalInput,
 } from "./social-worker-guide-calculator";
 import {
   getOrganizationById,
@@ -4003,6 +4005,315 @@ return {
   
   // ─── 사회복지사 2급 공개 취득가이드 ───────────────────
   socialWorkerGuide: router({
+
+    // 공개 사회복지사 필수·선택과목 조회
+    getSubjectOptions: publicProcedure
+      .query(async () => {
+        return getSocialWorkerGuideSubjectOptions(
+          WITHONE_ORGANIZATION_ID
+        );
+      }),
+
+// 개인별 자격증 신청 예상일 계산
+calculatePersonal: publicProcedure
+  .input(
+    z.object({
+      startDate: z.string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/),
+
+      finalEducation: z.enum([
+        "고졸",
+        "중퇴",
+        "2년제",
+        "3년제",
+        "4년제",
+        "대학원",
+      ]),
+
+      previousStudy: z.enum([
+        "none",
+        "yes",
+        "unknown",
+      ]),
+
+      completedSubjects: z.array(
+        z.object({
+          subjectName: z.string()
+            .trim()
+            .min(1)
+            .max(100),
+
+          completionYear: z.number()
+            .int()
+            .min(1950)
+            .max(new Date().getFullYear())
+            .nullable(),
+        })
+      ).max(100),
+
+      creditStatus: z.enum([
+        "none",
+        "known",
+        "unknown",
+      ]),
+
+      existingCredits: z.object({
+        major: z.number()
+          .int()
+          .min(0)
+          .max(140),
+
+        liberal: z.number()
+          .int()
+          .min(0)
+          .max(140),
+
+        general: z.number()
+          .int()
+          .min(0)
+          .max(140),
+      }),
+
+      hasOtherSubjects: z.boolean()
+        .default(false),
+    })
+  )
+  .mutation(async ({ input }) => {
+    // 1. 실제 날짜 검증
+    const [year, month, day] =
+      input.startDate
+        .split("-")
+        .map(Number);
+
+    const parsed = new Date(
+      Date.UTC(year, month - 1, day)
+    );
+
+    if (
+      parsed.getUTCFullYear() !== year ||
+      parsed.getUTCMonth() + 1 !== month ||
+      parsed.getUTCDate() !== day
+    ) {
+      throw new Error(
+        "올바른 시작 예정일을 선택해 주세요."
+      );
+    }
+
+    // 2. 최종학력별 학위 필요 여부
+    const educationGroup =
+      input.finalEducation === "고졸" ||
+      input.finalEducation === "중퇴"
+        ? "high_school" as const
+        : "college_or_higher" as const;
+
+    const requiresDegree =
+      educationGroup === "high_school";
+
+    // 3. 개인별 계산 입력 구성
+    const personalInput:
+      SocialWorkerGuidePersonalInput = {
+        educationGroup,
+
+        previousStudy:
+          input.previousStudy,
+
+        completedSubjects:
+          input.previousStudy === "yes"
+            ? input.completedSubjects
+            : [],
+
+        creditStatus:
+          requiresDegree
+            ? input.creditStatus
+            : "none",
+
+        existingCredits:
+          requiresDegree &&
+          input.creditStatus === "known"
+            ? input.existingCredits
+            : {
+                major: 0,
+                liberal: 0,
+                general: 0,
+              },
+      };
+
+    // 4. 기존 공통 계산 엔진 실행
+    const result =
+      await runSocialWorkerGuideCalculation({
+        startDate: input.startDate,
+
+        educationGroup,
+
+        organizationId:
+          WITHONE_ORGANIZATION_ID,
+
+        personalInput,
+      });
+
+    const calculation =
+      result.calculation;
+
+    const personalAnalysis =
+      "personalAnalysis" in result
+        ? result.personalAnalysis
+        : null;
+
+    const applicationDate =
+      calculation?.success &&
+      "applicationDate" in calculation
+        ? calculation.applicationDate
+        : null;
+
+    const match = applicationDate
+      ? String(applicationDate).match(
+          /^(\d{4})-(\d{2})/
+        )
+      : null;
+
+    // 5. 상담 시 추가 확인 필요 여부
+    const requiresReview =
+      !result.success ||
+      input.previousStudy === "unknown" ||
+      (
+        input.previousStudy === "yes" &&
+        input.completedSubjects.length === 0
+      ) ||
+      (
+        requiresDegree &&
+        input.creditStatus !== "none"
+      ) ||
+      input.hasOtherSubjects ||
+      Boolean(
+        personalAnalysis?.requiresReview
+      ) ||
+      Boolean(
+        personalAnalysis?.recognizedSubjects.length
+      );
+
+    // 6. 공개 화면에 필요한 결과만 반환
+    return {
+      success:
+        Boolean(result.success && match),
+
+      finalEducation:
+        input.finalEducation,
+
+      educationGroup,
+
+      requiresDegree,
+
+      startDate:
+        input.startDate,
+
+      lawVersion:
+        personalAnalysis?.lawVersion ?? null,
+
+      lawConfirmed:
+        personalAnalysis?.lawResolution
+          .isConfirmed ?? false,
+
+      expectedApplicationDate:
+        applicationDate,
+
+      expectedApplicationYear:
+        match ? Number(match[1]) : null,
+
+      expectedApplicationMonth:
+        match ? Number(match[2]) : null,
+
+      semesterCount:
+        calculation &&
+        "semesterCount" in calculation
+          ? calculation.semesterCount
+          : null,
+
+      studyEndDate:
+        calculation &&
+        "studyEndDate" in calculation
+          ? calculation.studyEndDate
+          : null,
+
+      completedSubjectCount:
+        personalAnalysis
+          ?.recognizedSubjects.length ?? 0,
+
+      remainingSubjectCount:
+        personalAnalysis
+          ?.remainingSubjectCount ?? null,
+
+      qualificationRemainingSubjectCount:
+        personalAnalysis
+          ?.qualificationRequirements
+          .remainingSubjects ?? null,
+
+      recognizedSubjects:
+        personalAnalysis
+          ?.recognizedSubjects.map(
+            subject => ({
+              subjectName:
+                subject.subjectName,
+
+              credits:
+                subject.credits,
+            })
+          ) ?? [],
+
+      unmatchedSubjects:
+        personalAnalysis
+          ?.unmatchedSubjects ?? [],
+
+      degreeRequirements:
+        personalAnalysis?.degreeRequirements
+          ? {
+              requiredTotalCredits:
+                personalAnalysis.degreeRequirements
+                  .requiredTotalCredits,
+
+              currentTotalCredits:
+                personalAnalysis.degreeRequirements
+                  .currentTotalCredits,
+
+              remainingTotalCredits:
+                personalAnalysis.degreeRequirements
+                  .remainingTotalCredits,
+
+              remainingMajorCredits:
+                personalAnalysis.degreeRequirements
+                  .remainingMajorCredits,
+
+              remainingLiberalCredits:
+                personalAnalysis.degreeRequirements
+                  .remainingLiberalCredits,
+            }
+          : null,
+
+      semesters:
+        calculation?.semesterPlan
+          ?.semesters.map(semester => ({
+            semesterLabel:
+              semester.semesterLabel,
+
+            subjectCount:
+              semester.subjectCount,
+
+            credits:
+              semester.semesterCredits,
+
+            startDate:
+              semester.estimatedStartDate,
+
+            endDate:
+              semester.estimatedEndDate,
+          })) ?? [],
+
+      requiresReview,
+
+      notice:
+        "이론수업, 현장실습 및 행정절차가 누락 없이 정상적으로 완료되는 경우의 예상 일정입니다. 실제 자격증 신청 시기는 학점 인정 여부와 교육원 개강 일정, 실습 선이수 조건 등에 따라 달라질 수 있습니다.",
+    };
+  }),
+
     getCalculationBasis: publicProcedure
       .input(
         z.object({
@@ -4035,12 +4346,12 @@ return {
         }
 
         const firstSemester =
-          month < 5 || (month === 5 && day < 15);
+  month < 5 || (month === 5 && day <= 15);
 
-        const secondSemester =
-          (month === 5 && day >= 15) ||
-          (month > 5 && month < 11) ||
-          (month === 11 && day < 15);
+const secondSemester =
+  (month === 5 && day >= 16) ||
+  (month > 5 && month < 11) ||
+  (month === 11 && day <= 15);
 
         const semesterYear =
           firstSemester || secondSemester ? year : year + 1;
@@ -13126,20 +13437,34 @@ return {
                 .optional(),
 
             notes:
-              z
-                .string()
-                .trim()
-                .max(
-                  500,
-                  "문의내용은 500자 이내로 입력해주세요."
-                )
-                .nullable()
-                .optional(),
+  z
+    .string()
+    .trim()
+    .max(
+      10000,
+      "문의내용이 너무 깁니다."
+    )
+    .nullable()
+    .optional(),
+
+isPreStudyConsultation:
+  z.boolean().optional().default(false),
           })
         )
         .mutation(
           async ({ input }) => {
-            return db.createPublicStaffConsultation({
+  if (
+    !input.isPreStudyConsultation &&
+    (input.notes?.length ?? 0) > 500
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "문의내용은 500자 이내로 입력해주세요.",
+      400
+    );
+  }
+
+  return db.createPublicStaffConsultation({
               publicToken:
                 input.publicToken,
 
@@ -13162,6 +13487,9 @@ return {
               notes:
                 input.notes ??
                 null,
+
+isPreStudyConsultation:
+  input.isPreStudyConsultation,
             });
           }
         ),

@@ -5824,57 +5824,168 @@ app.get("/og/practice-apply/:slug", (req, res) => {
   `);
 });
 
-// 사회복지 통합지원센터 카카오톡 OG
+// 사회복지 통합지원센터 서비스별 카카오톡 OG
 app.get("/og/employment-center", (req, res) => {
-  const isWelfareDomain = req.query.site === "welfareon";
+  const isWelfareDomain =
+    req.query.site === "welfareon";
 
-  const targetUrl = isWelfareDomain
+  const origin = isWelfareDomain
     ? "https://welfareon.kr"
-    : "https://edu-crm-five.vercel.app/employment-center";
+    : "https://edu-crm-five.vercel.app";
 
-  const imageUrl =
-    "https://edu-crm-five.vercel.app/images/employment-center/social-welfare-og.png";
+  const imageBase =
+    `${origin}/images/employment-center`;
 
-  const title = "사회복지 통합지원센터";
+  const section = String(
+    req.query.section || ""
+  );
 
-  const description =
-    "사회복지 일자리·실습기관·지원금 정보부터 사회복지사 2급 취득 가이드까지 한곳에서 확인하세요.";
+  let targetUrl = isWelfareDomain
+    ? `${origin}/`
+    : `${origin}/employment-center`;
 
-  res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.setHeader("Cache-Control", "public, max-age=300");
+  let imageUrl =
+    `${imageBase}/social-welfare-og.png`;
+
+  let title =
+    "사회복지 통합지원센터";
+
+  let description =
+    "자격증 신청 예상일부터 일자리, 실습기관, 급여·호봉, 진로·성향 테스트까지 사회복지의 모든 정보를 한곳에서 확인하세요.";
+
+  // 자격증 신청 예상일
+  if (section === "certificate") {
+    targetUrl =
+      `${origin}/employment-center?section=certificate`;
+
+    imageUrl =
+      `${imageBase}/og-certificate.png`;
+
+    title =
+      "사회복지사 2급 자격증 신청 예상일";
+
+    description =
+      "나는 언제 사회복지사 2급을 취득할 수 있을까? 최종학력과 기존 이수과목을 바탕으로 나의 자격증 신청 예상일을 확인해 보세요.";
+  }
+
+  // 사회복지사 진로·성향 테스트
+  if (section === "careerTest") {
+    targetUrl =
+      `${origin}/career-test`;
+
+    imageUrl =
+      `${imageBase}/og-career-test.png`;
+
+    title =
+      "사회복지사 2급 진로·성향 테스트";
+
+    description =
+      "나에게 어울리는 사회복지 분야는? 나의 성향을 분석하고 적합한 사회복지 직업과 진로를 확인해 보세요.";
+  }
+
+  res.setHeader(
+    "Content-Type",
+    "text/html; charset=utf-8"
+  );
+
+  res.setHeader(
+    "Cache-Control",
+    "public, max-age=300"
+  );
 
   return res.status(200).send(`
     <!DOCTYPE html>
     <html lang="ko">
       <head>
         <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta
+          name="viewport"
+          content="width=device-width, initial-scale=1"
+        />
 
         <title>${title}</title>
-        <meta name="description" content="${description}" />
+
+        <meta
+          name="description"
+          content="${description}"
+        />
 
         <meta property="og:type" content="website" />
         <meta property="og:locale" content="ko_KR" />
-        <meta property="og:title" content="${title}" />
-        <meta property="og:description" content="${description}" />
-        <meta property="og:image" content="${imageUrl}" />
-        <meta property="og:image:width" content="1200" />
-        <meta property="og:image:height" content="630" />
-        <meta property="og:url" content="${targetUrl}" />
-        <meta property="og:site_name" content="사회복지 통합지원센터" />
 
-        <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content="${title}" />
-        <meta name="twitter:description" content="${description}" />
-        <meta name="twitter:image" content="${imageUrl}" />
+        <meta
+          property="og:title"
+          content="${title}"
+        />
 
-        <meta http-equiv="refresh" content="0;url=${targetUrl}" />
+        <meta
+          property="og:description"
+          content="${description}"
+        />
+
+        <meta
+          property="og:image"
+          content="${imageUrl}"
+        />
+
+        <meta
+          property="og:image:secure_url"
+          content="${imageUrl}"
+        />
+
+        <meta
+          property="og:image:type"
+          content="image/png"
+        />
+
+        <meta
+          property="og:image:alt"
+          content="${title}"
+        />
+
+        <meta
+          property="og:url"
+          content="${targetUrl}"
+        />
+
+        <meta
+          property="og:site_name"
+          content="사회복지 통합지원센터"
+        />
+
+        <meta
+          name="twitter:card"
+          content="summary_large_image"
+        />
+
+        <meta
+          name="twitter:title"
+          content="${title}"
+        />
+
+        <meta
+          name="twitter:description"
+          content="${description}"
+        />
+
+        <meta
+          name="twitter:image"
+          content="${imageUrl}"
+        />
+
+        <link
+          rel="canonical"
+          href="${targetUrl}"
+        />
       </head>
+
       <body>
-        <script>
-          window.location.replace(${JSON.stringify(targetUrl)});
-        </script>
-        <a href="${targetUrl}">사회복지 통합지원센터 바로가기</a>
+        <h1>${title}</h1>
+        <p>${description}</p>
+
+        <a href="${targetUrl}">
+          서비스 바로가기
+        </a>
       </body>
     </html>
   `);

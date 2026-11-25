@@ -1,6 +1,41 @@
 {
   "rewrites": [
     {
+      "source": "/employment-center",
+  "has": [
+    {
+      "type": "host",
+      "value": "(www\\.)?welfareon\\.kr"
+    },
+    {
+      "type": "query",
+      "key": "section",
+      "value": "certificate"
+    },
+    {
+      "type": "header",
+      "key": "user-agent",
+      "value": ".*(kakaotalk-scrap|facebookexternalhit|Twitterbot|Slackbot).*"
+    }
+  ],
+  "destination": "https://edu-crm-api-production.up.railway.app/og/employment-center?site=welfareon&section=certificate"
+},
+{
+  "source": "/career-test",
+  "has": [
+    {
+      "type": "host",
+      "value": "(www\\.)?welfareon\\.kr"
+    },
+    {
+      "type": "header",
+      "key": "user-agent",
+      "value": ".*(kakaotalk-scrap|facebookexternalhit|Twitterbot|Slackbot).*"
+    }
+  ],
+  "destination": "https://edu-crm-api-production.up.railway.app/og/employment-center?site=welfareon&section=careerTest"
+},
+{
   "source": "/",
   "has": [
     {
@@ -15,17 +50,32 @@
   ],
   "destination": "https://edu-crm-api-production.up.railway.app/og/employment-center?site=welfareon"
 },
+{
+  "source": "/employment-center",
+  "has": [
     {
-      "source": "/employment-center",
-      "has": [
-        {
-          "type": "header",
-          "key": "user-agent",
-          "value": ".*(kakaotalk-scrap|facebookexternalhit|Twitterbot|Slackbot).*"
-        }
-      ],
-      "destination": "https://edu-crm-api-production.up.railway.app/og/employment-center"
+      "type": "host",
+      "value": "(www\\.)?welfareon\\.kr"
     },
+    {
+      "type": "header",
+      "key": "user-agent",
+      "value": ".*(kakaotalk-scrap|facebookexternalhit|Twitterbot|Slackbot).*"
+    }
+  ],
+  "destination": "https://edu-crm-api-production.up.railway.app/og/employment-center?site=welfareon"
+},
+{
+  "source": "/employment-center",
+  "has": [
+    {
+      "type": "header",
+      "key": "user-agent",
+      "value": ".*(kakaotalk-scrap|facebookexternalhit|Twitterbot|Slackbot).*"
+    }
+  ],
+  "destination": "https://edu-crm-api-production.up.railway.app/og/employment-center"
+},
     {
       "source": "/social-worker-guide",
   "has": [
@@ -88,8 +138,8 @@
       "destination": "https://edu-crm-api-production.up.railway.app/api/:path*"
     },
     {
-      "source": "/((?!api/|go/|alpha/|assets/|favicon.ico|robots.txt|manifest.webmanifest).*)",
-      "destination": "/index.html"
-    }
+  "source": "/((?!api/|go/|alpha/|assets/|images/|favicon.ico|robots.txt|manifest.webmanifest).*)",
+  "destination": "/index.html"
+}
   ]
 }
