@@ -1329,7 +1329,12 @@ const openStudyConsultation = () => {
         onOpenChange={setConsultationOpen}
       >
         <DialogContent
-  className="max-h-[92dvh] w-[calc(100%_-_24px)] max-w-[460px] overflow-y-auto overscroll-contain rounded-[24px] border border-[#5478ad]/40 bg-[#0c2043] p-0 text-white shadow-[0_24px_80px_rgba(0,0,0,0.4)]"
+  className="!block !gap-0 max-h-[94dvh] w-[calc(100%_-_24px)] max-w-[460px] overflow-x-hidden overflow-y-auto overscroll-contain rounded-[24px] border border-[#5478ad] !bg-[#0c2043] !p-0 !text-white shadow-[0_24px_80px_rgba(0,0,0,0.4)]"
+  style={{
+    backgroundColor: "#0c2043",
+    color: "#ffffff",
+    colorScheme: "light",
+  }}
 >
           <DialogHeader className="sr-only">
             <DialogTitle>
@@ -2480,26 +2485,30 @@ const consultationBackground =
   }
 
   const fieldClass =
-  "h-[50px] w-full min-w-0 rounded-[10px] border border-[#d8e3f0] bg-[#f9fbff] px-3 text-[16px] font-medium text-[#172c48] outline-none placeholder:text-[#64748b] transition-all focus:border-[#80b9ff] focus:ring-2 focus:ring-[#80b9ff]/30";
+  "h-[48px] w-full min-w-0 rounded-[10px] border border-[#d8e3f0] !bg-[#ffffff] px-3 text-[16px] font-medium !text-[#172c48] outline-none placeholder:!text-[#64748b] transition-all focus:border-[#80b9ff] focus:ring-2 focus:ring-[#80b9ff]/30";
 
   return (
   <div
-    className={`${consultationBackground} text-white ${
+    className={`${consultationBackground} !text-white ${
       dialogMode
-        ? ""
-        : `min-h-screen px-4 pt-5 ${
+        ? "w-full"
+        : `min-h-[calc(100dvh-60px)] px-4 pt-4 ${
             new URLSearchParams(window.location.search)
               .get("embed") === "1"
               ? "pb-5"
-              : "pb-28"
+              : "pb-24"
           }`
     }`}
+    style={{
+      color: "#ffffff",
+      colorScheme: "light",
+    }}
   >
     <div
       className={`mx-auto w-full max-w-[460px] ${
         dialogMode
-          ? "px-4 pb-6 pt-9"
-          : "px-1 pb-8 pt-4"
+          ? "px-4 pb-5 pt-7"
+          : "px-1 pb-4 pt-3"
       }`}
     >
         {/* 상단 정식 로고 */}
@@ -2512,16 +2521,16 @@ const consultationBackground =
 </div>
 
         {/* 상담 신청 제목 */}
-<div className="mb-7 mt-7 text-center">
-  <p className="text-[11px] font-semibold tracking-[0.18em] text-[#a7d5ff]">
+<div className="mb-5 mt-5 text-center">
+  <p className="text-[10px] font-semibold tracking-[0.18em] text-[#a7d5ff]">
     SOCIAL WELFARE CONSULTING
   </p>
 
-  <p className="mt-4 text-[14px] font-medium text-[#c1d8ff]">
+  <p className="mt-3 text-[13px] font-medium text-[#d1e3ff]">
     사회복지사 2급 무료 상담
   </p>
 
-  <h2 className="mt-2 text-[28px] font-extrabold leading-[1.4] tracking-[-0.05em] text-white">
+  <h2 className="mt-2 text-[27px] font-extrabold leading-[1.35] tracking-[-0.05em] !text-white">
     나에게 맞는
     <br />
     <span className="text-[#a3e1ff]">
@@ -2530,7 +2539,7 @@ const consultationBackground =
     안내받기
   </h2>
 
-  <p className="mt-3 text-[14px] leading-6 text-[#d0ddf0]">
+  <p className="mt-3 text-[13px] leading-6 text-[#dce7f7]">
     내 상황에 맞는 취득 과정과 학습일정을
     <br />
     전문 상담사가 안내해 드립니다.
@@ -2539,7 +2548,12 @@ const consultationBackground =
 
         <form
   onSubmit={handleSubmit}
-  className="space-y-5 rounded-[20px] border border-white/15 bg-white/[0.06] p-4 shadow-[0_8px_24px_rgba(0,0,0,0.12)] backdrop-blur-sm sm:p-5"
+  className="space-y-4 rounded-[20px] border border-[#49638d] p-4 !text-white shadow-[0_8px_24px_rgba(0,0,0,0.15)] sm:p-5"
+  style={{
+    background: "linear-gradient(145deg, #263f69 0%, #192f53 100%)",
+    color: "#ffffff",
+    colorScheme: "light",
+  }}
 >
           {/* 이름 및 연락처 */}
           <div className="grid grid-cols-2 gap-3">
@@ -2633,11 +2647,17 @@ const consultationBackground =
                         selected ? "" : item.value
                       )
                     }
-                    className={`min-h-[44px] rounded-[10px] border px-1 text-[13px] font-semibold transition-all ${
+                   className={`min-h-[44px] rounded-[10px] border px-1 text-[13px] font-semibold transition-all ${
   selected
-    ? "border-[#80b9ff] bg-gradient-to-br from-[#408de9] to-[#2455c8] text-white shadow-[0_3px_12px_rgba(36,85,200,0.35)]"
-    : "border-white/20 bg-white/[0.08] text-[#e5eeff] hover:border-white/40 hover:bg-white/15"
+    ? "border-[#8dc4ff] shadow-[0_3px_12px_rgba(36,85,200,0.35)]"
+    : "border-[#627da6] hover:border-[#a3c8ff]"
 }`}
+style={{
+  background: selected
+    ? "linear-gradient(135deg, #408de9, #2455c8)"
+    : "#304c76",
+  color: "#ffffff",
+}}
                   >
                     {item.label}
                   </button>
@@ -2671,7 +2691,7 @@ const consultationBackground =
             </span>
 
             <textarea
-           className="min-h-[100px] w-full resize-none rounded-[10px] border border-[#d8e3f0] bg-[#f9fbff] p-3.5 text-[16px] leading-6 text-[#172c48] outline-none placeholder:text-[#64748b] transition-all focus:border-[#80b9ff] focus:ring-2 focus:ring-[#80b9ff]/30"
+           className="min-h-[100px] w-full resize-none rounded-[10px] border border-[#d8e3f0] !bg-[#ffffff] p-3.5 text-[16px] leading-6 !text-[#172c48] outline-none placeholder:!text-[#64748b] transition-all focus:border-[#80b9ff] focus:ring-2 focus:ring-[#80b9ff]/30"
               value={notes}
               onChange={e => setNotes(e.target.value)}
               maxLength={350}
@@ -2684,34 +2704,38 @@ const consultationBackground =
           </label>
 
           {/* 개인정보 동의 */}
-          <div className="border-t border-white/15 pt-4">
-            <div className="flex items-center gap-2.5">
-              <input
-                id="consultation-privacy"
-                type="checkbox"
-                checked={agree}
-                onChange={e => setAgree(e.target.checked)}
-                className="h-[18px] w-[18px] shrink-0 accent-[#2458cc]"
-              />
+<div className="border-t border-[#49638d] pt-4">
+  <div className="flex items-center gap-2.5">
+    <input
+      id="consultation-privacy"
+      type="checkbox"
+      checked={agree}
+      onChange={e => setAgree(e.target.checked)}
+      className="h-[18px] w-[18px] shrink-0 cursor-pointer accent-[#397fe9]"
+    />
 
-              <label
-                htmlFor="consultation-privacy"
-                className="min-w-0 flex-1 cursor-pointer text-[12px] font-semibold leading-5 text-white"
-              >
-                개인정보 수집·이용 동의 (필수)
-              </label>
+    <label
+      htmlFor="consultation-privacy"
+      className="min-w-0 flex-1 cursor-pointer text-[13px] font-semibold leading-5 !text-white"
+    >
+      개인정보 수집·이용 동의 (필수)
+    </label>
 
-              <button
-                type="button"
-                onClick={() =>
-                  setPrivacyExpanded(v => !v)
-                }
-                aria-expanded={privacyExpanded}
-                className="shrink-0 text-[12px] font-medium text-[#c5d2e8] underline underline-offset-4"
-              >
-                {privacyExpanded ? "접기" : "자세히 보기"}
-              </button>
-            </div>
+    <button
+      type="button"
+      onClick={() =>
+        setPrivacyExpanded(v => !v)
+      }
+      aria-expanded={privacyExpanded}
+      className="shrink-0 text-[12px] font-medium underline underline-offset-4"
+      style={{
+        background: "transparent",
+        color: "#d1e3ff",
+      }}
+    >
+      {privacyExpanded ? "접기" : "자세히 보기"}
+    </button>
+  </div>
 
             {privacyExpanded && (
               <div className="mt-4 space-y-3 rounded-lg border border-[#344968] bg-[#102341] p-4 text-[12px] leading-6 text-[#c5d2e8]">
@@ -2772,16 +2796,29 @@ const consultationBackground =
             </p>
           )}
 
-          {/* 상담 신청 버튼 */}
           <button
-            type="submit"
-            disabled={submit.isPending || !agree}
-            className="h-[56px] w-full rounded-xl border border-white/15 bg-gradient-to-r from-[#397fe9] via-[#2458d3] to-[#214ab7] text-[16px] font-extrabold text-white shadow-[0_5px_18px_rgba(40,116,235,0.35)] transition-all hover:brightness-110 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {submit.isPending
-              ? "상담 접수 중..."
-              : "무료 상담 신청하기"}
-          </button>
+  type="submit"
+  disabled={submit.isPending || !agree}
+  className="h-[54px] w-full rounded-xl border border-transparent text-[16px] font-bold transition-all hover:brightness-110 active:scale-[0.99] disabled:cursor-not-allowed !opacity-100"
+  style={{
+    background:
+      submit.isPending || !agree
+        ? "#3b5073"
+        : "linear-gradient(110deg, #397fe9 0%, #2458d3 55%, #214ab7 100%)",
+    color:
+      submit.isPending || !agree
+        ? "#d5dfed"
+        : "#ffffff",
+    boxShadow:
+      submit.isPending || !agree
+        ? "none"
+        : "0 5px 18px rgba(40,116,235,0.35)",
+  }}
+>
+  {submit.isPending
+    ? "상담 접수 중..."
+    : "무료 상담 신청하기"}
+</button>
 
           <p className="text-center text-[11px] leading-5 text-[#a8b8d0]">
             상담 신청은 교육과정 등록과 별개입니다.
