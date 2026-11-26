@@ -4102,6 +4102,17 @@ go(c.key);
   open={privateCertificateOpen}
   onOpenChange={setPrivateCertificateOpen}
   portalToken={isPortalLoggedIn ? portalToken : ""}
+  onPortalLogin={(token) => {
+    localStorage.setItem(
+      SUPPORT_PORTAL_TOKEN_KEY,
+      token
+    );
+
+    sessionStorage.removeItem(SESSION_KEY);
+    setSession(null);
+    setPortalToken(token);
+  }}
+  getDeviceToken={getEmploymentTrialDeviceToken}
 />
 
 {section === "jobs" && (

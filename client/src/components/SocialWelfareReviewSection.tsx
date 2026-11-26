@@ -155,7 +155,7 @@ export default function SocialWelfareReviewSection() {
 
           {REVIEWS_VERIFIED
             ? "등록자들의 생생한 후기"
-            : "등록자 후기 예시"}
+            : "등록자"}
         </h2>
 
         <div className="flex shrink-0 items-center gap-1.5">
@@ -230,7 +230,7 @@ export default function SocialWelfareReviewSection() {
                 <span className="text-[12px] font-bold text-slate-700">
                   {REVIEWS_VERIFIED
                     ? review.author || "익명 등록자"
-                    : "후기 예시"}
+                    : ""}
                 </span>
 
                 <span className="text-[11px] text-slate-400">
@@ -244,7 +244,6 @@ export default function SocialWelfareReviewSection() {
 
       {!REVIEWS_VERIFIED && (
         <p className="mt-2 text-[11px] text-slate-500">
-          실제 등록자 후기 적용 전 문구 예시입니다.
         </p>
       )}
     </section>

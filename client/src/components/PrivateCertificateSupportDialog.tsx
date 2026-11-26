@@ -22,6 +22,8 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   portalToken: string;
+  onPortalLogin: (token: string) => void;
+  getDeviceToken: () => string;
 };
 
 const POSTER =
@@ -34,6 +36,8 @@ export default function PrivateCertificateSupportDialog({
   open,
   onOpenChange,
   portalToken,
+  onPortalLogin,
+  getDeviceToken,
 }: Props) {
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -41,6 +45,65 @@ export default function PrivateCertificateSupportDialog({
   const [detailAddress, setDetailAddress] = useState("");
   const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState("");
+
+const [loginName, setLoginName] = useState("");
+const [loginPhone, setLoginPhone] = useState("");
+const [loginError, setLoginError] = useState("");
+
+const loginMutation =
+  trpc.studentPortal.login.useMutation();
+
+const submitLogin = async (
+  e: React.FormEvent
+) => {
+  e.preventDefault();
+
+  if (loginMutation.isPending) return;
+
+  setLoginError("");
+
+  const digits = loginPhone.replace(/\D/g, "");
+
+  if (
+    loginName.trim().length < 2 ||
+    digits.length < 10 ||
+    digits.length > 11
+  ) {
+    setLoginError(
+      "이름과 휴대폰 번호를 확인해주세요."
+    );
+    return;
+  }
+
+  try {
+    const res = await loginMutation.mutateAsync({
+      slug: "with-one",
+      clientName: loginName.trim(),
+      phone: digits,
+      deviceToken: getDeviceToken(),
+    });
+
+    if (!res.success || !res.token) {
+      setLoginError(
+        "등록회원 정보를 확인하지 못했습니다."
+      );
+      return;
+    }
+
+    onPortalLogin(res.token);
+
+    setLoginName("");
+    setLoginPhone("");
+    setLoginError("");
+
+  } catch (err) {
+    setLoginError(
+      err instanceof Error
+        ? err.message
+        : "로그인 중 오류가 발생했습니다."
+    );
+  }
+};
 
   const [completed, setCompleted] = useState<{
     count: number;
@@ -64,16 +127,20 @@ export default function PrivateCertificateSupportDialog({
   const masters = mastersQuery.data?.masters ?? [];
 
   useEffect(() => {
-    if (!open) {
-      setSearch("");
-      setSelectedIds([]);
-      setAddress("");
-      setDetailAddress("");
-      setAgreed(false);
-      setError("");
-      setCompleted(null);
-    }
-  }, [open]);
+  if (!open) {
+    setSearch("");
+    setSelectedIds([]);
+    setAddress("");
+    setDetailAddress("");
+    setAgreed(false);
+    setError("");
+    setCompleted(null);
+
+    setLoginName("");
+    setLoginPhone("");
+    setLoginError("");
+  }
+}, [open]);
 
   useEffect(() => {
     if (open && student) {
@@ -334,38 +401,96 @@ export default function PrivateCertificateSupportDialog({
                 취업을 보장하지 않습니다.
               </p>
 
-              {!portalToken ? (
-                <div className="rounded-2xl border border-blue-100 bg-blue-50 p-5 text-center">
-                  <LockKeyhole
-                    size={28}
-                    className="mx-auto mb-3 text-blue-700"
-                  />
+             {!portalToken ? (
+  <div className="rounded-2xl border border-blue-100 bg-blue-50 p-5">
 
-                  <h4 className="font-black text-slate-900">
-                    등록자 전용 서비스입니다
-                  </h4>
+    <LockKeyhole
+      size={28}
+      className="mx-auto mb-3 text-blue-700"
+    />
 
-                  <p className="mt-2 text-xs leading-relaxed text-slate-600">
-                    학사관리시스템 로그인 후
-                    자격증을 신청하실 수 있습니다.
-                  </p>
+    <h4 className="text-center text-base font-black text-slate-900">
+      등록자 전용 서비스입니다
+    </h4>
 
-                  <a
-                    href="/portal/with-one"
-                    className="mt-4 block rounded-xl bg-[#15365f] px-4 py-3 text-sm font-bold text-white"
-                  >
-                    등록자 로그인
-                  </a>
-                </div>
-              ) : mastersQuery.isLoading ? (
-                <div className="flex items-center justify-center gap-2 py-8 text-sm text-slate-500">
-                  <Loader2
-                    size={18}
-                    className="animate-spin"
-                  />
-                  등록자 정보를 확인하고 있습니다.
-                </div>
-              ) : mastersQuery.isError ? (
+    <p className="mt-2 text-center text-xs leading-relaxed text-slate-600">
+      등록하신 이름과 연락처로 로그인하시면
+      자격증을 신청하실 수 있습니다.
+    </p>
+
+    <form
+      onSubmit={submitLogin}
+      className="mt-5 space-y-3"
+    >
+      <div>
+        <label className="mb-1.5 block text-xs font-bold text-slate-700">
+          이름
+        </label>
+
+        <input
+          value={loginName}
+          onChange={e => setLoginName(e.target.value)}
+          placeholder="이름을 입력해주세요"
+          autoComplete="name"
+          className="h-12 w-full rounded-xl border border-slate-200 !bg-white px-4 text-sm !text-slate-900 outline-none focus:border-blue-500"
+        />
+      </div>
+
+      <div>
+        <label className="mb-1.5 block text-xs font-bold text-slate-700">
+          연락처
+        </label>
+
+        <input
+          type="tel"
+          value={loginPhone}
+          onChange={e => setLoginPhone(e.target.value)}
+          placeholder="010-0000-0000"
+          autoComplete="tel"
+          className="h-12 w-full rounded-xl border border-slate-200 !bg-white px-4 text-sm !text-slate-900 outline-none focus:border-blue-500"
+        />
+      </div>
+
+           {loginError && (
+        <p
+          role="alert"
+          className="text-center text-xs font-medium text-red-600"
+        >
+          {loginError}
+        </p>
+      )}
+
+      <button
+        type="submit"
+        disabled={loginMutation.isPending}
+        className="h-12 w-full rounded-xl text-sm font-bold disabled:opacity-50"
+        style={{
+          backgroundColor: "#15365f",
+          color: "#ffffff",
+        }}
+      >
+        {loginMutation.isPending
+          ? "등록자 확인 중..."
+          : "등록회원 로그인"}
+      </button>
+    </form>
+  </div>
+) : mastersQuery.isLoading ? (
+  <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white py-10">
+    <Loader2
+      size={28}
+      className="animate-spin text-blue-700"
+    />
+
+    <p className="text-sm font-bold text-slate-700">
+      등록자 정보를 확인하고 있습니다.
+    </p>
+
+    <p className="text-xs text-slate-500">
+      잠시만 기다려주세요.
+    </p>
+  </div>
+) : mastersQuery.isError ? (
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
                   <div className="flex gap-2 text-sm font-bold text-amber-800">
                     <AlertCircle
@@ -374,13 +499,6 @@ export default function PrivateCertificateSupportDialog({
                     />
                     {mastersQuery.error.message}
                   </div>
-
-                  <a
-                    href="/portal/with-one"
-                    className="mt-3 block rounded-xl bg-white py-3 text-center text-sm font-bold text-slate-700"
-                  >
-                    학사관리시스템 바로가기
-                  </a>
 
                   <button
                     type="button"

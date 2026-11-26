@@ -19,7 +19,13 @@ export default function PracticeSupportPage() {
   return (
     <main className="min-h-screen bg-[#f5f8fd] text-slate-900 [color-scheme:light]">
       <div className="mx-auto min-h-screen max-w-[480px] bg-white pb-32 shadow-sm">
-        <header className="sticky top-0 z-30 flex h-14 items-center justify-center bg-[#124687] px-4 text-white">
+        <header
+  className="sticky top-0 z-30 flex h-14 items-center justify-center px-4 !bg-[#124687] !text-white"
+  style={{
+    backgroundColor: "#124687",
+    color: "#ffffff",
+  }}
+>
           <a href="/employment-center" aria-label="통합지원센터로 돌아가기" className="absolute left-4 p-1"><ArrowLeft size={23}/></a>
           <h1 className="text-[17px] font-bold">실습배정지원센터</h1>
         </header>

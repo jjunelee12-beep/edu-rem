@@ -42,10 +42,36 @@ export default function PracticeSupportApplication() {
   };
 
   return <main className="min-h-screen bg-[#f5f8fd] pb-12 text-slate-900 [color-scheme:light]">
-    <header className="sticky top-0 z-10 flex h-14 items-center justify-center bg-[#124687] px-4 text-[17px] font-bold text-white shadow-sm">
-      <button type="button" onClick={() => window.location.assign("/practice-support")} className="absolute left-4 text-2xl font-normal" aria-label="뒤로가기">‹</button>
-      실습배정지원센터
-    </header>
+    <header
+  className="sticky top-0 z-30 mx-auto flex h-14 max-w-[480px] items-center justify-center px-4 shadow-sm"
+  style={{
+    backgroundColor: "#124687",
+    color: "#ffffff",
+  }}
+>
+  <button
+    type="button"
+    onClick={() => window.location.assign("/practice-support")}
+    className="absolute left-4 text-2xl"
+    style={{ color: "#ffffff" }}
+    aria-label="뒤로가기"
+  >
+    ‹
+  </button>
+
+  <span className="text-[17px] font-bold">
+    실습배정지원센터
+  </span>
+
+  <button
+    type="button"
+    onClick={() => window.location.assign("/employment-center")}
+    className="absolute right-4 text-sm font-bold"
+    style={{ color: "#ffffff" }}
+  >
+    홈
+  </button>
+</header>
     <div className="mx-auto max-w-[480px]">
       <div className="relative overflow-hidden bg-[#e9f2ff]">
         <img src="/images/practice-application-banner.png" alt="현장실습 신청서 - 실습 배정을 위해 아래 정보를 입력해 주세요" className="block w-full" />
@@ -83,17 +109,32 @@ export default function PracticeSupportApplication() {
           </section>
           
           {submitted ? (
-            <div
-              role="status"
-              className="rounded-2xl border border-green-200 bg-green-50 p-5 text-center"
-            >
-              <p className="text-lg font-bold text-green-800">
-                실습 배정 신청이 접수되었습니다.
-              </p>
-              <p className="mt-2 text-sm text-green-700">
-                실습배정지원센터에서 신청 내용을 확인한 후 연락드립니다.
-              </p>
-            </div>
+  <div
+    role="status"
+    className="rounded-2xl border border-green-200 bg-green-50 p-5 text-center"
+  >
+    <p className="text-lg font-bold text-green-800">
+      실습 배정 신청이 접수되었습니다.
+    </p>
+
+    <p className="mt-2 text-sm leading-6 text-green-700">
+      실습배정지원센터에서 신청 내용을 확인한 후 연락드립니다.
+    </p>
+
+    <button
+      type="button"
+      onClick={() =>
+        window.location.replace("/employment-center")
+      }
+      className="mt-5 h-14 w-full rounded-2xl text-base font-bold"
+      style={{
+        backgroundColor: "#124687",
+        color: "#ffffff",
+      }}
+    >
+      확인 및 홈으로 이동
+    </button>
+  </div>
           ) : (
             <button
               type="button"
