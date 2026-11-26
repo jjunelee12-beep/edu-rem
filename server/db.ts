@@ -10092,6 +10092,12 @@ function decryptPrivateCertificatePersonalData<
         ? row.inputAddress
         : decryptPersonalData(row.inputAddress),
 
+detailAddress:
+  row.detailAddress === null ||
+  row.detailAddress === undefined
+    ? row.detailAddress
+    : decryptPersonalData(row.detailAddress),
+
     assigneeName:
       row.assigneeName === null ||
       row.assigneeName === undefined
@@ -10239,6 +10245,17 @@ function preparePrivateCertificatePersonalData<
       ? encryptPersonalData(plainValue)
       : null;
   }
+
+if (data.detailAddress !== undefined) {
+  const plainValue =
+    data.detailAddress === null
+      ? null
+      : String(data.detailAddress).trim() || null;
+
+  nextData.detailAddress = plainValue
+    ? encryptPersonalData(plainValue)
+    : null;
+}
 
   if (data.assigneeName !== undefined) {
     const plainValue =
@@ -42958,6 +42975,190 @@ export async function updatePrivateCertificateMaster(
     .where(eq(privateCertificateMasters.id, id));
 
   return true;
+}
+
+export async function createPortalPrivateCertificateRequests(
+  params: {
+    organizationId: number;
+    studentId: number;
+    assigneeId: number;
+    assigneeName: string;
+    clientName: string;
+    phone: string;
+    certificateMasterIds: number[];
+    inputAddress: string;
+    detailAddress: string;
+  }
+) {
+  const database = await getDb();
+
+  if (!database) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(params.organizationId);
+
+  const masterIds = Array.from(
+    new Set(params.certificateMasterIds)
+  );
+
+  if (!masterIds.length) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "희망 자격증을 선택해주세요.",
+      400
+    );
+  }
+
+  const feeAmount = 88000;
+
+  const insertedIds = await database.transaction(
+    async tx => {
+      // 동일 학생의 동시 신청을 직렬화
+      const studentRows = await tx
+        .select({
+          id: students.id,
+          assigneeId: students.assigneeId,
+          approvalStatus: students.approvalStatus,
+        })
+        .from(students)
+        .where(
+          and(
+            eq(students.id, params.studentId),
+eq(students.organizationId, organizationId),
+sql`${students.deletedAt} IS NULL`
+          )
+        )
+        .for("update");
+
+      const student = studentRows[0];
+
+      if (
+        !student ||
+        student.approvalStatus !== "승인" ||
+        Number(student.assigneeId) !== params.assigneeId
+      ) {
+        throwAppError(
+          ERROR_CODES.PERMISSION_DENIED,
+          "등록자 정보를 다시 확인해주세요.",
+          403
+        );
+      }
+
+      const masters = await tx
+        .select()
+        .from(privateCertificateMasters)
+        .where(
+          and(
+            eq(
+              privateCertificateMasters.organizationId,
+              organizationId
+            ),
+            eq(privateCertificateMasters.isActive, true),
+            inArray(privateCertificateMasters.id, masterIds)
+          )
+        );
+
+      if (masters.length !== masterIds.length) {
+        throwAppError(
+          ERROR_CODES.INVALID_REQUEST,
+          "신청할 수 없는 자격증이 포함되어 있습니다.",
+          400
+        );
+      }
+
+      const existingRequests = await tx
+        .select()
+        .from(privateCertificateRequests)
+        .where(
+          and(
+            eq(
+              privateCertificateRequests.organizationId,
+              organizationId
+            ),
+            eq(
+              privateCertificateRequests.studentId,
+              params.studentId
+            )
+          )
+        );
+
+      for (const master of masters) {
+        const duplicate = existingRequests.some(
+          request =>
+            request.requestStatus !== "취소" &&
+            (
+              Number(request.privateCertificateMasterId) ===
+                Number(master.id) ||
+              String(request.certificateName || "").trim() ===
+  master.name.trim()
+            )
+        );
+
+        if (duplicate) {
+          throwAppError(
+            ERROR_CODES.INVALID_REQUEST,
+            `${master.name}은(는) 이미 신청한 자격증입니다.`,
+            409
+          );
+        }
+      }
+
+      const ids: number[] = [];
+
+      for (const master of masters) {
+        const preparedData =
+          preparePrivateCertificatePersonalData({
+            organizationId,
+            studentId: params.studentId,
+            assigneeId: params.assigneeId,
+            assigneeName: params.assigneeName,
+            clientName: params.clientName,
+            phone: params.phone,
+            privateCertificateMasterId: master.id,
+            certificateName: master.name,
+            inputAddress: params.inputAddress,
+            detailAddress: params.detailAddress,
+            note: "[사회복지통합지원센터] 등록자 직접 신청",
+            requestStatus: "요청" as const,
+            paymentStatus: "결제대기" as const,
+            feeAmount: String(feeAmount),
+            freelancerInputAmount: "0",
+            paidAt: null,
+          });
+
+        const result = await tx
+          .insert(privateCertificateRequests)
+          .values(preparedData);
+
+        const id = Number(getInsertId(result));
+
+        if (!id) {
+          throwAppError(
+            ERROR_CODES.INTERNAL_SERVER_ERROR,
+            "자격증 신청 저장에 실패했습니다.",
+            500
+          );
+        }
+
+        ids.push(id);
+      }
+
+      return ids;
+    }
+  );
+
+  return {
+    success: true,
+    requestIds: insertedIds,
+    count: insertedIds.length,
+    totalFeeAmount: insertedIds.length * feeAmount,
+  };
 }
 
 export async function createPrivateCertificateRequest(data: InsertPrivateCertificateRequest) {

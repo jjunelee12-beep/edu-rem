@@ -28,6 +28,10 @@ import { emitLiveNotification } from "./_core/live-notifications";
 import { publicLeadRouter } from "./publicLead.router";
 import { gov24Router } from "./gov24.router";
 import { volunteerRouter } from "./volunteer.router";
+import {
+  getWelfareNewsList,
+  getWelfareNewsDetail,
+} from "./social-welfare-news";
 import bcrypt from "bcryptjs";
 import { smsRouter } from "./_core/sms.router";
 import Tesseract from "tesseract.js";
@@ -671,6 +675,7 @@ function assertExternalRequestEditable(params: {
 
 const WITHONE_ORGANIZATION_ID = 1;
 const WITHONE_ASSIGNEE_ID = 7;
+const WELFARE_PRACTICE_ASSIGNEE_ID = 13;
 
 function isWithOneTrialMember(
   organizationId: number,
@@ -4002,6 +4007,48 @@ return {
   saas: saasRouter,
     gov24: gov24Router,
   volunteer: volunteerRouter,
+socialWelfareNews: router({
+  list: publicProcedure
+    .input(
+      z.object({
+        category: z.enum([
+          "all",
+          "policy",
+          "education",
+          "employment",
+        ]).default("all"),
+
+        limit: z.number()
+          .int()
+          .min(1)
+          .max(30)
+          .default(10),
+
+        offset: z.number()
+          .int()
+          .min(0)
+          .max(90)
+          .default(0),
+      })
+    )
+    .query(({ input }) => {
+      return getWelfareNewsList(
+        input.category,
+        input.limit,
+        input.offset
+      );
+    }),
+
+  detail: publicProcedure
+    .input(
+      z.object({
+        id: z.string().regex(/^[a-f0-9]{24}$/),
+      })
+    )
+    .query(({ input }) => {
+      return getWelfareNewsDetail(input.id);
+    }),
+}),
   
   // ─── 사회복지사 2급 공개 취득가이드 ───────────────────
   socialWorkerGuide: router({
@@ -16580,6 +16627,205 @@ unreadAiEventCount,
 }),
 
   privateCertificate: router({
+
+    // 사회복지통합지원센터 등록자 전용 자격증 목록
+    portalMasters: publicProcedure
+      .input(
+        z.object({
+          token: z.string().trim().min(1).max(255),
+        })
+      )
+      .query(async ({ input }) => {
+        const session =
+          await db.getStudentPortalSessionByToken({
+            token: input.token,
+          });
+
+        if (!session || session.usable !== true) {
+          throwAppError(
+            ERROR_CODES.AUTH_REQUIRED,
+            "학생일정포털 로그인이 필요합니다.",
+            401
+          );
+        }
+
+        const organizationId = session.organizationId;
+
+if (organizationId !== WITHONE_ORGANIZATION_ID) {
+  throwAppError(
+    ERROR_CODES.PERMISSION_DENIED,
+    "사회복지통합지원센터 등록자 전용 서비스입니다.",
+    403
+  );
+}
+
+if (
+  isWithOneTrialMember(
+    organizationId,
+    session.student.clientName,
+    session.student.phone
+  )
+) {
+  throwAppError(
+    ERROR_CODES.PERMISSION_DENIED,
+    "등록자 전용 서비스입니다.",
+    403
+  );
+}
+
+        await assertOrganizationFeatureEnabled(
+          organizationId,
+          "allowPrivateCertificate",
+          "민간자격증 지원 서비스를 사용할 수 없습니다."
+        );
+
+        const masters =
+          await db.listPrivateCertificateMasters({
+            organizationId,
+            activeOnly: true,
+          });
+
+        const student = session.student;
+
+const assignedUser =
+  await db.getAssignableUserById({
+    organizationId,
+    userId: Number(student.assigneeId || 0),
+  });
+
+if (!assignedUser) {
+  throwAppError(
+    ERROR_CODES.INVALID_REQUEST,
+    "등록된 담당자 정보를 확인할 수 없습니다.",
+    400
+  );
+}
+
+const requests =
+  await db.listPrivateCertificateRequestsByStudent(
+    session.studentId,
+    { organizationId }
+  );
+
+return {
+  student: {
+    clientName: student.clientName,
+    phone: student.phone,
+    assigneeName: assignedUser.name,
+    address: student.address || "",
+  },
+
+  masters: masters.map(master => ({
+    id: master.id,
+    name: master.name,
+    feeAmount: 88000,
+
+    alreadyRequested: requests.some(
+      request =>
+        request.requestStatus !== "취소" &&
+        (
+          Number(request.privateCertificateMasterId) ===
+            Number(master.id) ||
+          String(request.certificateName || "").trim() ===
+            master.name.trim()
+        )
+    ),
+  })),
+};
+      }),
+
+portalApply: publicProcedure
+  .input(
+    z.object({
+      token: z.string().trim().min(1).max(255),
+
+      certificateMasterIds: z
+        .array(z.number().int().positive())
+        .min(1)
+        .max(50),
+
+      inputAddress: z.string().trim().min(1).max(500),
+
+      detailAddress: z.string().trim().max(500),
+
+      agreed: z.literal(true),
+    })
+  )
+  .mutation(async ({ input }) => {
+    const session =
+      await db.getStudentPortalSessionByToken({
+        token: input.token,
+      });
+
+    if (!session || session.usable !== true) {
+      throwAppError(
+        ERROR_CODES.AUTH_REQUIRED,
+        "학생일정포털 로그인이 필요합니다.",
+        401
+      );
+    }
+
+    const organizationId = session.organizationId;
+
+if (organizationId !== WITHONE_ORGANIZATION_ID) {
+  throwAppError(
+    ERROR_CODES.PERMISSION_DENIED,
+    "사회복지통합지원센터 등록자 전용 서비스입니다.",
+    403
+  );
+}
+
+    const student = session.student;
+
+    if (
+      isWithOneTrialMember(
+        organizationId,
+        student.clientName,
+        student.phone
+      )
+    ) {
+      throwAppError(
+        ERROR_CODES.PERMISSION_DENIED,
+        "등록자 전용 서비스입니다.",
+        403
+      );
+    }
+
+    await assertOrganizationFeatureEnabled(
+      organizationId,
+      "allowPrivateCertificate",
+      "민간자격증 지원 서비스를 사용할 수 없습니다."
+    );
+
+    const assigneeId = Number(student.assigneeId || 0);
+
+    const assignedUser =
+      await db.getAssignableUserById({
+        organizationId,
+        userId: assigneeId,
+      });
+
+    if (!assignedUser) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "담당자 정보를 확인할 수 없습니다.",
+        400
+      );
+    }
+
+    return db.createPortalPrivateCertificateRequests({
+      organizationId,
+      studentId: session.studentId,
+      assigneeId,
+      assigneeName: assignedUser.name || "",
+      clientName: student.clientName,
+      phone: student.phone,
+      certificateMasterIds: input.certificateMasterIds,
+      inputAddress: input.inputAddress,
+      detailAddress: input.detailAddress,
+    });
+  }),
+
     list: protectedProcedure
       .input(
         z
@@ -18025,6 +18271,234 @@ await writeStudentAuditLog({
 });
 
         return { success: true, id };
+      }),
+
+    welfareApplicationInfo: publicProcedure
+      .input(
+        z.object({
+          token: z.string().trim().min(1).max(255),
+        })
+      )
+      .query(async ({ input }) => {
+        const session =
+          await db.getStudentPortalSessionByToken({
+            token: input.token,
+          });
+
+        if (
+          !session ||
+          session.usable !== true ||
+          Number(session.organizationId) !==
+            WITHONE_ORGANIZATION_ID
+        ) {
+          return { authenticated: false as const };
+        }
+
+        const student = session.student;
+
+        if (
+          isWithOneTrialMember(
+            WITHONE_ORGANIZATION_ID,
+            String(student?.clientName || ""),
+            String(student?.phone || "")
+          )
+        ) {
+          return { authenticated: false as const };
+        }
+
+        return {
+          authenticated: true as const,
+          name: String(student?.clientName || ""),
+          phone: String(student?.phone || ""),
+          course: String(student?.course || ""),
+          address: String(student?.address || ""),
+        };
+      }),
+
+    submitWelfareApplication: publicProcedure
+      .input(
+        z.object({
+          token: z.string().trim().min(1).max(255).optional(),
+          name: z.string().trim().min(1).max(100),
+          phone: z.string().trim().min(1).max(30),
+          course: z.enum([
+            "사회복지사 2급",
+            "보육교사 2급",
+            "한국어교원 2급",
+          ]),
+          address: z.string().trim().min(1).max(500),
+          month: z.string().regex(
+            /^20\d{2}-(0[1-9]|1[0-2])$/
+          ),
+          hours: z.number().int().min(1).max(1000),
+          days: z.enum(["weekday", "weekend", "both"]),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const organizationId = WITHONE_ORGANIZATION_ID;
+
+        await assertOrganizationFeatureEnabled(
+          organizationId,
+          "allowPracticeCenter",
+          "실습배정지원센터를 사용할 수 없습니다."
+        );
+
+        let clientName = input.name;
+        let normalizedPhone = input.phone.replace(/\D/g, "");
+
+        // 등록 회원은 서버에서 실제 회원 정보 확인
+        if (input.token) {
+          const session =
+            await db.getStudentPortalSessionByToken({
+              token: input.token,
+            });
+
+          if (
+            !session ||
+            session.usable !== true ||
+            Number(session.organizationId) !== organizationId
+          ) {
+            throwAppError(
+              ERROR_CODES.AUTH_REQUIRED,
+              "로그인 정보가 만료되었습니다. 새로고침 후 다시 신청해 주세요.",
+              401
+            );
+          }
+
+          clientName = String(
+            session.student?.clientName || ""
+          ).trim();
+
+          normalizedPhone = String(
+            session.student?.phone || ""
+          ).replace(/\D/g, "");
+        }
+
+        if (
+          !clientName ||
+          !/^01\d{8,9}$/.test(normalizedPhone)
+        ) {
+          throwAppError(
+            ERROR_CODES.INVALID_REQUEST,
+            "이름과 휴대전화번호를 확인해 주세요.",
+            400
+          );
+        }
+
+        // 체험 계정으로 실제 신청하는 것을 방지
+        if (
+          isWithOneTrialMember(
+            organizationId,
+            clientName,
+            normalizedPhone
+          )
+        ) {
+          throwAppError(
+            ERROR_CODES.INVALID_REQUEST,
+            "실제 신청자 정보를 입력해 주세요.",
+            400
+          );
+        }
+
+        // 기존 공개 신청 요청 제한 재사용
+        const ip = String(
+          ctx.req?.socket?.remoteAddress || "unknown"
+        );
+
+        const limitKey = createHash("sha256")
+          .update(
+            `welfare-practice:${organizationId}:${ip}:${normalizedPhone}`
+          )
+          .digest("hex");
+
+        checkPublicPracticeApplicationLimit(limitKey);
+
+        // 담당자 13번 고정
+        const assignedUser =
+          await db.getAssignableUserById({
+            organizationId,
+            userId: WELFARE_PRACTICE_ASSIGNEE_ID,
+          });
+
+        if (!assignedUser) {
+          throwAppError(
+            ERROR_CODES.INVALID_REQUEST,
+            "현재 신청을 접수할 수 없습니다. 센터에 문의해 주세요.",
+            400
+          );
+        }
+
+        // 실습 희망월 기준 예상 학기 계산
+        const [year, month] =
+          input.month.split("-").map(Number);
+
+        let semester: string | null = null;
+
+        if (month >= 1 && month <= 4) {
+          semester = `${year}년 1학기`;
+        } else if (month >= 6 && month <= 10) {
+          semester = `${year}년 2학기`;
+        } else if (month === 12) {
+          semester = `${year + 1}년 1학기`;
+        }
+
+        const dayLabel = {
+          weekday: "평일",
+          weekend: "주말",
+          both: "평일·주말",
+        }[input.days];
+
+        const note = [
+          "[사회복지통합지원센터] 실습 배정 신청",
+          `[현장실습 신청서] 실습 진행일: ${dayLabel}`,
+          `실습 희망월: ${input.month}`,
+          `예상 학기: ${semester || "별도 확인 필요"}`,
+          "※ 실제 학기는 교육원 수강일정 확인 후 확정",
+        ].join("\n");
+
+        const requestId =
+          await db.createPracticeSupportExternalRequest({
+            organizationId,
+
+            assigneeId: Number(assignedUser.id),
+            createdBy: Number(assignedUser.id),
+            updatedBy: Number(assignedUser.id),
+
+            clientName,
+            phone: normalizedPhone,
+
+            assigneeName: assignedUser.name,
+            managerName: null,
+
+            course: input.course,
+            inputAddress: input.address,
+
+            practiceSemesterLabel: semester,
+            practiceDate: input.month,
+            practiceHours: input.hours,
+
+            note,
+
+            includeEducationCenter: true,
+            includePracticeInstitution: true,
+
+            coordinationStatus: "미섭외",
+            paymentStatus: "미결제",
+            feeAmount: "0",
+          });
+
+        if (!Number(requestId)) {
+          throwAppError(
+            ERROR_CODES.INTERNAL_SERVER_ERROR,
+            "신청 접수 결과를 확인할 수 없습니다.",
+            500
+          );
+        }
+
+        return {
+          success: true as const,
+          requestId: Number(requestId),
+        };
       }),
 
 /**

@@ -28,6 +28,44 @@ function isClosedStatus(status: string | null | undefined) {
   return status === "종료" || status === "등록 종료";
 }
 
+type StudentListViewState = {
+  searchTerm: string;
+  assigneeSearch: string;
+  showCompleted: boolean;
+  showFilters: boolean;
+  filterApproval: string;
+  filterAssignee: string;
+  filterPractice: boolean;
+};
+
+const DEFAULT_STUDENT_LIST_VIEW_STATE: StudentListViewState = {
+  searchTerm: "",
+  assigneeSearch: "",
+  showCompleted: false,
+  showFilters: false,
+  filterApproval: "all",
+  filterAssignee: "all",
+  filterPractice: false,
+};
+
+const studentListViewStateCache = new Map<
+  string,
+  StudentListViewState
+>();
+
+type StudentListScrollState = {
+  windowTop: number;
+  windowLeft: number;
+  contentTop: number;
+  contentLeft: number;
+  tableLeft: number;
+};
+
+const studentListScrollCache = new Map<
+  string,
+  StudentListScrollState
+>();
+
 export default function Students() {
   const { user } = useAuth();
 
@@ -44,7 +82,10 @@ const withOrgPath = (path: string) => {
 };
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
-  const { data: students, isLoading } = trpc.student.list.useQuery();
+  const { data: students, isLoading } =
+  trpc.student.list.useQuery(undefined, {
+    refetchOnMount: "always",
+  });
   const { data: allUsers } = trpc.users.list.useQuery();
 
   const updateMut = trpc.student.update.useMutation({
@@ -52,13 +93,121 @@ const withOrgPath = (path: string) => {
     onError: (e) => toast.error(e.message),
   });
 
-  const [searchTerm, setSearchTerm] = useState("");
-  const [assigneeSearch, setAssigneeSearch] = useState("");
-  const [showCompleted, setShowCompleted] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
-  const [filterApproval, setFilterApproval] = useState<string>("all");
-  const [filterAssignee, setFilterAssignee] = useState<string>("all");
-  const [filterPractice, setFilterPractice] = useState(false);
+  const viewStateKey = `${organizationSlug}:${user?.id ?? "unknown"}`;
+
+const studentListRef = useRef<HTMLDivElement>(null);
+const studentTableRef = useRef<HTMLDivElement>(null);
+const scrollRestoredRef = useRef(false);
+
+const getContentScrollElement = () => {
+  return studentListRef.current
+    ?.closest("main")
+    ?.parentElement ?? null;
+};
+
+const saveStudentListScroll = () => {
+  if (!user?.id) return;
+
+  const content = getContentScrollElement();
+
+  studentListScrollCache.set(viewStateKey, {
+    windowTop: window.scrollY,
+    windowLeft: window.scrollX,
+    contentTop: content?.scrollTop ?? 0,
+    contentLeft: content?.scrollLeft ?? 0,
+    tableLeft: studentTableRef.current?.scrollLeft ?? 0,
+  });
+};
+
+useEffect(() => {
+  if (!user?.id || isLoading || !students) return;
+  if (scrollRestoredRef.current) return;
+
+  const saved = studentListScrollCache.get(viewStateKey);
+  if (!saved) return;
+
+  const frame = requestAnimationFrame(() => {
+    const content = getContentScrollElement();
+
+    if (content) {
+      content.scrollTop = saved.contentTop;
+      content.scrollLeft = saved.contentLeft;
+    }
+
+    if (studentTableRef.current) {
+      studentTableRef.current.scrollLeft = saved.tableLeft;
+    }
+
+    window.scrollTo({
+      top: saved.windowTop,
+      left: saved.windowLeft,
+      behavior: "instant",
+    });
+
+    scrollRestoredRef.current = true;
+    studentListScrollCache.delete(viewStateKey);
+  });
+
+  return () => cancelAnimationFrame(frame);
+}, [viewStateKey, user?.id, isLoading, students]);
+
+const [initialViewState] = useState<StudentListViewState>(
+  () =>
+    studentListViewStateCache.get(viewStateKey) ??
+    DEFAULT_STUDENT_LIST_VIEW_STATE
+);
+
+const [searchTerm, setSearchTerm] = useState(
+  initialViewState.searchTerm
+);
+
+const [assigneeSearch, setAssigneeSearch] = useState(
+  initialViewState.assigneeSearch
+);
+
+const [showCompleted, setShowCompleted] = useState(
+  initialViewState.showCompleted
+);
+
+const [showFilters, setShowFilters] = useState(
+  initialViewState.showFilters
+);
+
+const [filterApproval, setFilterApproval] = useState<string>(
+  initialViewState.filterApproval
+);
+
+const [filterAssignee, setFilterAssignee] = useState<string>(
+  initialViewState.filterAssignee
+);
+
+const [filterPractice, setFilterPractice] = useState(
+  initialViewState.filterPractice
+);
+
+useEffect(() => {
+  if (!user?.id) return;
+
+  studentListViewStateCache.set(viewStateKey, {
+    searchTerm,
+    assigneeSearch,
+    showCompleted,
+    showFilters,
+    filterApproval,
+    filterAssignee,
+    filterPractice,
+  });
+}, [
+  viewStateKey,
+  user?.id,
+  searchTerm,
+  assigneeSearch,
+  showCompleted,
+  showFilters,
+  filterApproval,
+  filterAssignee,
+  filterPractice,
+]);
 
   const isAdmin = user?.role === "admin" || user?.role === "host";
   const isHost = user?.role === "host";
@@ -116,7 +265,7 @@ const withOrgPath = (path: string) => {
   };
 
   return (
-    <div className="space-y-4">
+  <div ref={studentListRef} className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">학생 관리</h1>
@@ -227,7 +376,10 @@ const withOrgPath = (path: string) => {
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
       ) : (
-        <div className="border rounded-lg overflow-x-auto bg-white">
+        <div
+  ref={studentTableRef}
+  className="border rounded-lg overflow-x-auto bg-white"
+>
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-muted/50 border-b">
@@ -279,7 +431,23 @@ const withOrgPath = (path: string) => {
   isAdmin={!!isAdmin}
   userMap={userMap}
   onBlur={handleCellBlur}
-  onDetail={(id) => setLocation(withOrgPath(`/students/${id}`))}
+  onDetail={(id) => {
+  if (user?.id) {
+    studentListViewStateCache.set(viewStateKey, {
+      searchTerm,
+      assigneeSearch,
+      showCompleted,
+      showFilters,
+      filterApproval,
+      filterAssignee,
+      filterPractice,
+    });
+
+    saveStudentListScroll();
+  }
+
+  setLocation(withOrgPath(`/students/${id}`));
+}}
   handlePhoneInput={handlePhoneInput}
 />
               ))}

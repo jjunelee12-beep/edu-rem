@@ -1,5 +1,5 @@
 import type React from "react";
-import { useEffect } from "react";
+import { useEffect, lazy, Suspense } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
@@ -50,6 +50,8 @@ import PublicStaffTeamPage from "@/pages/PublicStaffTeamPage";
 import StudentPortalPage from "@/pages/StudentPortalPage";
 import PracticeApplication from "@/pages/PracticeApplication";
 import EmploymentCenterPage from "@/pages/EmploymentCenterPage";
+import PracticeSupportPage from "@/pages/PracticeSupportPage";
+import PracticeSupportApplication from "@/pages/PracticeSupportApplication";
 import PortalManagementPage from "@/pages/PortalManagementPage";
 import HostPortalCommunityPage from "@/pages/HostPortalCommunityPage";
 
@@ -93,6 +95,23 @@ import VolunteerFinderPage from "@/pages/VolunteerFinderPage";
 import SalaryCalculatorPage from "@/pages/SalaryCalculatorPage";
 import SocialWorkerCareerTestPage from "@/pages/SocialWorkerCareerTestPage";
 import SocialWorkerBenefitsPage from "@/pages/SocialWorkerBenefitsPage";
+const SocialWelfareNewsPage = lazy(
+  () => import("@/pages/SocialWelfareNewsPage")
+);
+
+function WelfareNewsRoute() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-white text-sm text-slate-500">
+          최신 소식을 불러오고 있습니다.
+        </div>
+      }
+    >
+      <SocialWelfareNewsPage />
+    </Suspense>
+  );
+}
 
 function SuperhostRoute({
   component: Component,
@@ -245,6 +264,26 @@ function PublicRouter() {
 <Route
   path="/employment-center"
   component={EmploymentCenterPage}
+/>
+
+<Route
+  path="/practice-support/apply"
+  component={PracticeSupportApplication}
+/>
+
+<Route
+  path="/practice-support"
+  component={PracticeSupportPage}
+/>
+
+<Route
+  path="/social-welfare-news/:id"
+  component={WelfareNewsRoute}
+/>
+
+<Route
+  path="/social-welfare-news"
+  component={WelfareNewsRoute}
 />
 
 <Route
@@ -606,7 +645,13 @@ function AppContent() {
     const matchesPath = (base: string) =>
       path === base || path.startsWith(`${base}/`);
 
-   if (matchesPath("/social-worker-benefits")) {
+   if (matchesPath("/practice-support")) {
+  document.title =
+    "실습배정지원센터 | 사회복지통합지원센터";
+} else if (matchesPath("/social-welfare-news")) {
+  document.title =
+    "사회복지 최신 소식 | 사회복지통합지원센터";
+} else if (matchesPath("/social-worker-benefits")) {
   document.title =
     "자격증 활용백과 | 사회복지통합지원센터";
 } else if (matchesPath("/career-test")) {
@@ -650,7 +695,11 @@ location === "/volunteer" ||
 location === "/salary-calculator" ||
 location === "/career-test" ||
 location === "/social-worker-benefits" ||
+location === "/social-welfare-news" ||
+location.startsWith("/social-welfare-news/") ||
 location === "/employment-center" ||
+location === "/practice-support" ||
+location === "/practice-support/apply" ||
   location.startsWith("/form/") ||
   location.startsWith("/ad-form/") ||
 location.startsWith("/kakao-ai/staff-auth/") ||

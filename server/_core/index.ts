@@ -91,6 +91,7 @@ deactivateExpiredOverdueOrganizations,
 import { setLiveNotificationIO } from "./live-notifications";
 import { setSocketServer } from "./socket-status";
 import { startAutoBackupScheduler } from "./auto-backup-scheduler";
+import { startWelfareNewsScheduler } from "../social-welfare-news";
 import {
   readUserIdFromCookie,
 } from "./auth/session";
@@ -6106,9 +6107,11 @@ const ogPageUrl = "https://go.withone.kr/alpha";
   const port = parseInt(process.env.PORT || "3000", 10);
 
   server.listen(port, "0.0.0.0", () => {
-    console.log(`Server running on port ${port}`);
-    console.log("Exact CORS allowed origins:", exactAllowedOrigins);
-  });
+  console.log(`Server running on port ${port}`);
+  console.log("Exact CORS allowed origins:", exactAllowedOrigins);
+
+  startWelfareNewsScheduler();
+});
 }
 
 // 🔔 일정 알림 자동 실행 (1분마다)
